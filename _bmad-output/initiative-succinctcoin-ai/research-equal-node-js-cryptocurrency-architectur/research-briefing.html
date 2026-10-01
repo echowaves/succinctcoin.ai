@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deep Recon — Equal-node JS cryptocurrency architecture</title>
+<style>
+:root{
+  --bg:#fafaf8; --fg:#1c1c1a; --card:#ffffff; --line:#e6e4de; --muted:#6b6b64;
+  --accent:#3b5bdb; --code:#f3f1ea;
+  --v-bg:#e6f4ea; --v-fg:#1e7e34; --v-bd:#b7dfc0;
+  --m-bg:#e7f0ff; --m-fg:#1d4ed8; --m-bd:#c3d7fb;
+  --l-bg:#ececec; --l-fg:#5b5b56; --l-bd:#d8d8d2;
+  --u-bg:#fff3e0; --u-fg:#b26a00; --u-bd:#ffd591;
+  --d-bg:#f3e8ff; --d-fg:#6d28d9; --d-bd:#ddc9f7;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#141412; --fg:#e8e6e0; --card:#1d1d1a; --line:#2c2c28; --muted:#9a9a90;
+    --accent:#8ab4ff; --code:#232320;
+    --v-bg:#12291a; --v-fg:#5fd08a; --v-bd:#1f4d31;
+    --m-bg:#14213a; --m-fg:#8ab4ff; --m-bd:#24406b;
+    --l-bg:#262624; --l-fg:#a8a89e; --l-bd:#3a3a35;
+    --u-bg:#33230d; --u-fg:#ffbf5c; --u-bd:#5c4116;
+    --d-bg:#27183a; --d-fg:#c4a6f5; --d-bd:#43305e;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+.wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
+header.hero{border-bottom:2px solid var(--line);padding-bottom:18px;margin-bottom:24px}
+.kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+h1{font-size:26px;line-height:1.25;margin:.3em 0 .2em}
+.meta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin-top:10px}
+.meta b{color:var(--fg);font-weight:600}
+.decision{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:12px 16px;font-size:15px;margin-top:16px}
+nav.toc{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:8px 0;margin-bottom:8px;font-size:13.5px}
+nav.toc .wrap{padding:0 20px;display:flex;flex-wrap:wrap;gap:4px 14px}
+nav.toc a{color:var(--muted)} nav.toc a:hover{color:var(--accent)}
+section{margin-top:34px;scroll-margin-top:52px}
+section>h2{font-size:20px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:4px}
+.sub{font-size:13px;color:var(--muted);margin:2px 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+h3{font-size:16px;margin:20px 0 6px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:12px 0}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--code);font-weight:600}
+tr.stale td{background:var(--u-bg)}
+.badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:1px 8px;border-radius:999px;border:1px solid;white-space:nowrap}
+.b-verified{background:var(--v-bg);color:var(--v-fg);border-color:var(--v-bd)}
+.b-medium{background:var(--m-bg);color:var(--m-fg);border-color:var(--m-bd)}
+.b-low{background:var(--l-bg);color:var(--l-fg);border-color:var(--l-bd)}
+.b-unverified{background:var(--u-bg);color:var(--u-fg);border-color:var(--u-bd);box-shadow:0 0 0 1px var(--u-bd)}
+.b-decision{background:var(--d-bg);color:var(--d-fg);border-color:var(--d-bd)}
+.claimref{color:var(--accent);font-weight:600;cursor:pointer;text-decoration:underline dotted}
+.claimref:hover{color:var(--fg)}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}
+details{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 16px;margin:14px 0}
+summary{cursor:pointer;font-weight:600;padding:8px 0;font-size:15px}
+ul,ol{padding-left:22px} li{margin:4px 0}
+.num{font-variant-numeric:tabular-nums}
+.foot{margin-top:40px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:600px){ h1{font-size:22px} .wrap{padding:20px 14px 60px} table{font-size:12.5px} }
+</style>
+</head>
+<body>
+<nav class="toc"><div class="wrap">
+  <a href="#summary">Summary</a><a href="#d1">D1 Consensus</a><a href="#d2">D2 Networking</a>
+  <a href="#d3">D3 Shell+Bundler</a><a href="#d4">D4 JS-lang</a><a href="#d5">D5 Money+Tests</a><a href="#d6">D6 Registration</a>
+  <a href="#cross">Cross-insights</a><a href="#rec">Recommendations</a><a href="#open">Open questions</a>
+  <a href="#sources">Sources</a><a href="#stale">Staleness</a><a href="#citcheck">Citation check</a>
+</div></nav>
+<div class="wrap">
+<header class="hero">
+  <div class="kicker">Deep Recon · Technical Research</div>
+  <h1>Equal-node JS cryptocurrency architecture</h1>
+  <div class="meta">
+    <span><b>Type</b> technical</span><span><b>Status</b> complete</span>
+    <span><b>Preset</b> standard</span><span><b>Validation</b> normal</span>
+    <span><b>Created</b> 2026-09-29</span><span><b>Updated</b> 2026-09-30</span>
+    <span><b>Claims</b> <span class="num">35 verified · 28 unverified · 0 overturned</span></span>
+  </div>
+  <div class="decision"><b>Decision this research serves:</b> the consensus + networking architecture for a JS cryptocurrency where every <i>running</i> node has an equal chance to mine (no ASIC, no stake advantage), simple enough that any developer can understand it — JS, libp2p, Electron + React, big.js, properly tested.</div>
+</header>
+
+<section id="summary">
+<h2>Executive summary</h2>
+<div class="card">
+<ol>
+<li><b>Consensus — slot-paced low-difficulty PoW on native sha256, per-slot identity tickets, non-scaling registration cost.</b> The deep dive's headline is an <i>absence</i>: no deployed coin delivers true P≈f(uptime) — every live family uses a <i>parallelizable</i> resource, which 2026 theory shows makes N-identity Sybil at near-zero cost <span class="claimref" onclick="go('D1.1')">[D1.1]</span>. The fix is in the <i>registration economics</i> (an entry cost capping odds at 1× per operator without scaling the reward) — no deployed system fills that gap <span class="claimref" onclick="go('D1.9')">[D1.9]</span> — and the D6 deepening now proposes the mechanism: a Bounded Participation Channel (per-slot re-verification, τ per operator) behind a one-time personhood gate <span class="claimref" onclick="go('D6.5')">[D6.5]</span><span class="claimref" onclick="go('D6.14')">[D6.14]</span>. Low-difficulty PoW is the simplest family to implement and unit-test in JS <span class="claimref" onclick="go('D1.12')">[D1.12]</span>; native sha256 (measured 3 GB/s) makes one-hash-per-slot trivially reachable <span class="claimref" onclick="go('D5.1')">[D5.1]</span>. Avoid VDF time anchors: Ethereum abandoned its Minroot-VDF plan after a discovered attack <span class="claimref" onclick="go('D1.5')">[D1.5]</span>.</li>
+<li><b>Networking — tcp + noise + yamux + gossipsub; static bootstrap at genesis, mDNS for LAN, DHT deferred; circuit-relay v2 for desktop nodes behind home NATs.</b> All current, production-proven js-libp2p 3.3.11 components <span class="claimref" onclick="go('D2.1')">[D2.1]</span><span class="claimref" onclick="go('D2.5')">[D2.5]</span><span class="claimref" onclick="go('D2.15')">[D2.15]</span>. Bonus: a first-party <code>electron-main</code> test target <span class="claimref" onclick="go('D2.18')">[D2.18]</span> and a socket-free memory transport <span class="claimref" onclick="go('D2.16')">[D2.16]</span> make the network layer testable in CI and in the app.</li>
+<li><b>Shell + bundler — Electron main process hosting a pure-Node core package; Vite 8 (Rolldown) for the React UI.</b> Electron's main process <i>is</i> Node, so core, shell, and tests share one language and one test suite — the biggest "any developer can understand it" win. Tauri v2 is the named runner-up if bundle size/RAM becomes a hard gate (needs Rust + a Node sidecar; size numbers directionally solid but unverified) <span class="claimref" onclick="go('D3.5')">[D3.5]</span>.</li>
+<li><b>Money — big.js on the ledger path only.</b> Measured: big.js <code>plus</code> ≈ 8.6M ops/s but <code>times</code> ≈ 10.9K ops/s — <b>~1000× slower</b> — so the PoW/fee hot loop stays on node:crypto + integer counters, big.js materializes only when a block's balances commit <span class="claimref" onclick="go('D5.4')">[D5.4]</span><span class="claimref" onclick="go('D5.5')">[D5.5]</span>. Testing: plain-Node unit tests (no shell, no network) + fast-check property tests over ledger invariants.</li>
+</ol>
+<p><b>Biggest caveat:</b> the equal-node guarantee is only as strong as the registration/sybil-cost design — the project's <i>novel</i> contribution. D6 now proposes the concrete form (one-time personhood gate + per-slot BPC ticket + uptime election), but it rests on single-group 2026 preprints and has <i>no</i> deployed precedent; it needs a spec + attack pass before launch (Open question #1). Everything else is solved, standard, and verified.</p>
+</div>
+</section>
+
+<section id="d1">
+<h2>D1 · Equal-chance-per-node consensus <span class="sub">(deep dive)</span></h2>
+<p><b>The property, precisely:</b> P≈f(uptime), not f(hashrate) and not f(stake). Headline: <b>no deployed system could be evidenced that delivers it.</b> Every live family weights by a parallelizable resource — and 2026 theory formalizes why that fails the property: "can be subdivided across many identities at negligible marginal cost, making linear Sybil cost fundamentally unattainable" <span class="claimref" onclick="go('D1.1')">[D1.1]</span>.</p>
+<table>
+<thead><tr><th>Family</th><th>"Equal" it guarantees</th><th>Attack profile</th><th>JS build cost</th></tr></thead>
+<tbody>
+<tr><td>Slot-paced low-difficulty PoW</td><td>None node-equal — odds still f(hashrate) <span class="claimref" onclick="go('D1.2')">[D1.2]</span></td><td>hashrate-Sybil, selfish mining <span class="claimref" onclick="go('D1.8')">[D1.8]</span></td><td><b>Lowest</b>: one hash-vs-target check, seeded unit tests <span class="claimref" onclick="go('D1.12')">[D1.12]</span></td></tr>
+<tr><td>VRF lottery (registered nodes)</td><td>Per-key; as deployed stake-weighted, multi-key = wealth→odds <span class="claimref" onclick="go('D1.3')">[D1.3]</span></td><td>seed manipulation (look-back k=40–70 <span class="claimref" onclick="go('D1.9')">[D1.9]</span>)</td><td>Moderate: VRF + look-back + credential verification</td></tr>
+<tr><td>Proof-of-Activity</td><td>Neither portion node-equal <span class="claimref" onclick="go('D1.4')">[D1.4]</span></td><td>inherits both</td><td>Moderate</td></tr>
+<tr><td>Proof-of-space (Chia)</td><td>Per unit stored space — <b>broke</b>: ~50% compression attacks <span class="claimref" onclick="go('D1.6')">[D1.6]</span></td><td>disk-Sybil linear in disks</td><td>High: plot gen + kernel churn</td></tr>
+<tr><td>Proof of Commitment (2026)</td><td>Only 2024–26 design aimed at f(uptime); research stage <span class="claimref" onclick="go('D1.7')">[D1.7]</span></td><td>unproven at scale</td><td>High/unknown</td></tr>
+</tbody>
+</table>
+<p><b>Attack ordering for equal-node designs</b> <span class="claimref" onclick="go('D1.8')">[D1.8]</span><span class="claimref" onclick="go('D1.9')">[D1.9]</span>: (1) <b>Sybil/identity duplication IS the 51% path</b> — no hashrate floor; (2) long-range is worse than in Bitcoin — no accumulated work anchors history, and VDF anchors are risky (Ethereum abandoned Minroot-VDF <span class="claimref" onclick="go('D1.5')">[D1.5]</span>); (3) selfish mining: Eyal–Sirer finds the vanilla-Bitcoin profitability threshold is close to zero (1/3 bound), while the often-cited 25% is the threshold of their <i>proposed</i> fix — plan for "small pools can profit," not "only 25%+ pools". <b>The open design point:</b> a <b>non-scaling sybil-cost entry</b> (caps odds at 1×/operator, doesn't scale reward) — no deployed system uses one; stake-weighted lotteries have a documented compounding ratchet <span class="claimref" onclick="go('D1.11')">[D1.11]</span>.</p>
+</section>
+
+<section id="d2">
+<h2>D2 · libp2p networking for a small node</h2>
+<p><b>Recommended minimal stack (2026):</b> js-libp2p 3.3.11 (2026-09-02, 392 dependents on npm, production in Lodestar/Helia/HOPR/OrbitDB) <span class="claimref" onclick="go('D2.1')">[D2.1]</span><span class="claimref" onclick="go('D2.5')">[D2.5]</span>. Examples' Node default: <b>tcp + noise + yamux</b> <span class="claimref" onclick="go('D2.2')">[D2.2]</span>; floodsub "not suitable for production" → gossipsub <span class="claimref" onclick="go('D2.3')">[D2.3]</span>. Legacy components carry <b>no</b> npm <code>deprecated</code> flag — deprecation lives in docs only <span class="claimref" onclick="go('D2.4')">[D2.4]</span>.</p>
+<p><b>Bootstrap + discovery (10 → few thousand nodes)</b> — three documented layers <span class="claimref" onclick="go('D2.8')">[D2.8]</span>: static bootstrap list <span class="claimref" onclick="go('D2.6')">[D2.6]</span> → mDNS (LAN) <span class="claimref" onclick="go('D2.7')">[D2.7]</span> → Kad-DHT (deferred; no documented node-count threshold). <b>NAT traversal:</b> circuit-relay v2 is the documented behind-NAT pattern <span class="claimref" onclick="go('D2.11')">[D2.11]</span>; WebSockets the outbound-only workaround <span class="claimref" onclick="go('D2.12')">[D2.12]</span>; WebRTC/WebTransport exist but NAT behavior unverified <span class="claimref" onclick="go('D2.13')">[D2.13]</span> (no production NAT docs retrievable <span class="claimref" onclick="go('D2.14')">[D2.14]</span>). <b>Testability:</b> <code>@libp2p/memory</code> = socket-free full-stack tests <span class="claimref" onclick="go('D2.16')">[D2.16]</span>; multidim-interop conformance suite <span class="claimref" onclick="go('D2.17')">[D2.17]</span>; first-party <code>electron-main</code> test target (verified, contradiction resolved — lives in <code>@libp2p/utils</code>) <span class="claimref" onclick="go('D2.18')">[D2.18]</span>.</p>
+</section>
+
+<section id="d3">
+<h2>D3 · Desktop shell + bundler <span class="sub">(select shape, deepened)</span></h2>
+<p><b>The reframe:</b> js-libp2p's <code>@libp2p/tcp</code> and <code>@libp2p/mdns</code> are Node-only — a full node is a Node.js process regardless of shell <span class="claimref" onclick="go('D3.1')">[D3.1]</span>. The shell is a UI client <i>on top of</i> a Node core.</p>
+<table>
+<thead><tr><th></th><th>Electron</th><th>Tauri v2</th><th>Wails</th></tr></thead>
+<tbody>
+<tr><td>Core language</td><td>JS (Node)</td><td><b>Rust</b></td><td>Go</td></tr>
+<tr><td>Where core runs</td><td><b>main process — plain Node, same test suite</b></td><td>Node sidecar, through Rust</td><td>Node sidecar</td></tr>
+<tr><td>New language</td><td>none</td><td>Rust</td><td>Go</td></tr>
+<tr><td>Bundle / RAM</td><td>large (Chromium)</td><td>small <span class="claimref" onclick="go('D3.5')">[D3.5]</span></td><td>small</td></tr>
+</tbody>
+</table>
+<p><b>Bundler:</b> Vite 8 (8.3.1, 80M+ weekly dl) — its build is powered by <b>Rolldown</b> (Rust-based, Rollup-compatible). Vite and Rolldown are not rivals; drop webpack. <b>Verdict:</b> Electron (one language for core+shell+tests); Tauri the runner-up if size/RAM is a hard gate; on v2 (3.0.0 is alpha) <span class="claimref" onclick="go('D3.4')">[D3.4]</span>. <b>Load-bearing structural decision:</b> the core is a pure Node package with zero UI imports — testable in CI without a shell, and the shell becomes swappable <span class="claimref" onclick="go('D3.6')">[D3.6]</span>.</p>
+</section>
+
+<section id="d4">
+<h2>D4 · JavaScript as a blockchain language</h2>
+<p><b>The precedent:</b> <b>Lodestar</b> — production TypeScript Ethereum PoS consensus client on Beacon Chain mainnet <span class="claimref" onclick="go('D4.1')">[D4.1]</span>, actively maintained (v1.49.0, 2026-09-28) <span class="claimref" onclick="go('D4.2')">[D4.2]</span>, and the <b>only TypeScript entry</b> in ethereum.org's consensus-client table <span class="claimref" onclick="go('D4.5')">[D4.5]</span>. That one project proves a JS node can do sync/libp2p/consensus/24-7-storage at real-chain scale.</p>
+<p><b>What the JS node offloads:</b> everything in TS except the crypto hot path — consensus-critical crypto runs through native Zig modules (lodestar-z, NAPI), compression → WASM, networking → worker threads <span class="claimref" onclick="go('D4.3')">[D4.3]</span>. No documented JS mining hashrate exists <span class="claimref" onclick="go('D4.11')">[D4.11]</span>. Implication: keep the per-attempt hash in <b>native node:crypto</b> with a JS/BigInt counter. <b>Counter-evidence, honestly:</b> the JS <i>execution</i> layer never reached production (EthereumJS client is beta/testnet-only <span class="claimref" onclick="go('D4.6')">[D4.6]</span>); no "JS failed" incident found, no two-source failure claim asserted <span class="claimref" onclick="go('D4.13')">[D4.13]</span>; bcoin npm frozen 2018 (caution flag <span class="claimref" onclick="go('D4.9')">[D4.9]</span>); HOPR status unresolvable this run <span class="claimref" onclick="go('D4.10')">[D4.10]</span>. <b>Settled toolchain</b> (two projects agree): TypeScript + Vitest, pnpm + Node 24 <span class="claimref" onclick="go('D4.12')">[D4.12]</span>.</p>
+</section>
+
+<section id="d5">
+<h2>D5 · big.js money + testing strategy</h2>
+<p class="sub">Measured this run on the project machine (Node v24.14.0, macOS arm64, big.js 7.0.1; <code>bench/bench-results.json</code>).</p>
+<table>
+<thead><tr><th>Operation</th><th>Rate</th><th>Ref</th></tr></thead>
+<tbody>
+<tr><td>node:crypto sha256</td><td class="num"><b>3.085 GB/s</b></td><td><span class="claimref" onclick="go('D5.1')">[D5.1]</span></td></tr>
+<tr><td>js-sha3 keccak256 (pure JS)</td><td class="num"><b>0.0896 GB/s</b> — ~35× slower</td><td><span class="claimref" onclick="go('D5.2')">[D5.2]</span></td></tr>
+<tr><td>BigInt add</td><td class="num">~385M ops/s</td><td><span class="claimref" onclick="go('D5.3')">[D5.3]</span></td></tr>
+<tr><td>big.js <code>plus</code> (money-sized)</td><td class="num">~8.6M ops/s</td><td><span class="claimref" onclick="go('D5.4')">[D5.4]</span></td></tr>
+<tr><td>big.js <code>times</code> (bounded)</td><td class="num"><b>~10.9K ops/s</b> — ~1000× slower than plus</td><td><span class="claimref" onclick="go('D5.5')">[D5.5]</span></td></tr>
+</tbody>
+</table>
+<p>Load-bearing: (a) big.js multiply is ~1000× add — a structural O(n·m) property <span class="claimref" onclick="go('D5.5')">[D5.5]</span>; (b) native sha256 is ~35× cheaper per byte than pure-JS keccak — a sha256-based mining hash fits "simple JS + low difficulty" <span class="claimref" onclick="go('D5.2')">[D5.2]</span>; (c) exactness is the reason for big.js: <code>0.1+0.2</code> is <code>0.30000000000000004</code> in float but <code>"0.3"</code> in big.js <span class="claimref" onclick="go('D5.8')">[D5.8]</span>; <code>JSON.stringify(Big)</code>→string, <code>JSON.stringify(BigInt)</code> throws <span class="claimref" onclick="go('D5.6')">[D5.6]</span>. <b>Design consequence:</b> big.js on the ledger path only, never the PoW hot loop <span class="claimref" onclick="go('D5.9')">[D5.9]</span>; integer base-units (BigInt) for bulk <span class="claimref" onclick="go('D5.10')">[D5.10]</span>; plain-Node + fast-check property tests for ledger invariants <span class="claimref" onclick="go('D5.11')">[D5.11]</span>.</p>
+</section>
+
+<section id="d6">
+<h2>D6 · The registration design <span class="sub">(deep dive — the novel open question)</span></h2>
+<p><b>Headline:</b> 2026 preprint theory pins down what a non-scaling entry cost requires — a <b>throughput-bounded, non-transferable, window-local</b> resource — and proves money/compute/storage are all amortizable (C(s,T)=o(sT)) so they can't be the cost basis <span class="claimref" onclick="go('D6.2')">[D6.2]</span><span class="claimref" onclick="go('D6.3')">[D6.4]</span>. The one mechanism with a <i>provable</i> linear cost floor is the <b>Bounded Participation Channel</b>: re-verify every identity with a fresh, identity-bound, real-time, throughput-bounded challenge <b>every slot</b> — C(s,T) ≥ sT/τ_h <span class="claimref" onclick="go('D6.5')">[D6.5]</span>. No deployed system uses it: closest are one-time proof-of-personhood (World ID, BrightID) and refundable stake-scaled PoS bonds <span class="claimref" onclick="go('D6.10')">[D6.10]</span><span class="claimref" onclick="go('D6.11')">[D6.11]</span><span class="claimref" onclick="go('D6.12')">[D6.12]</span>.</p>
+<p><b>Why a plain fee/deposit fails:</b> money has all four forbidden parallelizability properties — it splits across 1,000 identities, reuses across windows, transfers between them, and influence is additive in it. Once bought, marginal cost vanishes; concave fee→power mappings still show 1,172×–4,039× Sybil amplification under Quadratic Voting <span class="claimref" onclick="go('D6.2')">[D6.2]</span><span class="claimref" onclick="go('D6.9')">[D6.9]</span>.</p>
+<table>
+<thead><tr><th>Family</th><th>Non-scaling?</th><th>Main attack</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Fixed fee / refundable deposit</td><td>No — money amortizes <span class="claimref" onclick="go('D6.2')">[D6.2]</span></td><td>buy N for N·F; "deposit more"</td><td>deployed (PoS default) <span class="claimref" onclick="go('D6.12')">[D6.12]</span></td></tr>
+<tr><td>Non-parallelizable entry proof (VDF/space-time)</td><td>Potentially — must be re-paid per window; one-shot bounds creation only</td><td>farm outsourcing; VDF-attack risk (D1.5)</td><td>academic</td></tr>
+<tr><td>Proof-of-personhood / social-graph</td><td>At <i>creation</i> only, not survival <span class="claimref" onclick="go('D6.10')">[D6.10]</span><span class="claimref" onclick="go('D6.11')">[D6.11]</span></td><td>Orb centralization / fake-iris; colluding vouching clusters</td><td>deployed (World ID, BrightID)</td></tr>
+<tr><td><b>BPC (per-window re-verification)</b></td><td><b>Yes — provable</b> C(s,T) ≥ sT/τ_h <span class="claimref" onclick="go('D6.5')">[D6.5]</span></td><td>τ-erosion by AI solvers (97–100% accuracy measured yet still throughput-bounded <span class="claimref" onclick="go('D6.6')">[D6.6]</span>)</td><td>academic (hash-based, 4 challenge families)</td></tr>
+</tbody>
+</table>
+<p><b>Recommended composition (DESIGN, to carry to a spec)</b> <span class="claimref" onclick="go('D6.14')">[D6.14]</span>: (1) <b>one-time personhood gate</b> (World-ID-style or open social-graph) mints one base identity per operator → flat, non-buyable entry; (2) <b>per-slot BPC ticket</b> — fresh identity-bound proof within the slot window over a channel with τ <b>per operator, not per identity</b> → marginal <i>survival</i> cost positive; (3) <b>uptime-weighted election</b> among valid tickets → P≈f(uptime) within the capped set. Must-holds: τ per-operator; window-local (no carry-over); pluggable gate; stop re-verifying → lose eligibility.</p>
+<p><b>Honest caveats:</b> D6.2–D6.4 are <b>single-group 2026 preprints</b> (unpeer-reviewed); the BPC AI numbers are the authors' own eval <span class="claimref" onclick="go('D6.6')">[D6.6]</span>; Gitcoin Passport + VDF-for-registration specifics were not verifiable this run <span class="claimref" onclick="go('D6.13')">[D6.13]</span>. Theoretically grounded, <b>not yet deployed</b> — spec + attack pass before launch is still mandatory.</p>
+</section>
+
+<section id="cross">
+<h2>Cross-dimension insights</h2>
+<ol>
+<li><b>The "equal node" requirement and the JS runtime converge on the same architecture.</b> D1 (per-identity scarce resource) + D5 (native hash, big.js out of the hot loop) + D4 (production JS client offloads crypto) all point to: <b>slot-based election + native sha256 + identity tickets</b>, JS/TS owning state/networking/accounting.</li>
+<li><b>The desktop shell is the cheapest decision — if the core is a pure Node package.</b> D3's zero-UI-imports seam is what makes D2's <code>electron-main</code> target and D4's Vitest toolchain both apply.</li>
+<li><b>Sybil cost is the coin's economic design, not its consensus code.</b> The hard, novel work is the registration/economics spec — not the hashing or networking, which are solved.</li>
+<li><b>Network size sets discovery complexity.</b> bootstrap + mDNS (+ DHT if needed) and look-back k=40–70 are both sized for a small, mostly-stable peer set.</li>
+</ol>
+</section>
+
+<section id="rec">
+<h2>Recommendations</h2>
+<ol>
+<li><b>Consensus:</b> slot-paced low-difficulty PoW (sha256), per-slot identity tickets, non-scaling registration cost. <span class="badge b-medium">medium</span> — mechanism standard; equal-node guarantee rests on novel registration economics.</li>
+<li><b>Long-range anchoring:</b> keep a PoW-like work anchor; do not use a VDF. <span class="badge b-medium">medium-high</span> — D1.5 single-sourced; double-source Buterin blog + ACM cryptanalysis.</li>
+<li><b>Networking:</b> tcp + noise + yamux + gossipsub; static bootstrap, mDNS, DHT deferred; circuit-relay v2 for NAT. <span class="badge b-verified">high</span> for components, <span class="badge b-medium">medium</span> for NAT story.</li>
+<li><b>Shell + bundler:</b> Electron main process hosting a pure-Node core; Vite 8 (Rolldown); core = <code>packages/core</code>, zero shell imports. <span class="badge b-verified">high</span> (Tauri size <span class="badge b-unverified">unverified</span>).</li>
+<li><b>Money:</b> big.js on ledger path only, integer base-units for bulk, native sha256 + integer counter in the PoW loop. <span class="badge b-verified">high</span> (self-measured).</li>
+<li><b>Testing:</b> plain-Node unit tests (Vitest), <code>@libp2p/memory</code> for socket-free network tests, fast-check property tests for ledger invariants. <span class="badge b-medium">medium-high</span></li>
+</ol>
+</section>
+
+<section id="open">
+<h2>Open questions</h2>
+<ul>
+<li><b>What makes a second identity cost ≥ the first without scaling the reward?</b> The coin's novel contribution; unsolved by any deployed system. Needs its own design + attack pass.</li>
+<li>How many nodes before bootstrap+mDNS stop sufficing and the DHT is warranted? No documented threshold.</li>
+<li>What fraction of a real chain's nodes run a JS client, and what does that do to 24/7 GC/heap at this scale?</li>
+<li>HOPR's current status (second non-Ethereum TS+libp2p precedent) — unresolvable this run, all paths 404.</li>
+<li>VDF abandonment double-source (D1.5) — single-sourced via IACR survey; retrieve Buterin blog + ACM cryptanalysis.</li>
+<li>WebRTC host-to-host NAT behavior for desktop nodes — hypothesis only.</li>
+</ul>
+</section>
+
+<section id="sources">
+<h2>Source appendix</h2>
+<details open>
+<summary>43 sources — click a <span class="claimref">[ref]</span> above to jump here</summary>
+<div id="srcbody"></div>
+</details>
+</section>
+
+<section id="stale">
+<h2>Staleness map</h2>
+<p class="sub">From the claims ledger (<code>recon_kit.py staleness</code>; windows per the technical pack: versions 1 mo · ecosystem 6 mo · performance 6 mo · mechanism/failure/architecture 24 mo). <b>6 stale claims, earliest re-check 2004-03-01.</b> (D6 deepening added D6.1, the Douceur 2002 Sybil theorem — now the oldest.)</p>
+<table>
+<thead><tr><th>Ref</th><th>Class</th><th>Pub</th><th>Re-check</th><th>Why</th></tr></thead>
+<tbody>
+<tr class="stale"><td><span class="claimref" onclick="go('D6.1')">[D6.1]</span></td><td>mechanism</td><td>2002-03</td><td class="num">2004-03-01</td><td>Douceur Sybil theorem — the canonical impossibility the whole D6 registration design rests on; 24 yrs old; confirm no 2024–26 result refines the bound</td></tr>
+<tr class="stale"><td><span class="claimref" onclick="go('D1.8')">[D1.8]</span></td><td>failure</td><td>2013-11</td><td class="num">2015-11-01</td><td>Eyal–Sirer selfish-mining profitability (vanilla ≈ 0; 25% = proposed fix) — 12+ yrs old; confirm relay assumptions still hold</td></tr>
+<tr class="stale"><td><span class="claimref" onclick="go('D1.4')">[D1.4]</span></td><td>mechanism</td><td>2014-10</td><td class="num">2016-10-01</td><td>Proof-of-Activity reward split — check for newer node-equal variants</td></tr>
+<tr class="stale"><td><span class="claimref" onclick="go('D1.3')">[D1.3]</span></td><td>mechanism</td><td>2017-05</td><td class="num">2019-05-01</td><td>VRF lottery / Algorand sortition — re-check vs Ouroboros line before finalizing tickets</td></tr>
+<tr class="stale"><td><span class="claimref" onclick="go('D1.9')">[D1.9]</span></td><td>architecture</td><td>2017-05</td><td class="num">2019-05-01</td><td>Look-back k=40–70 seed defense — same Algorand source</td></tr>
+<tr class="stale"><td><span class="claimref" onclick="go('D1.11')">[D1.11]</span></td><td>mechanism</td><td>2024-01</td><td class="num">2026-01-01</td><td>Stake-lottery compounding ratchet — closest to the 2-yr pattern bar</td></tr>
+</tbody>
+</table>
+<p>Everything else re-checks no earlier than <b>2026-10-01</b> (versions-compat class, the normal 1-month cycle). The stale set is exactly the foundational consensus-theory claims — least likely to have changed; a 1-hour literature pass on the next Refresh, not a blocker.</p>
+<p><b>D6-specific:</b> the load-bearing cost-theoretic claims (D6.2–D6.4) are fresh 2026 preprints, so the date window isn't the risk — <b>peer-review status is</b>. Track whether arXiv:2605.29651v2 and arXiv:2609.35300 survive peer review on the next Refresh; if a result is overturned, the D6.14 recommended composition (Recommendation #1) is the downstream artifact that changes.</p>
+</section>
+<section id="citcheck">
+<h2>Semantic citation check <span class="sub">(2026-09-30, finalize step 2)</span></h2>
+<p>A fresh-context subagent re-fetched the 8 load-bearing sources and checked whether each source <i>says</i> what the text claims (not merely implies). No findings were rewritten; where a source didn't fully support the phrasing, the claim text was corrected and confidence adjusted. <b>Net: 3 fully supported, 5 partially supported — all 5 corrections applied above.</b> No claim overturned; no source unreachable.</p>
+<table>
+<thead><tr><th>Ref</th><th>Verdict</th><th>What was fixed</th></tr></thead>
+<tbody>
+<tr><td><span class="claimref" onclick="go('D1.1')">[D1.1]</span></td><td><span class="badge b-verified">supported</span></td><td>None — abstract matches nearly verbatim.</td></tr>
+<tr><td><span class="claimref" onclick="go('D1.5')">[D1.5]</span></td><td><span class="badge b-verified">supported</span></td><td>None — source says "VDF replacing RANDAO" / Minroot VDF + Buterin 29/10/2025.</td></tr>
+<tr><td><span class="claimref" onclick="go('D1.8')">[D1.8]</span></td><td><span class="badge b-medium">partial</span></td><td>25% is the threshold of the paper's <i>proposed</i> fix, not vanilla Bitcoin (vanilla ≈ 0, 1/3 bound). Narrative + staleness row + SRC corrected; confidence high→medium.</td></tr>
+<tr><td><span class="claimref" onclick="go('D1.6')">[D1.6]</span></td><td><span class="badge b-medium">partial</span></td><td>8,000× is hash-work vs a 1-bit-drop attack, not "8000× larger filter." SRC corrected.</td></tr>
+<tr><td><span class="claimref" onclick="go('D2.5')">[D2.5]</span></td><td><span class="badge b-medium">partial</span></td><td>npm page shows <b>392 dependents</b>, not 12K. Corrected; version 3.3.11 confirmed.</td></tr>
+<tr><td><span class="claimref" onclick="go('D3.2')">[D3.2]</span></td><td><span class="badge b-medium">partial</span></td><td>Cited page supports only the sidecar mechanism; "Rust backend" / "Node only via sidecar" not on that page. SRC + confidence high→medium.</td></tr>
+<tr><td><span class="claimref" onclick="go('D4.1')">[D4.1]</span></td><td><span class="badge b-verified">supported</span></td><td>None — "production-ready consensus client implementation written in Typescript" (ethereum.org).</td></tr>
+<tr><td><span class="claimref" onclick="go('D4.3')">[D4.3]</span></td><td><span class="badge b-medium">partial</span></td><td>README says "Zig consensus modules… exposed to Node.js through NAPI bindings"; "BLS" is not in the description. Softened; confidence kept high.</td></tr>
+</tbody>
+</table>
+</section>
+<div class="foot">Deep Recon · technical research · equal-node JS cryptocurrency architecture. Generated 2026-09-30 from the run folder <code>research-equal-node-js-cryptocurrency-architectur</code>. This page is a presentation of the markdown report — same claims, numbers, citations; not a second source of truth. Self-contained; renders offline.</div>
+</div>
+<script>
+const SRC = [
+["D1.1","Sybil theorem: parallelizable resources -> N identities at ~zero cost","arXiv 2601.04813","2026-01","2026-09-29","medium","https://arxiv.org/abs/2601.04813"],
+["D1.2","Low-difficulty PoW: odds f(hashrate); VDF/PoSW = the complex part","MDPI Entropy","2025-01","2026-09-29","medium","https://www.mdpi.com/1099-4300/28/1/33"],
+["D1.3","VRF lottery mechanism; stake-weighted as deployed; multi-key = wealth->odds","arXiv + Algorand","2017-05","2026-09-29","verified","https://arxiv.org/abs/1607.01341"],
+["D1.4","Proof-of-Activity: reward split, neither portion node-equal","ACM + crypto.com","2014-10","2026-09-29","verified","https://dl.acm.org/doi/10.1145/2695533.2695545"],
+["D1.5","Ethereum abandoned Minroot-VDF (Buterin 2025-10-29)","IACR 2025/637","2026-02","2026-09-29","low","https://eprint.iacr.org/2025/637"],
+["D1.6","Chia PoS1 ~50% compression (Mad Max/Dr. Plotter); PoS2 ~8000x hash-work vs 1-bit-drop, fork Nov 2026","Chia Network","2026-04","2026-09-29","medium","https://www.chia.net/2026/04/30/proof-of-space-2-0-community-qa-summary/"],
+["D1.7","PoCmt: only 2026 design targeting f(uptime); research stage","arXiv 2601.04813","2026-01","2026-09-29","medium","https://arxiv.org/abs/2601.04813"],
+["D1.8","Selfish mining: vanilla threshold ≈ 0 (1/3 bound); 25% = proposed fix; cost axis = registered identities","arXiv 1311.0243","2013-11","2026-09-29","medium","https://arxiv.org/abs/1311.0243"],
+["D1.9","Look-back k=40-70 defends seed manipulation / fresh-identity 51%","arXiv + IACR","2017-05","2026-09-29","verified","https://arxiv.org/abs/1607.01341"],
+["D1.10","Namecoin low-hashrate via merged mining (weak evidence)","WhatToMine","2026-09","2026-09-29","low","https://whattomine.com/coins/55-nmc-sha-256"],
+["D1.11","Stake-weighted lottery compounding ratchet","ScienceDirect","2024-01","2026-09-29","medium","https://www.sciencedirect.com/science/article/pii/S2096720924000356"],
+["D1.12","JS simplicity ranking of consensus families","synthesis","2026-09","2026-09-29","decision",""],
+["D2.1","Current first-class js-libp2p module set","js-libp2p + npm","2026-09","2026-09-29","verified","https://github.com/libp2p/js-libp2p"],
+["D2.2","Example default = tcp + noise + yamux","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.3","floodsub not for production -> gossipsub","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.4","Legacy components carry no npm deprecated flag","npm registry","2026-09","2026-09-29","medium","https://registry.npmjs.org/@libp2p/floodsub"],
+["D2.5","js-libp2p 3.3.11 (2026-09-02), 392 dependents on npm","npm registry","2026-09","2026-09-29","verified","https://registry.npmjs.org/libp2p"],
+["D2.6","Static bootstrap list = first-nodes pattern","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.7","mDNS LAN discovery, Node-only","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.8","bootstrap + mDNS + DHT = three discovery layers","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.9","pubsub-peer-discovery for browser/Electron peers","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.10","discv5 = Ethereum UDP/ENR discovery, 12.0.2","npm registry","2026-08","2026-09-29","medium","https://registry.npmjs.org/@chainsafe/discv5"],
+["D2.11","circuit-relay v2 = documented behind-NAT pattern","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.12","WebSockets = practical outbound NAT workaround","js-libp2p-examples","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p-examples"],
+["D2.13","WebRTC/WebTransport first-class (NAT behavior unverified)","js-libp2p + npm","2026-09","2026-09-29","low","https://github.com/libp2p/js-libp2p"],
+["D2.14","GAP: no production NAT docs retrievable (Lodestar/HOPR/Helia)","—","—","2026-09-29","unverified",""],
+["D2.15","Current component versions (gossipsub 17.1.2, yamux 8.0.3, ...)","npm registry","2026-09","2026-09-29","verified","https://registry.npmjs.org/@libp2p/gossipsub"],
+["D2.16","@libp2p/memory = socket-free in-process test transport","transport-memory","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p"],
+["D2.17","multidim-interop conformance suite + test:interop","js-libp2p interop","2026-09","2026-09-29","medium","https://github.com/libp2p/js-libp2p"],
+["D2.18","First-party aegir electron-main test target (@libp2p/utils, root)","repo package.json","2026-09","2026-09-30","verified","https://raw.githubusercontent.com/libp2p/js-libp2p/main/package.json"],
+["D3.1","js-libp2p tcp/mdns Node-only; ws/webrtc/webtransport browser set","js-libp2p","2026-09","2026-09-29","verified","https://github.com/libp2p/js-libp2p"],
+["D3.2","Tauri sidecar = external binary via shell plugin (Node.js named as example); 'Rust backend'/'Node only via sidecar' not on cited page","tauri.app","2026-09","2026-09-29","medium","https://tauri.app/develop/sidecar/"],
+["D3.3","Electron 44.5.0 / 45.0.0-alpha; @electron-forge/cli 8.0.1","npm registry","2026-09","2026-09-29","verified","https://registry.npmjs.org/electron"],
+["D3.4","@tauri-apps/cli 2.12.0; 3.0.0-alpha.3","npm registry","2026-09","2026-09-29","verified","https://registry.npmjs.org/@tauri-apps/cli"],
+["D3.5","Tauri smaller/lower-RAM than Electron (no bundled Chromium)","tauri.app","2026-09","2026-09-29","unverified","https://tauri.app/"],
+["D3.6","Structural: core = pure Node package, zero UI imports","lead synthesis","2026-09","2026-09-29","decision",""],
+["D4.1","Lodestar = production TS Ethereum PoS client on mainnet","ethereum.org + ChainSafe","2026-09","2026-09-30","verified","https://ethereum.org/en/developers/docs/nodes-and-clients/"],
+["D4.2","Lodestar v1.49.0 (2026-09-28), 262 releases, TS 98.4%","npm + repo","2026-09","2026-09-30","verified","https://registry.npmjs.org/@chainsafe/lodestar"],
+["D4.3","Lodestar offloads consensus crypto -> native Zig modules (lodestar-z NAPI), compression -> WASM, net -> workers","ChainSafe/lodestar-z","2026-09","2026-09-30","verified","https://github.com/ChainSafe/lodestar-z"],
+["D4.4","Lodestar 24/7 envelope: >=8GB heap, 8-16GB RAM, 130-200GB SSD","lodestar docs","2026-09","2026-09-30","medium","https://chainsafe.github.io/lodestar/"],
+["D4.5","Lodestar = only TS entry in ethereum.org consensus-client table","ethereum.org","2026-07","2026-09-30","medium","https://ethereum.org/en/developers/docs/nodes-and-clients/"],
+["D4.6","EthereumJS = library-grade; JS execution client beta/testnet-only","ethereumjs + ethereum.org","2026-09","2026-09-30","verified","https://github.com/ethereumjs/ethereumjs-monorepo"],
+["D4.7","Polkadot JS = SDK (RPC wrappers), not a node","npm @polkadot/api","2026-09","2026-09-30","medium","https://registry.npmjs.org/@polkadot/api"],
+["D4.8","helia 7.1.16 (2026-09-29), active","npm registry","2026-09","2026-09-30","medium","https://registry.npmjs.org/helia"],
+["D4.9","bcoin npm frozen at 1.0.2 (2018) - caution flag","npm registry","2018-07","2026-09-30","low","https://registry.npmjs.org/bcoin"],
+["D4.10","GAP: HOPR status unresolvable this run (all paths 404)","—","—","2026-09-30","unverified",""],
+["D4.11","No documented JS mining hashrate; signal = native/WASM offloads","search + repo","2026-09","2026-09-30","medium","https://github.com/ChainSafe/lodestar"],
+["D4.12","Settled toolchain: TS + Vitest; pnpm + Node 24","two repos","2026-09","2026-09-30","verified","https://github.com/ChainSafe/lodestar"],
+["D4.13","No documented JS failure/migration; no two-source failure claim","absence","2026-09","2026-09-30","medium",""],
+["D5.1","node:crypto sha256 = 3.085 GB/s (local bench)","bench-results.json","2026-09","2026-09-29","verified",""],
+["D5.2","js-sha3 keccak256 = 0.0896 GB/s, ~35x slower (local bench)","bench-results.json","2026-09","2026-09-29","verified",""],
+["D5.3","BigInt add ~385M ops/s (local bench)","bench-results.json","2026-09","2026-09-29","verified",""],
+["D5.4","big.js plus ~8.6M ops/s money-sized (local bench)","bench/diag.js","2026-09","2026-09-29","verified",""],
+["D5.5","big.js times ~10.9K ops/s = ~1000x slower; unbounded quadratic","bench/diag.js","2026-09","2026-09-29","verified",""],
+["D5.6","JSON.stringify(Big) -> string; BigInt throws (local bench)","bench/diag.js","2026-09","2026-09-29","verified",""],
+["D5.7","10K values 11.8 B/value; big.js ~37% bigger RSS than BigInt","bench-results.json","2026-09","2026-09-29","verified",""],
+["D5.8","0.1+0.2 float trap vs big.js 0.3 (local bench)","bench-results.json","2026-09","2026-09-29","verified",""],
+["D5.9","Design: big.js on ledger path only, out of PoW hot loop","lead synthesis","2026-09","2026-09-29","decision",""],
+["D5.10","Design: fee = amount x rate is the one ledger times","lead synthesis","2026-09","2026-09-29","decision",""],
+["D5.11","Testing: plain-Node + fast-check property tests for ledger","lead recommendation","2026-09","2026-09-29","unverified",""],
+["D6.1","Sybil theorem: no trusted authority => unlimited identity always possible","Douceur, IPTPS 2002","2002-03","2026-09-30","medium","https://link.springer.com/chapter/10.1007/3-540-45668-3_29"],
+["D6.2","C(s,T)=o(sT): parallelizable resources admit amortization","arXiv 2605.29651v2","2026-05","2026-09-30","medium","https://arxiv.org/abs/2605.29651"],
+["D6.3","C(s,T)=Omega(sT): throughput-bounded, non-transferable, window-local => linear cost","arXiv 2605.29651v2","2026-05","2026-09-30","medium","https://arxiv.org/abs/2605.29651"],
+["D6.4","Resource Substitution: reaching Omega(sT) needs non-parallelizable resource; protocol redesign can't","arXiv 2605.29651v2","2026-05","2026-09-30","medium","https://arxiv.org/abs/2605.29651"],
+["D6.5","BPC: per-window identity-bound, real-time, throughput-bounded re-verification; C(s,T) >= sT/tau_h","arXiv 2609.35300","2026-09","2026-09-30","medium","https://arxiv.org/abs/2609.35300"],
+["D6.6","BPC AI eval: GPT-4o/Gemini 2.5 Flash/Claude Sonnet 4.5 at 97-100% accuracy yet throughput-bounded","arXiv 2609.35300","2026-09","2026-09-30","low","https://arxiv.org/abs/2609.35300"],
+["D6.7","Human Challenge Oracle: CAPTCHA/personhood addresses creation, not survival","arXiv 2601.03923","2026-01","2026-09-30","unverified","https://arxiv.org/abs/2601.03923"],
+["D6.8","PoCmt on registration: parallelizable => zero marginal Sybil cost; human-time => linear","arXiv 2601.04813","2026-01","2026-09-30","medium","https://arxiv.org/abs/2601.04813"],
+["D6.9","Concave money mappings fail: QV shows 1,172x-4,039x Sybil amplification on 5 DAOs","arXiv 2605.18990","2026-05","2026-09-30","unverified","https://arxiv.org/abs/2605.18990"],
+["D6.10","World ID: one-time Orb (iris+MPC+Semaphore) => one human one id; ZK, open-source, Orb-gated","world.org","2026-09","2026-09-30","medium","https://world.org/world-id/"],
+["D6.11","BrightID: open social-graph proof-of-uniqueness; weakness = colluding vouching clusters","brightid.org","2026-09","2026-09-30","medium","https://www.brightid.org/"],
+["D6.12","ABSENCE: no deployed permissionless system has flat non-scaling entry; PoS bonds = refundable + stake-scaled (Eth 32-ETH)","ethereum.org + absence","2026-09","2026-09-30","medium","https://ethereum.org/en/staking/"],
+["D6.13","Gitcoin Passport = Sybil-resistance scoring (not a hard cap)","-","-","2026-09-30","unverified",""],
+["D6.14","DESIGN: one-time personhood gate + per-slot BPC ticket (tau per operator) + uptime election; 4 must-holds","lead synthesis","2026-09","2026-09-30","decision",""]
+];
+function esc(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function badge(l){
+  if(l==="verified")return'<span class="badge b-verified">verified</span>';
+  if(l==="unverified")return'<span class="badge b-unverified">unverified</span>';
+  if(l==="decision")return'<span class="badge b-decision">decision</span>';
+  if(l==="low")return'<span class="badge b-low">low</span>';
+  return'<span class="badge b-medium">medium</span>';
+}
+function build(){
+  const rows=SRC.map(r=>{
+    const [ref,claim,pub,pubdate,acc,conf,url]=r;
+    const link=url?`<a href="${esc(url)}" target="_blank" rel="noopener">${esc(pub)}</a>`:esc(pub);
+    return`<tr id="src-${ref}"><td><a href="#src-${ref}">[${esc(ref)}]</a></td><td>${esc(claim)}</td><td>${link}</td><td class="num">${esc(pubdate)}</td><td class="num">${esc(acc)}</td><td>${badge(conf)}</td></tr>`;
+  }).join("");
+  document.getElementById("srcbody").innerHTML=
+    `<table><thead><tr><th>Ref</th><th>Claim / finding</th><th>Publisher (link)</th><th>Pub</th><th>Accessed</th><th>Confidence</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function go(ref){const el=document.getElementById("src-"+ref);if(el){el.scrollIntoView({behavior:"smooth",block:"center"});el.style.outline="2px solid var(--accent)";setTimeout(()=>el.style.outline="",1400);}}
+build();
+</script>
+</body>
+</html>

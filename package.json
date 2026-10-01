@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "big.js": "^7.0.1",
+    "js-sha3": "^0.13.0"
+  }
+}

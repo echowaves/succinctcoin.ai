@@ -1,0 +1,217 @@
+[
+ {
+  "claim": "VRF lottery (Algorand sortition) = per-slot selection primitive; as deployed stake-weighted, paper documents multi-key copies as wealth->odds channel (arXiv 1607.01341 + Algorand Foundation).",
+  "class": "mechanism",
+  "pub_date": "2017-05"
+ },
+ {
+  "claim": "Proof-of-Activity splits reward PoW-miner/PoS-voters; neither portion node-equal in any published variant (ACM 2014 + crypto.com glossary).",
+  "class": "mechanism",
+  "pub_date": "2014-10"
+ },
+ {
+  "claim": "Algorand look-back k=40-70 is the documented defense vs seed manipulation / fresh-identity 51% in lottery designs (arXiv 1607.01341 + IACR 2025/637 + arXiv 1311.0243).",
+  "class": "architecture",
+  "pub_date": "2017-05"
+ },
+ {
+  "claim": "Sybil theorem: parallelizable resources -> N identities at negligible marginal cost -> linear Sybil cost unattainable (arXiv 2601.04813).",
+  "class": "mechanism",
+  "pub_date": "2026-01"
+ },
+ {
+  "claim": "Slow/low-difficulty PoW: odds still f(hashrate); verifiable-sequential-work (VDF/PoSW) is where crypto complexity lives (MDPI Entropy survey).",
+  "class": "mechanism",
+  "pub_date": "2025-01"
+ },
+ {
+  "claim": "Ethereum abandoned Minroot-VDF plan after discovered attack (IACR 2025/637, citing Buterin blog 2025-10-29); double-source pending.",
+  "class": "failure",
+  "pub_date": "2026-02"
+ },
+ {
+  "claim": "Chia PoS1 ~50% plot-size compression attacks (Mad Max/Dr. Plotter); PoS2 adds ~8000x compute filter, hard fork Nov 2026 (Chia Q&A).",
+  "class": "failure",
+  "pub_date": "2026-04"
+ },
+ {
+  "claim": "PoCmt = only 2024-2026 design targeting probability approx f(uptime) via non-parallelizable human-time; research stage, not deployed (arXiv 2601.04813).",
+  "class": "mechanism",
+  "pub_date": "2026-01"
+ },
+ {
+  "claim": "Selfish mining profitable from ~25%; for equal-node designs the cost axis is 25-50% of registered identities, not hashrate (Eyal-Sirer arXiv 1311.0243).",
+  "class": "failure",
+  "pub_date": "2013-11"
+ },
+ {
+  "claim": "Namecoin low-hashrate survival via merged mining; weak evidence for equal-node property (WhatToMine/r-Namecoin, calculators).",
+  "class": "ecosystem",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Stake-weighted lotteries suffer documented compounding ratchet (ScienceDirect 2024).",
+  "class": "mechanism",
+  "pub_date": "2024-01"
+ },
+ {
+  "claim": "JS simplicity ranking: slot-paced PoW < VRF lottery < PoA < proof-of-space < human-challenge PoCmt.",
+  "class": "architecture",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "js-libp2p current first-class modules: tcp/websockets/webrtc/webtransport/memory; noise/plaintext; yamux/mplex; gossipsub/floodsub; bootstrap/mdns/kad-dht (README + npm registry).",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "js-libp2p latest stable 3.3.11 (2026-09-02), 12K dependents, 237 contributors, maintainers achingbrain + libp2p npm account (npm registry, this-run check).",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Current component versions: gossipsub 17.1.2, yamux 8.0.3, noise 17.0.3, kad-dht 16.4.5, memory 2.0.28 (npm registry).",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "js-libp2p has first-party aegir electron-main test target (packages/utils, aggregated at repo root) - libp2p in Electron main process is a tested configuration (repo package.json, lead spot-check 2026-09-30).",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "floodsub documented 'not suitable for production use, use gossipsub' (js-libp2p-examples README).",
+  "class": "failure",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Official examples de-facto Node default = tcp + noise + yamux (js-libp2p-examples).",
+  "class": "architecture",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "First-nodes pattern = static @libp2p/bootstrap list (js-libp2p-examples).",
+  "class": "mechanism",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "circuit-relay-v2 = documented behind-NAT pattern (js-libp2p-examples).",
+  "class": "mechanism",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "@libp2p/memory = in-process socket-free test transport for full-stack tests (transport-memory README).",
+  "class": "mechanism",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "GAP: no Lodestar/HOPR/Helia production NAT-traversal docs retrievable this run.",
+  "class": "failure",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Lodestar = production TypeScript Ethereum PoS consensus client on Beacon Chain mainnet (ethereum.org + repo AGENTS.md).",
+  "class": "mechanism",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Lodestar v1.49.0 (2026-09-28), 262 releases, 150 contributors, TS 98.4% (npm registry + repo).",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Lodestar offloads BLS to native Zig module (lodestar-z, NAPI bindings), compression to WASM, networking to worker threads (repo + lodestar-z repo, lead spot-check 2026-09-30).",
+  "class": "mechanism",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "EthereumJS = library-grade; JS execution client listed (beta), testnet-only, no production JS execution client (ethereumjs repo + ethereum.org).",
+  "class": "ecosystem",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Settled JS crypto-daemon toolchain: TypeScript + Vitest (Lodestar & EthereumJS); pnpm + Node 24 in Lodestar (two repos).",
+  "class": "ecosystem",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Lodestar 24/7 envelope: >=8GB Node heap, 8-16GB RAM, 130-200GB SSD (chainsafe.github.io docs, single publisher).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Lodestar = only TS entry in ethereum.org consensus-client table (Rust/Go/Java/Nim rest).",
+  "class": "ecosystem",
+  "pub_date": "2026-07"
+ },
+ {
+  "claim": "bcoin npm frozen at 1.0.2 (2018) - caution flag, repo activity unverified.",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "GAP: HOPR status unresolvable this run, all retrieval paths 404.",
+  "class": "failure",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "No documented JS mining hashrate found; only signal = Lodestar native/WASM crypto offloads.",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "No documented JS failure/'left JS' migration found; no two-source failure claim asserted.",
+  "class": "failure",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "node:crypto sha256 = 3.085 GB/s (local bench, Node 24.14.0 macOS arm64).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "js-sha3 keccak256 = 0.0896 GB/s, ~35x slower than native sha256 (local bench).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "BigInt add ~385M ops/s (local bench).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "big.js 7.0.1 plus ~8.6M ops/s money-sized (local bench).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "big.js times ~10.9K ops/s money-sized = ~1000x slower than plus; unbounded chained times goes quadratic to 300k digits (local bench).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "JSON.stringify(Big) -> string via toJSON; JSON.stringify(BigInt) throws (local bench).",
+  "class": "versions-compat",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "10K money values: 11.8 B/value; big.js ~37% bigger RSS than BigInt, GC-noisy (local bench).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "0.1+0.2 float = 0.30000000000000004 vs big.js '0.3' (local bench).",
+  "class": "performance",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Design: big.js on ledger path only, never in PoW hot loop; native sha256 + integer counter per attempt.",
+  "class": "architecture",
+  "pub_date": "2026-09"
+ },
+ {
+  "claim": "Testing: plain-Node runner + fast-check property tests (conservation, no-negative-balance, fee invariants) for the ledger.",
+  "class": "architecture",
+  "pub_date": "2026-09"
+ }
+]

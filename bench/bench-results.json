@@ -1,0 +1,48 @@
+{
+  "node": "v24.14.0",
+  "platform": "darwin arm64",
+  "ts": "2026-09-30T12:55:44.540Z",
+  "sha256": {
+    "iters": 512,
+    "inputKB": 1024,
+    "totalMB": 512,
+    "ms": 165.9,
+    "GBps": 3.085
+  },
+  "keccak256": {
+    "iters": 2048,
+    "inputKB": 64,
+    "totalMB": 128,
+    "ms": 1428.7,
+    "GBps": 0.0896
+  },
+  "bigint": {
+    "ops": 2000000,
+    "ms": 5.2,
+    "addOpsPerSec": null
+  },
+  "bigjs": {
+    "ops": 500000,
+    "addMs": 49.1,
+    "addOpsPerSec": null,
+    "mulMs": 49573.5,
+    "mulOpsPerSec": null
+  },
+  "exactness": {
+    "float": 0.30000000000000004,
+    "bigjs": "0.3",
+    "floatScaled": 30,
+    "bigjsScaled": "30"
+  },
+  "serialization": {
+    "values": 10000,
+    "bytesPerValue": 11.8,
+    "stringify100xMs": 120.9,
+    "parse100xMs": 33.6
+  },
+  "memory": {
+    "note": "rough RSS deltas, GC-noisy, 100k values each",
+    "bigjsDeltaKB": 1072,
+    "bigintDeltaKB": 784
+  }
+}
