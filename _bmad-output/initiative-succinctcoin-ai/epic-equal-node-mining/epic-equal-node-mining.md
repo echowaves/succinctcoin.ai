@@ -1,0 +1,59 @@
+---
+type: epic
+title: "Slot-based mining: slot loop, verifiable draw, PoW hot path, applyBlock"
+parent: initiative-succinctcoin-ai
+covers: ["CAP-1"]
+after: []
+assignee: ""
+risk: high
+estimate: ""
+estimate_basis: ""
+---
+
+# Slot-based mining: slot loop, verifiable draw, PoW hot path, applyBlock
+
+## Description
+
+Implement `core/consensus`: the chain-time slot loop, the **single pinned** `drawWindow()` (the verifiable public-coin draw), the per-attempt PoW hot path (`node:crypto` sha256 + integer counter), and the `applyBlock` invocation that wires consensus to the ledger. Blocks carry the winner's ticket + nonce; the block hash is sha256 over the canonical protobuf `Block` encoding (AD-12). The launch gate test proves an unselected node cannot win a slot. This epic **defines the `Ticket` interface the draw consumes** (the proto message shape + the draw's input set); the identity epic (epic 4) conforms real tickets to that interface, so neither side invents its own.
+
+## Outcome
+
+For the team: a running node's chance to mine is a function of uptime alone — in a multi-node simulation an always-up node wins slots at the expected rate regardless of hardware, and no node wins without a valid per-slot ticket that the public-coin draw selects — so the coin's core promise (uptime-only, no hashrate/stake advantage) is demonstrable.
+
+## Requirements
+
+Reuses the parent's id; the epic adds lines for the draw and the hot path.
+
+- R1 (CAP-1) — every running node's probability of winning a mining slot is proportional to uptime alone — independent of CPU/GPU hashrate and stake — with the per-slot target trivially reachable by commodity hardware.
+- R2 (AD-7) — the draw is exactly one exported `drawWindow(tickets, challenge, weights)` in `core/consensus`; winner = argmin `c^uptime` where `c = H(nonce‖challenge)` read uniform in (0,1) — higher uptime ⇒ higher win probability (minimizing `c^(1/uptime)` is banned — it inverts fairness). Input set = tickets accepted at or before the previous window's last block; late tickets never invalidate an accepted block. ≥3 fixed test vectors ship; the verifier and all tests import it — re-implementation is banned.
+- R3 (AD-6) — per-attempt PoW = `node:crypto` sha256 + plain integer counter; `big.js` and pure-JS keccak are banned from per-attempt code paths. The block hash = sha256 over the canonical protobuf encoding of the `Block` message, counter included as a field; the PoW check re-hashes exactly those bytes.
+- R4 (AD-3) — every protocol decision (window index, lookback, ticket validity, draw, difficulty) uses chain time (slot count + last block hash); wall clock is display-only.
+- R5 (AD-2) — `applyBlock(block)` is the single mutation path, invoked only by the consensus loop; it receives a fully validated domain block and credits the reward through the ledger.
+- E1 (difficulty) — the difficulty/target adjustment algorithm is settled by a spike in this epic; it must keep "commodity hardware reaches one hash per slot trivially" (CAP-1 success) true.
+
+## Done when
+
+- In a multi-node simulation on the memory transport, a single always-up node wins slots at the expected slot rate regardless of the hardware it runs on.
+- No node can win a slot without a valid per-slot ticket; a block whose (ticket, nonce) does not verify the draw is rejected.
+- The launch gate test passes: a node not selected by the draw cannot produce a valid block.
+- The per-attempt PoW path references only `node:crypto` sha256 + an integer counter (verified by a lint/import check); the measured throughput stays within the AD-6 limits.
+- A block's hash recomputed from its canonical protobuf encoding matches the stored hash; the counter round-trips.
+
+## Boundaries
+
+The slot-based-mining capability: `core/consensus` slot loop, draw, PoW, difficulty, and the `applyBlock` wiring. It does NOT implement the ledger arithmetic (epic 2), identity/tickets (epic 4 — it consumes their verified tickets), or networking (epic 5). Non-goals: the spec's non-goals (no proof-of-space, no merge-mining/PoA).
+
+## References
+
+- parent — `_bmad-output/initiative-succinctcoin-ai/initiative-succinctcoin-ai.md`, section Requirements
+- architecture — `_bmad-output/initiative-succinctcoin-ai/architecture-succinctcoin/architecture-succinctcoin.md`, sections AD-2, AD-3, AD-6, AD-7, AD-12, Consistency Conventions
+- registration — `_bmad-output/initiative-succinctcoin-ai/spec-succinctcoin/registration-design.md`, section R2 (verifiable public-coin draw)
+- spec — `_bmad-output/initiative-succinctcoin-ai/spec-succinctcoin/spec-succinctcoin.md`, section CAP-1
+- testing — `_bmad-output/initiative-succinctcoin-ai/spec-succinctcoin/testing.md`
+
+## Notes
+
+- Open question (spike here): the difficulty/target adjustment algorithm — must keep the per-slot target trivially reachable by commodity hardware.
+- Waits on epic 1 because: it needs the proto `Block` message (AD-12) and the chainstore adapter to hash and persist blocks.
+- Waits on epic 2 because: `applyBlock` credits the reward through the ledger (AD-2 single mutation path).
+- Assumption: sha256 (not keccak) is the PoW + block-hash primitive, per the bench (sha256 ~35× faster than pure-JS keccak) and AD-6.

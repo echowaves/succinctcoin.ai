@@ -1,0 +1,56 @@
+# tickets.toml — the initiative's agreed epics in build order. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names an epic for good
+# and is never reused; it is not an order. A child in another epic refers to an epic's entries as
+# <epic id>.<entry id>; "epic-<slug>" gates on the whole epic.
+
+[[epic]]
+id = 1
+slug = "epic-platform-baseline"
+title = "Platform baseline: scaffold, CI, core skeleton, test harness"
+covers = []
+# after = []
+
+[[epic]]
+id = 2
+slug = "epic-exact-money-ledger"
+title = "Exact money: ledger, amounts, conservation invariants"
+covers = ["CAP-5"]
+after = [{ epic = 1, needs = "core skeleton (ports, events, store adapter) + test harness + proto skeleton" }]
+
+[[epic]]
+id = 3
+slug = "epic-equal-node-mining"
+title = "Slot-based mining: slot loop, verifiable draw, PoW hot path, applyBlock"
+covers = ["CAP-1"]
+after = [
+  { epic = 1, needs = "proto Block message (AD-12) + chainstore adapter" },
+  { epic = 2, needs = "ledger for reward crediting inside applyBlock (AD-2)" },
+]
+
+[[epic]]
+id = 4
+slug = "epic-operator-identity"
+title = "Operator identity: tickets, gate verifier port, re-attestation, acceptance cap"
+covers = ["CAP-2"]
+after = [
+  { epic = 1, needs = "proto Ticket message (AD-12)" },
+  { epic = 3, needs = "drawWindow contract + its fixed test vectors (AD-7) to conform tickets to" },
+]
+
+[[epic]]
+id = 5
+slug = "epic-node-network"
+title = "Node network: libp2p adapter, gossipsub topics, discovery, relay, sync"
+covers = ["CAP-3"]
+after = [
+  { epic = 1, needs = "libp2p adapter scaffold + memory transport in the harness" },
+  { epic = 3, needs = "working blocks to propagate" },
+  { epic = 4, needs = "valid tickets + verified identity for block authorship" },
+]
+
+[[epic]]
+id = 6
+slug = "epic-desktop-app"
+title = "Desktop app: Electron shell, IPC bridge, React UI, packaging"
+covers = ["CAP-4", "CAP-6"]
+after = [{ epic = 5, needs = "a full, working node core to host and drive" }]

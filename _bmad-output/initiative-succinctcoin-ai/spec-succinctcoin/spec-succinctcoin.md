@@ -5,6 +5,7 @@ companions:
   - registration-design.md
   - testing.md
   - ../research-equal-node-js-cryptocurrency-architectur/research-equal-node-js-cryptocurrency-architectur.md
+  - ../architecture-succinctcoin/architecture-succinctcoin.md
 sources: []
 ---
 
