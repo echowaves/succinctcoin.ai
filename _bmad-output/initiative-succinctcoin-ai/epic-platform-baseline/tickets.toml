@@ -1,0 +1,73 @@
+# tickets.toml — epic-platform-baseline's agreed children (inception 2026-10-01).
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good
+# and is never reused; it is not an order. Sibling refs are bare numbers.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Workspace + headless test harness"
+description = "Stands up the pnpm + TypeScript 5.x workspace and the headless test harness (Vitest 5 + fast-check + @libp2p/memory) so pnpm test runs green in plain Node with no shell and no real sockets."
+verify = "From a fresh clone, after the user runs pnpm install, pnpm test passes in plain Node with at least one trivial green test and one @libp2p/memory smoke test, using no shell and no real sockets."
+covers = ["E4"]
+after = []
+hitl = true
+risk = "low"
+unknown = "npm registry is not reachable from the agent sandbox — the user runs pnpm install; the agent runs pnpm test once node_modules exists."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Core skeleton + public surface + ports"
+description = "Creates packages/core as a pure-Node package with zero UI imports and the spine's seams: the net/store/clock/gate/ui-sink port interfaces, and core/events/ owning the event types, commands, and read-API (getPeers, getBlock) that is the complete UI data source."
+verify = "packages/core compiles and a test or lint rule proves zero imports of electron or any UI library; the five port interfaces exist and core/events/ exposes getPeers and getBlock on the read-API."
+covers = ["E1"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Genesis config + boot validation"
+description = "Authors config/genesis.json (bootstrap list, emission params, K, L, accepted-gate registry, protocol version) and makes the core validate it at boot, failing fast on a malformed config."
+verify = "The core parses and validates config/genesis.json at boot; a test with a malformed config (wrong type or missing field) fails fast with a clear error, and the valid genesis loads."
+covers = ["E5"]
+after = [2]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 4
+type = "story"
+title = "protocol.proto + generated types + golden vector"
+description = "Authors packages/core/proto/protocol.proto as the single source of truth for Block, Tx, Ticket, and PeerInfo (field sets and numbering), generates the TS protocol types via protons (banning hand-written protocol types), and ships a golden round-trip vector (fixed block + ticket hex) that passes encode then decode."
+verify = "pnpm build generates the protocol types from protocol.proto, a hand-written protocol type fails lint or typecheck, and the golden round-trip vector (fixed block + ticket hex) passes through the encoder and decoder with identical bytes."
+covers = ["E2"]
+after = [2]
+hitl = false
+risk = "high"
+plan_checkpoint = true
+unknown = "the exact field numbering is settled by the builder per AD-12 (big-endian fixed-width inside digests, decimal strings only in scalar fields); changing it later is a protocol change (genesis version bump)."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Chainstore + exclusive lock"
+description = "Implements the chainstore port and its file adapter with an exclusive store lock (write lock plus data-directory lockfile) that persists the canonical wire bytes, and makes a second core instance against the same directory fail at boot."
+verify = "A block's canonical wire bytes persist and reload byte-identical through the store, and starting a second core against the same store directory fails at boot with a clear error."
+covers = ["E3"]
+after = [2, 4]
+hitl = false
+risk = "medium"
+unknown = "the store engine (SQLite, LevelDB, or custom) is a code-level choice per AD-9, decided when this story starts."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Refactor sweep + closing headless verification"
+description = "Runs the closing refactor sweep (cleanup only, scope set from the build records and deferred review findings) and confirms the whole harness is green headless — the epic's Done-when."
+verify = "pnpm test and pnpm build both pass in plain Node with no shell and no real sockets, and all six Done-when checks of the epic are satisfied (generated types, golden vector, second-instance lock, no UI imports, genesis boot-validation, memory transport)."
+covers = []
+after = [1, 2, 3, 4, 5]
+hitl = false
+risk = "low"

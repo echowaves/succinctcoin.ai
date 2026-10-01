@@ -55,4 +55,6 @@ The platform-baseline capability: the repo scaffold, the core skeleton's seams (
 
 - Assumption: TS 5.x as the default toolchain (spine Stack); 7.0.2 tsgo is a documented opt-in, not the default.
 - Decision: 2026-10-01 — `core/events/` is the single owner of the public surface (event types + commands + read-API); capability epics add to it but do not define their own summary types (AD-1/AD-9 tightening).
-- Waits on nothing.
+- Decision: 2026-10-01 (inception, autonomous — user away) — breakdown approved as drafted: 5 stories + closing sweep, build order 1→2→{3∥4}→5→6. Story 1 is the tracer bullet (thin pnpm+Vitest+memory path). Stories 3 (genesis) and 4 (proto) run in parallel — disjoint code, shared setup owned by story 2. Story 4 is high-risk (it defines the field numbering every capability epic conforms to) and carries `plan_checkpoint = true`. No `done_checkpoints` (too heavy for a baseline epic). Publication = `auto` (repo store: the committed `tickets.toml` is the publish).
+- Deferred scope (stays in the epic, not a story): concrete store-engine choice (SQLite/LevelDB/custom — decided at story 5 per AD-9 "code-level choice, not an invariant"); the exact proto field numbering (settled at story 4 per AD-12, a protocol change if it moves later).
+- Waits on nothing (opening epic).
