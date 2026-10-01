@@ -1,0 +1,27 @@
+# Review — good-spine rubric walk
+
+**Verdict: PASS with 4 fixes. The spine fixes the right divergence points, every AD is enforceable in spirit (5 of 11 need letter-tightening — the adversarial reviewer has the exact Rules), it covers all six capabilities, and it ratifies the spec. Two real gaps: the operational envelope is one line, not a dimension, and the spec's "big.js records all money" constraint is refined by AD-5 in a way the spine must state as a refinement (not a contradiction).**
+
+## Checklist
+
+| # | Item | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Fixes real divergence points for the level below | **PASS** | 11 ADs target exactly where two units one level down (consensus/ledger/identity/net/store/main/UI/tests) could pick incompatibly; adversarial review confirms the ownership seams genuinely close |
+| 2 | Every AD's Rule is enforceable and prevents its divergence | **PARTIAL** | AD-1 (import lint), AD-3 (chain-time enum), AD-6 (primitive ban + perf test), AD-10 (memory transport), AD-11 (IPC boundary) are textual and lint/test-enforceable. AD-4 ("opaque"), AD-7 (class of f, not the f), AD-8 (encoding rule, not schema), AD-5 (wire only, not disk), AD-9 (no cross-instance exclusion), AD-1 (read-API shape) need letter-tightening — see adversarial F1–F8 |
+| 3 | Nothing under Deferred lets two units diverge | **PASS** | DHT threshold (AD-8 topics are DHT-agnostic), gate impls (AD-4 pins the verifier interface), K/L (genesis params, interface fixed), difficulty (consensus detail, CAP-1 success is the bound), UX (out of altitude), relay-operator (explicit [ASSUMPTION], WS fallback named) — none leaves a unit pair free to diverge |
+| 4 | Named tech verified-current | **PASS** | All 17 Stack rows match live npm `latest` (2026-10-01); see review-versions.md. Advisory: TS 7.0.2 default is an early bet on the native rewrite |
+| 5 | Covers the driving spec | **PASS, 1 refinement to state** | Capability map covers CAP-1..CAP-6. Non-goals preserved (no browser node → AD-1/paradigm hosts are Node-only; no DHT → Deferred). "No VDF" is preserved in registration-design R2 and the consensus map. "One language" preserved (paradigm + conventions). **Refinement to state explicitly:** spec constraint says "big.js records all money"; AD-5 says BigInt in memory + big.js at two boundaries. These agree (big.js is the *exact-decimal* recorder at the boundaries where decimals exist; integers don't need it), but the spine must say AD-5 *refines* the spec constraint, or a reader will flag it as a contradiction |
+| 6 | Every dimension owned is decided/deferred/open — esp. operational envelope | **PARTIAL** | The one "Operational envelope" constraint line covers relay + gate + environments + genesis, but for initiative altitude it is thin: no upgrade/fork policy (how does the network adopt a new gate — "protocol upgrade" is named but not decided), no node update channel (auto-update? manual?), no backup/restore, no monitoring/security-ops. These are the dimensions a domain-focused draft skips |
+| 7 | Diagrams valid and consistent with ADs | **PASS, 1 fix** | Hexagonal flowchart matches the paradigm; dependency diagram correctly shows UI→main→core with core→libp2p (and never edges back). ERD: `TICKET }o--|| WINDOW` ✓ (AD-3), `IDENTITY }o--|| GATE_CREDENTIAL` ✓ (AD-4), `BLOCK }o--|| IDENTITY : "minted by"` ✓ (AD-7) — but the ERD draws **two** BLOCK–IDENTITY edges ("wins slots" + "minted by") saying the same thing; consolidate to one |
+
+## Findings (fix list)
+
+1. **HIGH — operational envelope is a line, not a dimension (checklist 6).** Add a short "Operational envelope" block: upgrade/fork policy (protocol upgrades are the *only* gate-admission and parameter-change path — hard fork with coordinated restart, no soft forks, for a small community network), node updates (manual at launch; auto-update deferred), backup/restore (store directory IS the state; document it), security ops (gate compromise → revoke + K-window bound per registration-design). Keep it terse — the spine records decisions, not runbooks.
+2. **MEDIUM — state the AD-5 ⇄ spec-constraint refinement (checklist 5).** One line under AD-5: "Refines spec constraint 'big.js records all money': exact-decimal money is recorded via big.js at every boundary where a decimal exists; integer base units (BigInt) *are* exact records, so big.js is not needed in the integer path."
+3. **MEDIUM — ERD duplicate BLOCK–IDENTITY edge (checklist 7).** Merge `IDENTITY ||--o{ BLOCK : "wins slots"` and `BLOCK }o--|| IDENTITY : "minted by"` into one relationship.
+4. **LOW — no prose contradicts any AD; no AD is generic.** AD-2's Prevents even names its own failure mode (good). Conventions table is lean and each row binds. No spec-content re-telling detected beyond what the capability map legitimately bridges.
+5. **LOW — Stack table mixes verified (17 rows) with one [ASSUMPTION] (TS7).** Acceptable per the template (seed, code owns it); the versions reviewer recommends flipping the TS default to 5.x — that is a user call, not a spine defect.
+
+## Bottom line
+
+The spine is a sound build substrate at initiative altitude: right paradigm, right altitude, all capabilities mapped, every dimension either decided, deferred with a reason, or an open question. Apply the adversarial AD-tightenings (F1–F8), add the operational envelope block, state the big.js refinement, fix the ERD — then it is final.
