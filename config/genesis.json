@@ -1,0 +1,14 @@
+{
+  "protocolVersion": 1,
+  "bootstrap": [
+    "/ip4/103.192.173.112/tcp/4001/p2p/12D3KooWPLACEHOLDERA",
+    "/ip4/198.51.100.23/tcp/4001/p2p/12D3KooWPLACEHOLDERB"
+  ],
+  "emission": {
+    "blockReward": "12.5",
+    "maxSupply": "21000000"
+  },
+  "reattestationK": 100,
+  "uptimeLookbackL": 50,
+  "gates": ["biometric", "social-graph"]
+}

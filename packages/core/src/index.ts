@@ -111,3 +111,11 @@ export type {
   StorePort,
   UiSink,
 } from './ports.js'
+
+// Genesis config seam (the single owner of the genesis shape — boot validation).
+export {
+  GenesisConfigError,
+  loadGenesis,
+  validateGenesis,
+} from './config/index.js'
+export type { GenesisConfig, GenesisEmission } from './config/index.js'
