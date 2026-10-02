@@ -1,0 +1,99 @@
+import { describe, expect, it } from 'vitest'
+import { createCore } from '../src/index.js'
+import type { CorePorts } from '../src/ports.js'
+
+// Fake ports (no real network/store/clock). Matrix: FRESH_CORE, EVENT_SINK,
+// and UNIMPL_STUB.
+function makePorts(slot = 0): CorePorts {
+  return {
+    net: {
+      async start() {},
+      async stop() {},
+      async sendBlock() {},
+      async sendTicket() {},
+      async sendTx() {},
+      async peers() {
+        return []
+      },
+    },
+    store: {
+      async open() {},
+      async close() {},
+      async commit() {},
+      async headSlot() {
+        return -1
+      },
+    },
+    clock: {
+      slotIndex: () => slot,
+      lastBlockHash: () => '0'.repeat(64),
+    },
+    gate: {
+      async verify() {
+        return { valid: true, identityId: 'i', attestedUntilWindow: 1 }
+      },
+    },
+    uiSink: {
+      sink() {},
+    },
+  }
+}
+
+describe('createCore — wiring + surface (FRESH_CORE / EVENT_SINK / UNIMPL_STUB)', () => {
+  it('FRESH_CORE: returns an instance; on() subscribes; start() emits an event', () => {
+    const core = createCore(makePorts())
+    const off = core.on('CoreStarted', () => {})
+    expect(typeof off).toBe('function')
+    off()
+    expect(() => core.start()).not.toThrow()
+  })
+
+  it('EVENT_SINK: emitting an event reaches both the emitter and the ui-sink', () => {
+    const seen = { emitter: 0, sink: 0 }
+    const ports = makePorts()
+    ports.uiSink.sink = (event) => {
+      if (event === 'CoreStarted') seen.sink++
+    }
+    const core = createCore(ports)
+    const off = core.on('CoreStarted', () => {
+      seen.emitter++
+    })
+    core.emit('CoreStarted', { slot: 0 })
+    // Node EventEmitter.emit is synchronous, so both observers fired.
+    expect(seen.emitter).toBe(1)
+    expect(seen.sink).toBe(1)
+    off()
+  })
+
+  it('start() emits CoreStarted with the chain-time slot, forwarded to the sink', () => {
+    const ports = makePorts(7)
+    const payloads: unknown[] = []
+    ports.uiSink.sink = (event, ...args) => {
+      if (event === 'CoreStarted') payloads.push(args[0])
+    }
+    const core = createCore(ports)
+    core.start()
+    expect(payloads).toEqual([{ slot: 7 }])
+  })
+
+  it('UNIMPL_STUB: getPeers / getBlock / startMining fail with { code: SC-CORE-1 }', async () => {
+    const core = createCore(makePorts())
+    // startMining is a void command — throws synchronously.
+    let miningErr: unknown = null
+    try {
+      core.startMining()
+    } catch (e) {
+      miningErr = e
+    }
+    expect(miningErr).toBeInstanceOf(Error)
+    expect((miningErr as { code: string }).code).toBe('SC-CORE-1')
+    // getPeers / getBlock are Promise-typed — they reject (not sync-throw),
+    // carrying SC-CORE-1.
+    const peerErr: unknown = await core.getPeers().catch((e) => e)
+    expect(peerErr).toBeInstanceOf(Error)
+    expect((peerErr as { code: string }).code).toBe('SC-CORE-1')
+    const blockErr: unknown = await core.getBlock(3).catch((e) => e)
+    expect(blockErr).toBeInstanceOf(Error)
+    expect((blockErr as { code: string }).code).toBe('SC-CORE-1')
+  })
+})

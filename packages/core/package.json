@@ -16,6 +16,7 @@
     "@libp2p/noise": "17.0.3",
     "@libp2p/yamux": "8.0.3",
     "@multiformats/multiaddr": "13.0.3",
+    "@types/node": "24.9.2",
     "fast-check": "4.10.2",
     "libp2p": "3.3.11",
     "typescript": "5.9.2",
