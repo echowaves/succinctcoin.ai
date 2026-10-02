@@ -1,6 +1,17 @@
 {
+  "name": "succinctcoin",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "test": "node_modules/.bin/vitest run",
+    "typecheck": "node_modules/.bin/tsc -p packages/core/tsconfig.json",
+    "build": "node_modules/.bin/tsc -p packages/core/tsconfig.build.json"
+  },
   "devDependencies": {
     "big.js": "^7.0.1",
-    "js-sha3": "^0.13.0"
+    "js-sha3": "^0.13.0",
+    "typescript": "5.9.2",
+    "vitest": "5.0.3"
   }
 }

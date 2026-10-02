@@ -28,3 +28,6 @@ yarn-error.log*
 # Vite / tooling caches
 .vite/
 .eslintcache
+
+# bmad-build runtime snapshots (generated per run)
+_bmad/render/

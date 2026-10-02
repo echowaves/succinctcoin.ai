@@ -1,0 +1,24 @@
+{
+  "name": "@succinctcoin/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@libp2p/memory": "2.0.28",
+    "@libp2p/noise": "17.0.3",
+    "@libp2p/yamux": "8.0.3",
+    "@multiformats/multiaddr": "13.0.3",
+    "fast-check": "4.10.2",
+    "libp2p": "3.3.11",
+    "typescript": "5.9.2",
+    "vitest": "5.0.3"
+  }
+}
