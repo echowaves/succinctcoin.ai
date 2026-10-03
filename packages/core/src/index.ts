@@ -119,3 +119,16 @@ export {
   validateGenesis,
 } from './config/index.js'
 export type { GenesisConfig, GenesisEmission } from './config/index.js'
+
+// Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
+// message type + a codec namespace, generated from proto/protocol.proto.
+// `export { Block }` carries BOTH the type (field set) and the value (codec
+// namespace: `Block.encode`/`decode`/`codec`/`stream`) — see src/proto/index.ts.
+export {
+  Block,
+  PeerInfo,
+  Ticket,
+  Tx,
+  succinctcoin,
+} from './proto/index.js'
+export type { succinctcoinInput } from './proto/index.js'

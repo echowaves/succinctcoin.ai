@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json",
+    "generate:proto": "protons proto/protocol.proto -o src/proto/",
+    "build": "protons proto/protocol.proto -o src/proto/ && tsc -p tsconfig.build.json",
     "test:watch": "vitest"
   },
   "devDependencies": {
@@ -19,7 +20,11 @@
     "@types/node": "24.9.2",
     "fast-check": "4.10.2",
     "libp2p": "3.3.11",
+    "protons": "10.0.5",
+    "protons-runtime": "8.0.1",
     "typescript": "5.9.2",
+    "uint8arraylist": "3.0.2",
+    "uint8arrays": "6.1.1",
     "vitest": "5.0.3"
   }
 }

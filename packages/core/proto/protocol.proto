@@ -1,0 +1,84 @@
+// protocol.proto — the single source of truth for the SuccinctCoin wire
+// schema (AD-8/AD-12). TS protocol types are GENERATED from this file by
+// `protons` (see `generate:proto` in package.json); hand-written protocol
+// types are banned (AD-12) — the generated file lives in src/proto/ and is
+// committed so consumers + CI typecheck without a regen step.
+//
+// Conventions:
+//   - Inside cryptographic digests all integers are big-endian fixed-width
+//     (AD-12). NOTE: the golden vector (test/golden-vector.test.ts) pins the
+//     WIRE encoding (the protons round-trip; int64 = varint). The digest
+//     canonical encoding (BE fixed-width) is a DISTINCT serialization, defined
+//     and pinned when the digest math lands (epic 3 draw / epic 4 verify).
+//   - Money travels as decimal strings (AD-5) — Tx.amount / Tx.fee are
+//     `string`, never int64/float.
+//   - Identity / address fields are 32-byte hex strings (spine convention).
+//   - Changing any field number later is a protocol change (genesis
+//     version bump).
+syntax = "proto3";
+
+package succinctcoin;
+
+// A mined block. Carries the winner's ticket AND nonce so the draw is
+// verifiable from the block alone (AD-7). `hash` = sha256 over the canonical
+// encoding of this message (AD-6), counter (nonce) included; the canonical
+// digest form (BE fixed-width ints) is defined with the digest math (epic 3).
+message Block {
+  // Chain-time slot the block claims (AD-3).
+  int64 slot = 1;
+  // 32-byte hash of the previous block (big-endian fixed-width inside
+  // digests, AD-12).
+  bytes parentHash = 2;
+  // 32-byte hex identity id of the winner.
+  string winnerIdentityId = 3;
+  // Canonical encoding of the winner's Ticket (AD-7).
+  bytes winnerTicket = 4;
+  // The PoW counter — part of the block identity (AD-6).
+  bytes nonce = 5;
+  // sha256 over the canonical encoding of this message (AD-6).
+  bytes hash = 6;
+  // Number of transactions in the block.
+  int64 txCount = 7;
+}
+
+// A per-window proof-of-attestation (AD-4). The signature (epic 4 verifies
+// it) is over sha256(identityId || u64be(windowIndex) || challenge ||
+// nonceCommitment) (AD-12).
+message Ticket {
+  // 32-byte hex identity id of the minter.
+  string identityId = 1;
+  // Chain-time window the ticket is bound to (AD-3).
+  int64 windowIndex = 2;
+  // Window challenge (derived from the fork point; no replay across forks).
+  bytes challenge = 3;
+  // Commitment to the PoW nonce (draw input, AD-7).
+  bytes nonceCommitment = 4;
+  // Identity signature (verification owned by epic 4).
+  bytes signature = 5;
+}
+
+// A money movement. Amounts are decimal strings (AD-5), never int64/float.
+message Tx {
+  // 32-byte hex sender address.
+  bytes sender = 1;
+  // 32-byte hex recipient address.
+  bytes recipient = 2;
+  // Decimal string, integer base units (AD-5).
+  string amount = 3;
+  // Decimal string, integer base units (AD-5).
+  string fee = 4;
+  // Chain-time slot the tx is valid in (AD-3).
+  int64 slot = 5;
+  // Sender signature (verification owned by epic 5's ledger path).
+  bytes signature = 6;
+}
+
+// A discovered peer (AD-8 gossip surface).
+message PeerInfo {
+  // 32-byte hex peer id.
+  string peerId = 1;
+  // Multiaddr strings for this peer.
+  repeated string multiaddrs = 2;
+  // Uptime in chain-time slots (draw weight input, AD-7).
+  int64 uptime = 3;
+}
