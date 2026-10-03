@@ -5,6 +5,7 @@
   "packageManager": "pnpm@12.8.1",
   "scripts": {
     "test": "node_modules/.bin/vitest run",
+    "test:watch": "node_modules/.bin/vitest",
     "typecheck": "node_modules/.bin/tsc -p packages/core/tsconfig.json",
     "build": "packages/core/node_modules/.bin/protons packages/core/proto/protocol.proto -o packages/core/src/proto/ && node_modules/.bin/tsc -p packages/core/tsconfig.build.json"
   },
