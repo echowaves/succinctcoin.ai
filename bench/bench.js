@@ -9,8 +9,9 @@ const crypto = require("crypto");
 const Big = require("big.js");
 
 const log = (s) => console.error(`[bench] ${s}`);
+// Runaway guard only: the script exits 0 explicitly at the end (see bottom),
+// so this fires just if a benchmark section genuinely hangs.
 const watchdog = setTimeout(() => { log("WATCHDOG: 120s exceeded, exiting 124"); process.exit(124); }, 120_000);
-watchdog.unref ? null : null;
 
 const N = 2_000_000;
 const results = { node: process.version, platform: `${process.platform} ${process.arch}`, ts: new Date().toISOString() };
@@ -108,3 +109,7 @@ const out = path.join(__dirname, "bench-results.json");
 fs.writeFileSync(out, JSON.stringify(results, null, 2));
 console.log("wrote", out);
 console.log(JSON.stringify(results, null, 2));
+// Exit explicitly: without this the pending watchdog timer keeps the event
+// loop alive and the script hangs to the 120s watchdog (exit 124).
+clearTimeout(watchdog);
+process.exit(0);
