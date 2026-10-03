@@ -52,13 +52,15 @@ export interface CoreEventsEmitter {
 
 /**
  * Baseline command set (imperative names). `start`/`stop` are the baseline
- * lifecycle; `startMining` is a capability command — a stub throwing
+ * lifecycle and are `Promise`-typed: boot is async (the store opens at
+ * `start()` and can fail on lock contention, AD-9), and `stop` closes the
+ * store. `startMining` is a capability command — a stub throwing
  * `{ code: 'SC-CORE-1' }` until epic 3 implements it (AD-9: every command
  * resolves its promise once implemented).
  */
 export interface CoreCommands {
-  start(): void
-  stop(): void
+  start(): Promise<void>
+  stop(): Promise<void>
   startMining(): void
 }
 

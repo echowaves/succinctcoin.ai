@@ -23,6 +23,9 @@ function makePorts(slot = 0): CorePorts {
       async headSlot() {
         return -1
       },
+      async getBlock() {
+        return null
+      },
     },
     clock: {
       slotIndex: () => slot,
@@ -40,12 +43,12 @@ function makePorts(slot = 0): CorePorts {
 }
 
 describe('createCore — wiring + surface (FRESH_CORE / EVENT_SINK / UNIMPL_STUB)', () => {
-  it('FRESH_CORE: returns an instance; on() subscribes; start() emits an event', () => {
+  it('FRESH_CORE: returns an instance; on() subscribes; start() resolves without throwing', async () => {
     const core = createCore(makePorts())
     const off = core.on('CoreStarted', () => {})
     expect(typeof off).toBe('function')
     off()
-    expect(() => core.start()).not.toThrow()
+    await expect(core.start()).resolves.toBeUndefined()
   })
 
   it('EVENT_SINK: emitting an event reaches both the emitter and the ui-sink', () => {
@@ -65,14 +68,14 @@ describe('createCore — wiring + surface (FRESH_CORE / EVENT_SINK / UNIMPL_STUB
     off()
   })
 
-  it('start() emits CoreStarted with the chain-time slot, forwarded to the sink', () => {
+  it('start() emits CoreStarted with the chain-time slot, forwarded to the sink', async () => {
     const ports = makePorts(7)
     const payloads: unknown[] = []
     ports.uiSink.sink = (event, ...args) => {
       if (event === 'CoreStarted') payloads.push(args[0])
     }
     const core = createCore(ports)
-    core.start()
+    await core.start()
     expect(payloads).toEqual([{ slot: 7 }])
   })
 

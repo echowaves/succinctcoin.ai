@@ -58,14 +58,17 @@ export function createCore(ports: CorePorts): CoreInstance {
       emitter.emit(event, payload)
       ports.uiSink.sink(event, payload)
     },
-    start() {
-      // Baseline lifecycle: emit CoreStarted (AD-3: chain-time slot, not wall
-      // clock). Forwarded to the ui-sink via emit.
+    async start() {
+      // Boot: open the store FIRST (AD-9 — a contended data directory rejects
+      // here with SC-STORE-1, before any event is emitted), then emit
+      // CoreStarted (AD-3: chain-time slot, not wall clock).
+      await ports.store.open()
       this.emit('CoreStarted', { slot: ports.clock.slotIndex() })
     },
-    stop() {
-      // Baseline lifecycle: emit CoreStopped.
+    async stop() {
+      // Shutdown: emit CoreStopped, then close the store (releases the lock).
       this.emit('CoreStopped', { slot: ports.clock.slotIndex() })
+      await ports.store.close()
     },
     startMining() {
       // Capability command — owned by epic 3 (equal-node-mining). Stub.
@@ -119,6 +122,10 @@ export {
   validateGenesis,
 } from './config/index.js'
 export type { GenesisConfig, GenesisEmission } from './config/index.js'
+
+// File-backed chainstore adapter (AD-9 single-writer persistence): the
+// zero-dep engine + its SC-STORE-1 error.
+export { FileChainStore, StoreError } from './store/index.js'
 
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.

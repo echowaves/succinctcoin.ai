@@ -63,6 +63,12 @@ export interface StorePort {
   commit(block: unknown): Promise<void>
   /** Highest committed slot, or -1 for an empty chain. */
   headSlot(): Promise<number>
+  /**
+   * Read the stored canonical bytes for `slot`, or `null` if absent. Returns
+   * the stored wire bytes verbatim (no re-serialization) — the read path the
+   * persist/reload contract requires (1.5 completes the port's read surface).
+   */
+  getBlock(slot: number): Promise<Uint8Array | null>
 }
 
 /**
