@@ -115,6 +115,25 @@ export type {
   UiSink,
 } from './ports.js'
 
+// Exact-money ledger (AD-2/AD-5): the `apply` seam is the ledger's only
+// mutation path; balances are read via projections (`balanceOf`/
+// `totalSupply`) and serialized via `toJson` (decimal-string base units —
+// raw BigInt is banned from JSON). `toDisplay`/`fromDisplay` are the big.js
+// display boundary (AD-5's 2nd boundary; the fee boundary lands in 2.2).
+// The read-API projection of balances into `CoreReadApi` is a later epic's
+// concern — this is the additive surface only.
+export {
+  BASE_UNIT_DECIMALS,
+  LedgerError,
+  apply,
+  balanceOf,
+  fromDisplay,
+  toJson,
+  toDisplay,
+  totalSupply,
+} from './ledger/index.js'
+export type { BalanceMap, Transfer } from './ledger/index.js'
+
 // Genesis config seam (the single owner of the genesis shape — boot validation).
 export {
   GenesisConfigError,
