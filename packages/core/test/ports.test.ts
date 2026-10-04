@@ -27,6 +27,10 @@ const fake: CorePorts = {
     async getBlock() {
       return null
     },
+    async saveState() {},
+    async loadState() {
+      return null
+    },
   },
   clock: {
     slotIndex: () => 0,

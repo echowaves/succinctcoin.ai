@@ -58,10 +58,19 @@ export interface Transfer {
  *     amount outside the fee boundary's contract (non-plain-decimal rate,
  *     rate outside [0,1), negative amount). Kept distinct so a caller
  *     handling "balance went negative" never sees a "bad rate".
+ *   - `SC-LEDGER-4` — the state-decode boundary (`fromJson`): a persisted
+ *     balance value that is not a plain non-negative decimal-integer string
+ *     (exponential notation, fractional, non-decimal, empty, or negative).
+ *     A persisted balance is ≥ 0 by invariant, so a negative string is
+ *     corruption, not data. Kept distinct so a caller handling "balance went
+ *     negative" or "bad display string" never sees "corrupt on-disk state".
  */
 export class LedgerError extends Error {
-  readonly code: 'SC-LEDGER-1' | 'SC-LEDGER-2' | 'SC-LEDGER-3'
-  constructor(message: string, code: 'SC-LEDGER-1' | 'SC-LEDGER-2' | 'SC-LEDGER-3' = 'SC-LEDGER-1') {
+  readonly code: 'SC-LEDGER-1' | 'SC-LEDGER-2' | 'SC-LEDGER-3' | 'SC-LEDGER-4'
+  constructor(
+    message: string,
+    code: 'SC-LEDGER-1' | 'SC-LEDGER-2' | 'SC-LEDGER-3' | 'SC-LEDGER-4' = 'SC-LEDGER-1',
+  ) {
     super(message)
     this.name = 'LedgerError'
     this.code = code
@@ -138,5 +147,35 @@ export function totalSupply(balances: BalanceMap): bigint {
 export function toJson(balances: BalanceMap): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [id, units] of balances) out[id] = units.toString(10)
+  return out
+}
+
+/**
+ * JSON/wire boundary (AD-5) — the `toJson` inverse: a canonical state
+ * document (`identity → decimal-string base units`, as persisted by the
+ * store's `saveState`) → a new `BalanceMap`. Pure — no I/O, no mutation of
+ * any input.
+ *
+ * Every value is validated against the plain non-negative decimal-integer
+ * grammar (`/^\d+$/`) BEFORE `BigInt` parsing: exponential notation (`"1e8"`),
+ * fractional (`"1.5"`), non-decimal (`"12a"`), empty (`""`), and negative
+ * (`"-5"`) strings all throw `SC-LEDGER-4` — the state-decode boundary. A
+ * persisted balance is ≥ 0 by invariant (the ledger cannot produce a
+ * negative), so a negative string is corruption, not data. Document *shape*
+ * (object of string→string) is the store's guard (`SC-STORE-3`); this
+ * boundary guards the value *semantics*.
+ */
+export function fromJson(doc: Record<string, string>): BalanceMap {
+  const out = new Map<string, bigint>()
+  for (const [id, units] of Object.entries(doc)) {
+    if (!/^\d+$/.test(units)) {
+      throw new LedgerError(
+        `SC-LEDGER-4: fromJson: balance of ${id} is not a plain non-negative ` +
+          `decimal-integer base-unit string: ${JSON.stringify(units)}`,
+        'SC-LEDGER-4',
+      )
+    }
+    out.set(id, BigInt(units))
+  }
   return out
 }

@@ -26,6 +26,10 @@ function makePorts(slot = 0): CorePorts {
       async getBlock() {
         return null
       },
+      async saveState() {},
+      async loadState() {
+        return null
+      },
     },
     clock: {
       slotIndex: () => slot,

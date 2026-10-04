@@ -3,15 +3,17 @@
  *
  * The only mutation path is the `apply` seam — balances are read via
  * `balanceOf`/`totalSupply` (projections) and serialized via `toJson`
- * (decimal-string base units, AD-5). `toDisplay`/`fromDisplay` are the
- * big.js display boundary. No other mutator exists here; epic 3's
- * `applyBlock` is the caller of the seam, not a ledger export.
+ * (decimal-string base units, AD-5), deserialized via `fromJson` (the
+ * state-decode boundary). `toDisplay`/`fromDisplay` are the big.js display
+ * boundary. No other mutator exists here; epic 3's `applyBlock` is the
+ * caller of the seam, not a ledger export.
  */
 export {
   BASE_UNIT_DECIMALS,
   LedgerError,
   apply,
   balanceOf,
+  fromJson,
   toJson,
   totalSupply,
 } from './ledger.js'

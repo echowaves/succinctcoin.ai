@@ -10,6 +10,10 @@
  *   - `.lock`               — the exclusive data-directory lockfile (holder PID)
  *   - `blocks/<slot>.block` — canonical wire bytes, written atomically (tmp +
  *                             fsync + rename) so a crash never corrupts a file
+ *   - `state/balances.json` — the balance-state snapshot (AD-5): a canonical
+ *                             JSON object of identity → decimal-string base
+ *                             units (sorted keys), written through the same
+ *                             atomic tmp + fsync + rename path
  *
  * Contract: the store persists **canonical wire bytes** (the generated
  * `Block.encode` form) and hands back exactly those bytes — byte-identity is
@@ -37,13 +41,17 @@ import type { StorePort } from '../ports.js'
 /**
  * Store error. Carries the spine's `{ code, message }` shape: lock
  * contention is `SC-STORE-1` (message names the directory + holder);
- * calling `commit`/`getBlock` before `open` is `SC-STORE-2` — a separate
- * code so a boot path that special-cases `SC-STORE-1` ("directory in use")
- * never misreads a not-open programming error.
+ * calling `commit`/`getBlock` before `open` is `SC-STORE-2`; a malformed
+ * state document on `loadState` is `SC-STORE-3` — separate codes so a boot
+ * path that special-cases `SC-STORE-1` ("directory in use") never misreads
+ * a not-open programming error or corrupt-on-disk state.
  */
 export class StoreError extends Error {
-  readonly code: 'SC-STORE-1' | 'SC-STORE-2'
-  constructor(message: string, code: 'SC-STORE-1' | 'SC-STORE-2' = 'SC-STORE-1') {
+  readonly code: 'SC-STORE-1' | 'SC-STORE-2' | 'SC-STORE-3'
+  constructor(
+    message: string,
+    code: 'SC-STORE-1' | 'SC-STORE-2' | 'SC-STORE-3' = 'SC-STORE-1',
+  ) {
     super(message)
     this.name = 'StoreError'
     this.code = code
@@ -62,12 +70,14 @@ export class StoreError extends Error {
 export class FileChainStore implements StorePort {
   private readonly dir: string
   private readonly blocksDir: string
+  private readonly stateDir: string
   private opened = false
   private head = -1
 
   constructor(dir: string) {
     this.dir = dir
     this.blocksDir = join(dir, 'blocks')
+    this.stateDir = join(dir, 'state')
   }
 
   /**
@@ -78,9 +88,10 @@ export class FileChainStore implements StorePort {
    */
   async open(): Promise<void> {
     if (this.opened) return
-    // mkdir -p the data dir + blocks subdir.
+    // mkdir -p the data dir + blocks + state subdirs.
     mkdirSync(this.dir, { recursive: true })
     mkdirSync(this.blocksDir, { recursive: true })
+    mkdirSync(this.stateDir, { recursive: true })
 
     await this.acquireLock()
     this.head = this.scanHead()
@@ -134,6 +145,60 @@ export class FileChainStore implements StorePort {
   /** Highest committed slot, or -1 for an empty chain (in-memory). */
   async headSlot(): Promise<number> {
     return this.head
+  }
+
+  /**
+   * Persist the balance-state snapshot (AD-5): `identity → decimal-string
+   * base units` written as a canonical JSON document (keys sorted) to
+   * `state/balances.json`, atomically (tmp + fsync + rename) under the
+   * exclusive lock — the same path block files use, so a crash never leaves
+   * a torn snapshot.
+   *
+   * The persist side stays faithful (storage-agnostic): the store persists
+   * whatever string record it is given — it does not know base-unit
+   * semantics. The ledger's `toJson` is the only producer and never emits a
+   * bad value; `loadState` guards the document *shape*, `fromJson` (ledger)
+   * guards the value *semantics*.
+   */
+  async saveState(doc: Record<string, string>): Promise<void> {
+    if (!this.opened) throw new StoreError(`SC-STORE-2: store at ${this.dir} is not open`, 'SC-STORE-2')
+    // Canonical bytes: sorted keys make the document byte-stable regardless
+    // of the caller's key order (Map iteration order is insertion order).
+    const bytes = new TextEncoder().encode(canonicalJson(doc))
+    await this.atomicWrite(join(this.stateDir, 'balances.json'), bytes)
+  }
+
+  /**
+   * Load the balance-state snapshot, or `null` if no snapshot has been saved
+   * yet (absent = "no snapshot yet"; an empty `{}` document is a valid
+   * "state exists, all balances zero").
+   *
+   * The decode side validates the document *shape*: it must be a plain
+   * object whose every value is a string. A JSON *number* amount (the
+   * float/int64 "column" AD-5 bans) is a shape violation → `SC-STORE-3`;
+   * so is a non-object document. Value *semantics* (plain non-negative
+   * decimal integers) are the ledger's `fromJson` boundary (`SC-LEDGER-4`).
+   */
+  async loadState(): Promise<Record<string, string> | null> {
+    if (!this.opened) throw new StoreError(`SC-STORE-2: store at ${this.dir} is not open`, 'SC-STORE-2')
+    const path = join(this.stateDir, 'balances.json')
+    let text: string
+    try {
+      text = readFileSync(path, 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw err
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      throw new StoreError(
+        `SC-STORE-3: state document at ${path} is not valid JSON`,
+        'SC-STORE-3',
+      )
+    }
+    return assertStateDocument(parsed, path)
   }
 
   // ---- internals -------------------------------------------------------
@@ -257,4 +322,42 @@ export class FileChainStore implements StorePort {
       /* best-effort */
     }
   }
+}
+
+/**
+ * Canonical JSON for a state document: keys sorted, no insignificant
+ * whitespace. `JSON.stringify` cannot fail or drift here — the values are
+ * plain decimal *strings* (BigInts never reach JSON, AD-5).
+ */
+function canonicalJson(doc: Record<string, string>): string {
+  const keys = Object.keys(doc).sort()
+  const parts = keys.map((k) => `${JSON.stringify(k)}:${JSON.stringify(doc[k])}`)
+  return `{${parts.join(',')}}`
+}
+
+/**
+ * Assert a parsed value is a well-formed state document: a plain object
+ * (not `null`, not an array) whose every value is a string. A JSON *number*
+ * amount — the float/int64 "column" AD-5 bans — is a shape violation, not a
+ * representable amount. Throws `SC-STORE-3` naming the path.
+ */
+function assertStateDocument(parsed: unknown, path: string): Record<string, string> {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new StoreError(
+      `SC-STORE-3: state document at ${path} is not an object of identity → decimal string`,
+      'SC-STORE-3',
+    )
+  }
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== 'string') {
+      throw new StoreError(
+        `SC-STORE-3: state document at ${path} has a non-string amount for identity ${JSON.stringify(key)} ` +
+          `(float/int64 amount encodings are banned, AD-5)`,
+        'SC-STORE-3',
+      )
+    }
+    out[key] = value
+  }
+  return out
 }

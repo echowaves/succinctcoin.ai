@@ -26,6 +26,7 @@ import {
   apply,
   balanceOf,
   fromDisplay,
+  fromJson,
   toJson,
   toDisplay,
   totalSupply,
@@ -165,8 +166,8 @@ describe('NO_MUTATOR — only the apply seam mutates; reads are projections', ()
   it('exports exactly the agreed surface (enumeration)', () => {
     const names = Object.keys(ledger).sort()
     // `apply` is the only exported mutator; everything else reads or
-    // projects. `toJson` is a pure projection (returns a new object), not
-    // a mutation of the balances.
+    // projects. `toJson`/`fromJson` are pure projections (return new
+    // objects), not mutations of the balances.
     expect(names).toEqual(
       [
         'BASE_UNIT_DECIMALS',
@@ -175,6 +176,7 @@ describe('NO_MUTATOR — only the apply seam mutates; reads are projections', ()
         'balanceOf',
         'computeFee',
         'fromDisplay',
+        'fromJson',
         'toJson',
         'toDisplay',
         'totalSupply',
@@ -252,6 +254,45 @@ describe('DECIMAL_JSON — JSON.stringify of balances: clean decimal strings, no
       const s = units.toString(10)
       expect(s).toMatch(/^-?\d+$/)
       expect(BigInt(s)).toBe(units)
+    }
+  })
+})
+
+describe('FROM_JSON — the state-decode boundary (the toJson inverse, SC-LEDGER-4)', () => {
+  it('decodes a persisted decimal-string document back to exact base units', () => {
+    const balances: BalanceMap = new Map<string, bigint>([
+      [A, 123_456_789n],
+      [B, 0n],
+      [C, 10n ** 30n],
+    ])
+    // `fromJson(toJson(balances))` is the identity: the decode side is the
+    // exact inverse of the persist side (no precision loss, no drift).
+    expect(fromJson(toJson(balances))).toEqual(balances)
+    // It returns a NEW map — the input document is never touched.
+    const doc = toJson(balances)
+    const decoded = fromJson(doc)
+    expect(decoded).not.toBe(balances)
+    expect(decoded.get(C)).toBe(10n ** 30n)
+  })
+
+  it('decodes the empty document to an empty map (state exists, zero balances)', () => {
+    expect(fromJson({})).toEqual(new Map<string, bigint>())
+  })
+
+  it('rejects non-plain-decimal, exponential, and negative values with SC-LEDGER-4', () => {
+    // A persisted balance is ≥ 0 by invariant, so each of these is
+    // corruption, not data — the state-decode boundary (distinct from
+    // SC-LEDGER-2, the display boundary, and SC-STORE-3, the document shape).
+    for (const bad of ['1.5', '1e8', '12a', '', '-5']) {
+      let err: unknown
+      try {
+        fromJson({ [A]: bad })
+      } catch (e) {
+        err = e
+      }
+      expect(err).toBeInstanceOf(LedgerError)
+      expect((err as LedgerError).code).toBe('SC-LEDGER-4')
+      expect((err as Error).message).toContain(bad === '' ? '""' : bad)
     }
   })
 })

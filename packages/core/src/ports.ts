@@ -69,6 +69,22 @@ export interface StorePort {
    * persist/reload contract requires (1.5 completes the port's read surface).
    */
   getBlock(slot: number): Promise<Uint8Array | null>
+  /**
+   * Persist the balance-state snapshot (AD-5): a canonical document of
+   * identity id → decimal-string base units. The port stays storage-agnostic —
+   * it knows "identity → decimal string", never `BalanceMap`; a malformed
+   * document on the read side rejects (`SC-STORE-3`). WHEN a snapshot is taken
+   * belongs to the caller (epic 3's `applyBlock`), not the store.
+   */
+  saveState(doc: Record<string, string>): Promise<void>
+  /**
+   * Load the balance-state snapshot, or `null` if none has been saved yet
+   * (absent = "no snapshot yet" — an empty `{}` document means "state exists,
+   * all balances zero"). A document that is not a plain object of
+   * string→string (e.g. JSON-number amounts — the float/int64 "column")
+   * rejects (`SC-STORE-3`).
+   */
+  loadState(): Promise<Record<string, string> | null>
 }
 
 /**
