@@ -15,6 +15,7 @@ declare module 'big.js' {
     div(n: number | string | Big): Big
     times(n: number | string | Big): Big
     eq(n: number | string | Big): boolean
+    gte(n: number | string | Big): boolean
     toFixed(dp?: number): string
     toString(): string
   }

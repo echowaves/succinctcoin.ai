@@ -17,3 +17,4 @@ export {
 } from './ledger.js'
 export type { BalanceMap, Transfer } from './ledger.js'
 export { fromDisplay, toDisplay } from './display.js'
+export { computeFee } from './fee.js'

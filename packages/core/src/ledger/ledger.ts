@@ -54,10 +54,14 @@ export interface Transfer {
  *     sub-base-unit precision, or malformed). Kept distinct from the
  *     invariant so a caller handling "balance went negative" never sees a
  *     "bad display string".
+ *   - `SC-LEDGER-3` — the fee boundary (`computeFee`, `fee.ts`): a rate or
+ *     amount outside the fee boundary's contract (non-plain-decimal rate,
+ *     rate outside [0,1), negative amount). Kept distinct so a caller
+ *     handling "balance went negative" never sees a "bad rate".
  */
 export class LedgerError extends Error {
-  readonly code: 'SC-LEDGER-1' | 'SC-LEDGER-2'
-  constructor(message: string, code: 'SC-LEDGER-1' | 'SC-LEDGER-2' = 'SC-LEDGER-1') {
+  readonly code: 'SC-LEDGER-1' | 'SC-LEDGER-2' | 'SC-LEDGER-3'
+  constructor(message: string, code: 'SC-LEDGER-1' | 'SC-LEDGER-2' | 'SC-LEDGER-3' = 'SC-LEDGER-1') {
     super(message)
     this.name = 'LedgerError'
     this.code = code

@@ -127,6 +127,7 @@ export {
   LedgerError,
   apply,
   balanceOf,
+  computeFee,
   fromDisplay,
   toJson,
   toDisplay,

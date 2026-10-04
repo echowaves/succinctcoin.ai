@@ -173,6 +173,7 @@ describe('NO_MUTATOR — only the apply seam mutates; reads are projections', ()
         'LedgerError',
         'apply',
         'balanceOf',
+        'computeFee',
         'fromDisplay',
         'toJson',
         'toDisplay',
