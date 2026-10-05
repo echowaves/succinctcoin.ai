@@ -1,0 +1,111 @@
+# tickets.toml — epic-equal-node-mining's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "spike"
+title = "Difficulty / target adjustment spike (E1)"
+description = "Settles the difficulty/target adjustment algorithm (E1) by measuring the per-attempt PoW (node:crypto sha256 + integer counter) throughput against the CAP-1 bar — one hash per slot trivially reachable by commodity hardware — and records the chosen per-slot target and adjustment rule as the consensus constant the rest of the epic consumes."
+verify = "A bench run reports the per-attempt sha256 throughput and the chosen per-slot target with an adjustment rule; the target is trivially reachable (>=1 hash per slot on commodity hardware) yet is a real (non-trivial) hash check; the rule is recorded as a Decision and the constant is the one the PoW check uses."
+covers = ["E1"]
+after = ["1.1", "1.4"]
+hitl = false
+risk = "high"
+unknown = "The exact adjustment algorithm (fixed target vs retarget window) and the target magnitude are the spike's output; they must keep the per-slot target trivially reachable while remaining a genuine hash check, and the target must be a property of the canonical protobuf Block encoding (AD-12)."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Tracer: slot loop + PoW hot path + applyBlock (one block)"
+description = "Stands up core/consensus end-to-end on the thinnest path — the chain-time slot loop (R4), the per-attempt PoW hot path (node:crypto sha256 + integer counter, target from the E1 spike; R3), and the applyBlock invocation (R5) that commits a block through the store and credits its reward through the ledger — so a single node can produce and persist one valid block."
+verify = "A single node running the slot loop produces one block whose hash verifies against the PoW target, whose reward is credited through the ledger, and which persists through the store and survives a close/open reload; the per-attempt path references only node:crypto sha256 + an integer counter (no big.js, no pure-JS keccak)."
+covers = ["R3", "R4", "R5"]
+after = [1, "1.2", "1.4", "1.5", "2.1"]
+hitl = false
+risk = "high"
+unknown = "The slot-loop shape and how the loop picks a candidate winner before the draw slice lands (the tracer uses a trivial single-node/first-valid check, replaced by the draw in entry 3) is a code-level decision; the tracer's reward credit uses a fixed-emission credit, refined to the real economic model in entry 6."
+
+[[entry]]
+id = 3
+type = "story"
+title = "drawWindow (AD-7) + fixed vectors + Ticket interface"
+description = "Adds the single pinned drawWindow(tickets, challenge, weights) in core/consensus — winner = argmin c^uptime where c = H(nonce||challenge) read uniform in (0,1) (AD-7; minimizing c^(1/uptime) is banned as inverting fairness) — plus the per-window challenge derivation H(last block hash, window index) and the >=3 fixed test vectors, and defines the Ticket interface (proto message shape + draw input set) that epic 4 conforms real tickets to."
+verify = "drawWindow selects the argmin c^uptime winner reproducibly from (tickets, challenge, weights); the >=3 fixed vectors pass; over many draws a higher-uptime identity wins at the expected proportional rate; the verifier and all tests import drawWindow (re-implementation is banned); the Ticket interface is defined for epic 4 to conform to."
+covers = ["R2"]
+after = [2, "1.4"]
+hitl = false
+risk = "high"
+unknown = "The exact mapping from the sha256 digest to c in (0,1) and how uptime weights enter the argmin are code-level decisions at build; the Ticket message shape must match the proto (1.4) without re-inventing it (AD-12). Resolves the Source conflict recorded in the epic Notes: the exponent is c^uptime (AD-7), not c^(1/uptime)."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Draw verification + launch gate test"
+description = "Wires draw verification into block acceptance — a block is accepted only if its (ticket, nonce) verify the draw for that slot's challenge and window, and late tickets never invalidate an accepted block — and ships the launch gate test that a node not selected by the draw cannot produce a valid block."
+verify = "A block whose (ticket, nonce) does not verify the draw is rejected while a selected node's block is accepted; the launch gate test (an unselected node cannot produce a valid block) passes in the core suite."
+covers = ["R2"]
+after = [3]
+hitl = false
+risk = "high"
+unknown = "How the per-window accepted-ticket set is maintained across the window boundary (AD-7: input set = tickets accepted at or before the previous window's last block; late tickets never invalidate an accepted block) is a code-level decision at build."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Boot path: start() -> loadGenesis -> slot loop"
+description = "Wires the real boot path so createCore().start() loads and validates the genesis config (loadGenesis) and starts the consensus slot loop from the store's chain state (R4 chain-time), closing the 1.x/2.x deferred 'genesis validated at boot' gap and flowing the genesis-derived constants (K, L, emission, fee rate) into the loop."
+verify = "createCore().start() calls loadGenesis, fails fast (SC-CONFIG-1) on a malformed genesis before the loop starts, and on success starts the slot loop from the store's persisted chain state (head block + window index); a malformed genesis rejects before any block is produced."
+covers = ["R4"]
+after = [2, "1.3"]
+hitl = false
+risk = "medium"
+unknown = "How the loop resumes from persisted state (head block + window index from the store) on boot is a code-level decision; the genesis-derived constants flow from config into the loop's difficulty, lookback, and emission."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Reward + fee economic model in applyBlock"
+description = "Settles the economic model in applyBlock — the per-slot reward credit (fixed emission from genesis), the real fee-rate provenance (replacing the test's fixed rate), and the fee destination (burn vs credit) — so the reward is credited through the ledger and the conservation invariant holds under a running miner."
+verify = "applyBlock credits the genesis emission reward to the winning identity and computes each fee as amount x rate at the 2.2 fee boundary; the fee destination is the single recorded Decision (burn or credit) and is implemented, with totalSupply behaving correctly under a sequence of mined blocks; the fee rate is sourced from one named origin (a genesis field or a named protocol constant), not an inline test constant."
+covers = ["R5"]
+after = [2, "1.3", "1.5", "2.2"]
+hitl = false
+risk = "medium"
+unknown = "Burn vs credit for fees, the initial allocation (who holds supply before mining), and the fee-rate provenance (config/genesis.json has no fee-rate field today — adding one is a protocol change per the spine; the 2.2 fixed-rate is the interim) are the economic/protocol decisions settled here and recorded as Decisions; the 2.4 conservation property test assumed a closed system and this makes it concrete with a real reward credit."
+
+[[entry]]
+id = 7
+type = "story"
+title = "Multi-node simulation: uptime-only slot rate (R1)"
+description = "Builds the multi-node simulation on the memory transport proving the core promise (R1) — a single always-up node wins slots at the expected uptime-proportional slot rate regardless of hardware (per-window win probability = the node's uptime weight over the sum of the window's ticket weights, from drawWindow), and no node wins without a valid per-slot ticket — the epic's R1 Done-when."
+verify = "In a multi-node memory-transport simulation, an always-up node wins slots at the expected uptime-proportional rate (its uptime weight over the window's total weight, within a recorded statistical tolerance) independent of hardware, and no node wins a slot without a valid per-slot ticket whose (ticket, nonce) verifies the draw."
+covers = ["R1"]
+after = [4, 5, 6]
+hitl = false
+risk = "high"
+unknown = "The statistical tolerance for the 'expected rate' assertion, and where the simulated identities' tickets/uptimes come from before epic 4 ships (the sim uses synthetic tickets conforming to the entry-3 Ticket interface, not real gate-verified ones), are settled at build."
+
+[[entry]]
+id = 8
+type = "story"
+title = "Refactor sweep"
+description = "Runs the closing refactor sweep (cleanup only, scope set from the build records and deferred review findings) and confirms the consensus suite is green headless."
+verify = "pnpm test and pnpm build pass in plain Node; the consensus invariants (draw, PoW, applyBlock) and the AD-6/AD-7 guards hold; no capability logic was added."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Closing end-to-end suite (full Done-when)"
+description = "Runs the closing end-to-end suite across the epic — the full Done-when as one integrated check: a running node mines at the uptime-only rate, every block verifies its draw, the launch gate holds, the PoW hot path stays within the AD-6 limits, and block hashes/round-trip."
+verify = "The integrated suite proves all five Done-when checks green headless on the memory transport: expected-rate slot wins, no win without a verified ticket, the launch gate, the PoW import/throughput guard, and block-hash + counter round-trip against the canonical protobuf encoding."
+covers = ["R1", "R2", "R3", "R4", "R5", "E1"]
+after = [8]
+hitl = false
+risk = "medium"
+unknown = "The integrated suite may need to pin the multi-node sim parameters (window count, tolerance, synthetic-ticket set) so it is deterministic and not flaky; those pins are settled at build and recorded in the plan."
