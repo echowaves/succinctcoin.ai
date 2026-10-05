@@ -256,6 +256,25 @@ describe('DECIMAL_JSON — JSON.stringify of balances: clean decimal strings, no
       expect(BigInt(s)).toBe(units)
     }
   })
+
+  it('a reserved own-property id (__proto__) survives the projection and round-trips', () => {
+    // Regression: pre-fix `out['__proto__'] = <string>` hit the
+    // Object.prototype __proto__ setter, which ignores non-object values —
+    // the entry was silently dropped on the write side while fromJson
+    // happily accepted it (the write-drops / read-accepts asymmetry).
+    // Unreachable in the 32-byte-hex protocol id space; the seam does not
+    // validate id format (AD-2), so the projection stays correct for every id.
+    const m: BalanceMap = new Map<string, bigint>([['__proto__', 123n]])
+    const doc = toJson(m)
+    // The doc has an OWN __proto__ key (not the inherited prototype accessor),
+    // holding the decimal-string balance.
+    expect(Object.prototype.hasOwnProperty.call(doc, '__proto__')).toBe(true)
+    expect(doc['__proto__']).toBe('123')
+    // JSON.stringify serializes it — the entry is not lost to the wire.
+    expect(JSON.stringify(doc)).toBe('{"__proto__":"123"}')
+    // And fromJson(toJson(m)) round-trips it exactly.
+    expect(fromJson(doc)).toEqual(m)
+  })
 })
 
 describe('FROM_JSON — the state-decode boundary (the toJson inverse, SC-LEDGER-4)', () => {

@@ -19,6 +19,9 @@
  *                        byte-identical (deterministic)
  *   ABSENT_VS_EMPTY    — fresh store: `loadState` → `null`; then
  *                        `saveState(toJson(empty map))` → `loadState` → `{}`
+ *   STORE_PROTO_ROUNDTRIP — (added by 2.6) a `__proto__` balance survives the
+ *                        real `saveState` → `close` → `open` → `loadState`
+ *                        cycle (the reserved-key path the 2.4 flake exposed)
  *
  * Test hygiene (AD-10): fresh `os.tmpdir()` dir per test, no real sockets,
  * no new runtime deps. The round-trip is a real `close()`/`open()` cycle
@@ -43,18 +46,16 @@ const MAX_UNITS = 10n ** 30n
 // `fc.string` is the documented equivalent for arbitrary identity ids — the
 // seam does not validate id format, protocol rules are consensus' job, AD-2.)
 //
-// `__proto__` is filtered out: it is the one id that breaks the round-trip
-// through the plain-object `toJson` (the `out['__proto__'] = <string>`
-// assignment hits the `Object.prototype` setter, which ignores non-object
-// values, so the entry is silently dropped). Protocol-valid ids are 32-byte
-// hex and can never be `__proto__`, so excluding it keeps the property test
-// within the id space the ledger is actually given (AD-2: the seam does not
-// validate id format, but the protocol's id space is hex). Measured against
-// the installed fast-check 4.10.2 (2026-10-04, probe): ~0.33% of generated
-// maps contain a `__proto__` key, ~15% of runs fail at numRuns:50 — caught
-// by a 2.4 flake-stability pass (1 failure in 5 full-suite runs). The
-// underlying `toJson` defect (a `__proto__` entry is silently dropped on the
-// write side while `fromJson` accepts it) is recorded in deferred-work.md.
+// `__proto__` is filtered out of the *property* space: protocol-valid ids
+// are 32-byte hex and can never be `__proto__`, so excluding it keeps this
+// randomized test within the id space the ledger is actually given (AD-2: the
+// seam does not validate id format, but the protocol's id space is hex).
+// (Historically this filter was also a flake workaround — `toJson` once built
+// a plain object and dropped a `__proto__` entry via the `Object.prototype`
+// setter; 2.4 measured ~15% of runs failing at numRuns:50. 2.6 fixed
+// `toJson` and the store's read path, and now pins the reserved-key path
+// directly in the deterministic `STORE_PROTO_ROUNDTRIP` block below, so the
+// filter is purely id-space hygiene.)
 const idArb = fc.string().filter((id) => id !== '__proto__')
 const amountArb = fc.bigInt({ min: 0n, max: MAX_UNITS })
 const balanceMapArb: fc.Arbitrary<BalanceMap> = fc
@@ -242,5 +243,37 @@ describe('ABSENT_VS_EMPTY — null means "no snapshot yet"; {} means "state exis
     expect(await store.loadState()).toEqual({})
 
     await store.close()
+  })
+})
+
+describe('STORE_PROTO_ROUNDTRIP — a __proto__ balance survives the disk round-trip (deterministic)', () => {
+  it('toJson(map with __proto__) → saveState → close → open → loadState → fromJson loses nothing', async () => {
+    // The SNAPSHOT_ROUNDTRIP property filters `__proto__` out of its id
+    // space (protocol-valid ids are 32-byte hex); this deterministic test
+    // covers that one reserved-key path directly, through the real
+    // saveState → close → open → loadState cycle the 2.4 flake exposed.
+    const balances: BalanceMap = new Map<string, bigint>([
+      ['__proto__', 987_654_321n],
+      ['a'.repeat(64), 1n],
+    ])
+    const store = new FileChainStore(dir)
+    await store.open()
+    await store.saveState(toJson(balances))
+    await store.close()
+
+    const re = new FileChainStore(dir)
+    await re.open()
+    const loaded = await re.loadState()
+    await re.close()
+
+    expect(loaded).not.toBeNull()
+    // The on-disk document retained __proto__ → its decimal string: it was
+    // serialized as a normal key (canonicalJson is Object.keys-driven, so a
+    // null-prototype own property from the fixed toJson is just a key). The
+    // canonical form sorts keys, and `__proto__` sorts before the 'a'×64 id
+    // ('_' 0x5F < 'a' 0x61), so the bytes are deterministic:
+    expect(rawState(dir)).toBe(`{"__proto__":"987654321","${'a'.repeat(64)}":"1"}`)
+    // …and fromJson decodes the full map back — no balance lost.
+    expect(fromJson(loaded!)).toEqual(balances)
   })
 })

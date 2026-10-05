@@ -340,6 +340,15 @@ function canonicalJson(doc: Record<string, string>): string {
  * (not `null`, not an array) whose every value is a string. A JSON *number*
  * amount — the float/int64 "column" AD-5 bans — is a shape violation, not a
  * representable amount. Throws `SC-STORE-3` naming the path.
+ *
+ * The projection is rebuilt on a null-prototype object, mirroring the ledger's
+ * `toJson` (the write side): a reserved own-property key such as `__proto__`
+ * — legal at this boundary, unreachable in the 32-byte-hex protocol id space —
+ * becomes an ordinary own data property instead of hitting the
+ * `Object.prototype.__proto__` setter and being silently dropped. `JSON.parse`
+ * already yields it as an own key, so this keeps the load path symmetric with
+ * the save path (a `__proto__` balance written by `saveState` is not lost on
+ * the next `loadState`).
  */
 function assertStateDocument(parsed: unknown, path: string): Record<string, string> {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -348,7 +357,7 @@ function assertStateDocument(parsed: unknown, path: string): Record<string, stri
       'SC-STORE-3',
     )
   }
-  const out: Record<string, string> = {}
+  const out: Record<string, string> = Object.create(null)
   for (const [key, value] of Object.entries(parsed)) {
     if (typeof value !== 'string') {
       throw new StoreError(

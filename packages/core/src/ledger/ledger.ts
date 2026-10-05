@@ -143,9 +143,16 @@ export function totalSupply(balances: BalanceMap): bigint {
  * identity id → decimal-string base units. `JSON.stringify` of the result
  * never throws (no `BigInt` in it) and never drifts (the decimal form is
  * exact; `BigInt(s)` round-trips it losslessly).
+ *
+ * The projection is built on a null-prototype object, so a reserved
+ * own-property id (`__proto__` — unreachable in the 32-byte-hex protocol id
+ * space, but legal at this seam) becomes an ordinary own data property
+ * instead of hitting the `Object.prototype.__proto__` setter and being
+ * silently dropped. `fromJson` reads it back via `Object.entries`, so the
+ * `toJson` → `fromJson` round-trip is symmetric for every id.
  */
 export function toJson(balances: BalanceMap): Record<string, string> {
-  const out: Record<string, string> = {}
+  const out: Record<string, string> = Object.create(null)
   for (const [id, units] of balances) out[id] = units.toString(10)
   return out
 }
