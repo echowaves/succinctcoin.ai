@@ -180,6 +180,20 @@ export type {
   BlockTemplate,
 } from './consensus/index.js'
 
+// AD-7 verifiable public-coin draw (3.3): the ONE pinned draw
+// (`drawWindow`), the per-window challenge derivation
+// (`deriveWindowChallenge`), and the draw-input ticket interface. Additive
+// surface — 3.4 wires the tracer's winner to it; `createCore` untouched.
+export {
+  DrawError,
+  deriveWindowChallenge,
+  drawWindow,
+} from './consensus/index.js'
+export type {
+  DrawResult,
+  DrawTicket,
+} from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
