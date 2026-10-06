@@ -149,6 +149,19 @@ export type { GenesisConfig, GenesisEmission } from './config/index.js'
 // zero-dep engine + its SC-STORE-1 error.
 export { FileChainStore, StoreError } from './store/index.js'
 
+// PoW seam (E1 spike, AD-6/AD-12): the canonical digest encoding of a
+// `Block` (BE fixed-width, proto field order, `hash` excluded) + the
+// fixed-at-launch leading-zero-bits target + the per-attempt PoW check the
+// tracer's mining loop (3.2) and the block-hash math build on.
+export {
+  POW_TARGET_LEADING_ZERO_BITS,
+  PowError,
+  blockDigest,
+  canonicalBlockBytes,
+  leadingZeroBits,
+  powCheck,
+} from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
