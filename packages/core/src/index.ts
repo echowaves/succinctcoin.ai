@@ -162,6 +162,24 @@ export {
   powCheck,
 } from './consensus/index.js'
 
+// Tracer (3.2): the per-attempt mining loop (AD-6 hot path — node:crypto
+// sha256 + integer counter via the PoW seam), the chain-time slot
+// derivation (AD-3), the single mutation path `applyBlock` (AD-2), and the
+// one-block end-to-end tracer `mineAndApply`. `createCore` is untouched —
+// 3.5 wires the tracer into the core lifecycle.
+export {
+  MINT_ID,
+  TRACER_WINNER_ID,
+  applyBlock,
+  mineAndApply,
+  mineBlock,
+  nextSlotAndParent,
+} from './consensus/index.js'
+export type {
+  ApplyBlockParams,
+  BlockTemplate,
+} from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
