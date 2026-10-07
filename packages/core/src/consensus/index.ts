@@ -37,3 +37,17 @@ export { verifyDraw } from './verify-draw.js'
 // tracer's winner to it; the tracer's fixed winner (3.2) is untouched here.
 export { DrawError, deriveWindowChallenge, drawWindow } from './draw.js'
 export type { DrawResult, DrawTicket } from './draw.js'
+// Multi-node memory-transport simulation (3.7, R1): the standalone harness
+// proving the uptime-only slot rate — it imports the pinned seams
+// (`drawWindow` / `deriveWindowChallenge` / `mineBlock` / `applyBlock` /
+// `verifyDraw` / `nextSlotAndParent`) and never re-implements the draw
+// (AD-7) or the challenge (AD-12). NOT wired into `createCore` — additive
+// surface only.
+export {
+  drawSchedule,
+  simulateNetwork,
+  simulateWindow,
+  syntheticTicket,
+  windowAcceptedSet,
+} from './sim.js'
+export type { SimNode } from './sim.js'

@@ -243,6 +243,20 @@ export type {
   DrawTicket,
 } from './consensus/index.js'
 
+// Multi-node memory-transport simulation (3.7, R1): the standalone harness
+// proving the uptime-only slot rate on the memory transport (no sockets).
+// It imports the pinned seams (draw / challenge / mine / apply / verify) —
+// the draw is NEVER re-implemented (AD-7) and the challenge NEVER re-derived
+// (AD-12). NOT wired into `createCore` — additive surface only.
+export {
+  drawSchedule,
+  simulateNetwork,
+  simulateWindow,
+  syntheticTicket,
+  windowAcceptedSet,
+} from './consensus/index.js'
+export type { SimNode } from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
