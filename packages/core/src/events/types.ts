@@ -60,8 +60,9 @@ export interface CoreEventsEmitter {
  * and emits `CoreStarted`. It takes an optional `genesisPath` override (the
  * `CorePorts.genesisPath` field is the default when the argument is absent).
  * `stop` closes the store. `startMining` is a capability command — a stub
- * throwing `{ code: 'SC-CORE-1' }` until epic 3 implements it (AD-9: every
- * command resolves its promise once implemented).
+ * throwing `{ code: 'SC-CORE-1' }`: epic 3 added the draw/mining seams, but
+ * the command remains a stub pending its owning capability epic (AD-9:
+ * every command resolves its promise once implemented).
  */
 export interface CoreCommands {
   start(genesisPath?: string): Promise<void>

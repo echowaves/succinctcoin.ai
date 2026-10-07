@@ -140,8 +140,8 @@ export async function nextSlotAndParent(store: StorePort): Promise<{
  *   5. `mineBlock` (R3) for the DRAW WINNER, with the winner's proto
  *      `Ticket` ENCODED (protons, AD-12 wire form) as `winnerTicket` — so
  *      the block carries a verifiable ticket (`verifyDraw`, 3.4).
- *   6. `applyBlock` (R5): credit the reward `MINT_ID → winner`, commit the
- *      block, save the snapshot.
+ *   6. `applyBlock` (R5): credit the reward `MINT_ID → winner` (+ any tx
+ *      fees — none in this 0-tx path), commit the block, save the snapshot.
  *
  * `rewardDisplay` is a decimal display string (e.g. `"12.5"`, the genesis
  * `emission.blockReward`); the one-time `fromDisplay` conversion (the AD-5

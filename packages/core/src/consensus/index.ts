@@ -7,8 +7,8 @@
  * The AD-7 verifiable public-coin draw (`drawWindow` +
  * `deriveWindowChallenge`, 3.3) is re-exported here; 3.4 wires it into the
  * tracer (replacing the fixed winner + placeholder ticket) and adds the
- * verification seam (`verifyDraw` + the launch gate). Additive surface —
- * `createCore` untouched.
+ * verification seam (`verifyDraw` + the launch gate). 3.5 wired the boot
+ * path — `createCore().start()` calls `mineAndApply`.
  */
 export {
   POW_TARGET_LEADING_ZERO_BITS,
@@ -33,8 +33,8 @@ export type { OtherTicket } from './slot-loop.js'
 // winner against the accepted ticket set — the launch gate.
 export { verifyDraw } from './verify-draw.js'
 // AD-7 verifiable public-coin draw (3.3): the ONE pinned draw + per-window
-// challenge derivation + the draw-input ticket interface. 3.4 wires the
-// tracer's winner to it; the tracer's fixed winner (3.2) is untouched here.
+// challenge derivation + the draw-input ticket interface. 3.4 rewired the
+// tracer's winner to it (replacing the 3.2 fixed winner).
 export { DrawError, deriveWindowChallenge, drawWindow } from './draw.js'
 export type { DrawResult, DrawTicket } from './draw.js'
 // Multi-node memory-transport simulation (3.7, R1): the standalone harness

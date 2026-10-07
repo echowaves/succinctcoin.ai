@@ -15,9 +15,10 @@
  * `test/consensus-tracer.test.ts` (MINING_PATH_GUARD) fails the suite if a
  * big.js/keccak import ever appears here.
  *
- * The trivial fixed winner + the reserved mint id (replaced by the draw at
- * 3.3, refined by the economic model at 3.6) are the tracer's only protocol
- * choices; slot and parent come from the chain (R4, AD-3).
+ * The draw (wired at 3.4) now selects the winner — `TRACER_WINNER_ID` is
+ * the single-node default — and the reserved mint id is the treasury
+ * (refined by the economic model at 3.6); slot and parent come from the
+ * chain (R4, AD-3).
  */
 import type { Block } from '../proto/index.js'
 import { blockDigest, powCheck } from './pow.js'
@@ -34,10 +35,10 @@ import { blockDigest, powCheck } from './pow.js'
 export const MINT_ID = '0000000000000000000000000000000000000000000000000000000000000001'
 
 /**
- * The tracer's trivial fixed single-node winner (replaced by the draw at
- * 3.3): a constant 32-byte-hex id the slot loop always mines for, with an
- * EMPTY placeholder ticket. No draw / ticket verification exists in this
- * tracer (AD-7 lands at 3.3/3.4).
+ * The tracer's single-node default winner: a constant 32-byte-hex id. The
+ * slot loop mines for the DRAW WINNER (selected by `drawWindow`, 3.4) and
+ * carries the winner's real encoded proto `Ticket` (3.4 replaced the empty
+ * placeholder; AD-7).
  */
 export const TRACER_WINNER_ID = '0000000000000000000000000000000000000000000000000000000000000002'
 
@@ -45,8 +46,8 @@ export const TRACER_WINNER_ID = '00000000000000000000000000000000000000000000000
  * A block template: everything a mined block carries EXCEPT the two fields
  * the mining loop owns — the counter (`nonce`) and the `hash` it produces.
  * `slot` / `parentHash` come from the chain (R4); `winnerIdentityId` is the
- * tracer's fixed winner; `winnerTicket` is the empty placeholder ticket
- * (3.3 replaces it with the winning ticket); `txCount` is 0 in the tracer.
+ * draw-selected winner; `winnerTicket` is the real winning ticket (3.4);
+ * `txCount` is 0 in the tracer.
  */
 export interface BlockTemplate {
   slot: bigint

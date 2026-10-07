@@ -204,8 +204,8 @@ export {
 // sha256 + integer counter via the PoW seam), the chain-time slot
 // derivation (AD-3), the single mutation path `applyBlock` (AD-2), and the
 // one-block end-to-end tracer `mineAndApply` (3.4 rewires it for the
-// verifiable draw). `createCore` is untouched — 3.5 wires the tracer into
-// the core lifecycle.
+// verifiable draw). 3.5 wired the tracer into the `createCore` lifecycle —
+// `start()` calls `mineAndApply`.
 export {
   BURN_ID,
   FEE_RATE,
@@ -225,14 +225,15 @@ export type {
 
 // Draw verification (3.4, R2): the thin seam over the pinned `drawWindow`
 // (AD-7) that verifies a block's claimed winner against the accepted
-// ticket set — the verifiable-election launch gate. Additive surface —
-// `createCore` untouched.
+// ticket set — the verifiable-election launch gate. 3.5 wired the boot
+// path into `createCore`; `verifyDraw` stays a public seam.
 export { verifyDraw } from './consensus/index.js'
 
 // AD-7 verifiable public-coin draw (3.3): the ONE pinned draw
 // (`drawWindow`), the per-window challenge derivation
-// (`deriveWindowChallenge`), and the draw-input ticket interface. Additive
-// surface — 3.4 wires the tracer's winner to it; `createCore` untouched.
+// (`deriveWindowChallenge`), and the draw-input ticket interface. 3.4
+// rewired the tracer's winner to it; 3.5 wired the boot path into
+// `createCore`.
 export {
   DrawError,
   deriveWindowChallenge,
