@@ -165,8 +165,9 @@ export {
 // Tracer (3.2): the per-attempt mining loop (AD-6 hot path — node:crypto
 // sha256 + integer counter via the PoW seam), the chain-time slot
 // derivation (AD-3), the single mutation path `applyBlock` (AD-2), and the
-// one-block end-to-end tracer `mineAndApply`. `createCore` is untouched —
-// 3.5 wires the tracer into the core lifecycle.
+// one-block end-to-end tracer `mineAndApply` (3.4 rewires it for the
+// verifiable draw). `createCore` is untouched — 3.5 wires the tracer into
+// the core lifecycle.
 export {
   MINT_ID,
   TRACER_WINNER_ID,
@@ -178,7 +179,14 @@ export {
 export type {
   ApplyBlockParams,
   BlockTemplate,
+  OtherTicket,
 } from './consensus/index.js'
+
+// Draw verification (3.4, R2): the thin seam over the pinned `drawWindow`
+// (AD-7) that verifies a block's claimed winner against the accepted
+// ticket set — the verifiable-election launch gate. Additive surface —
+// `createCore` untouched.
+export { verifyDraw } from './consensus/index.js'
 
 // AD-7 verifiable public-coin draw (3.3): the ONE pinned draw
 // (`drawWindow`), the per-window challenge derivation
