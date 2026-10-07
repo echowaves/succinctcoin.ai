@@ -52,14 +52,19 @@ export interface CoreEventsEmitter {
 
 /**
  * Baseline command set (imperative names). `start`/`stop` are the baseline
- * lifecycle and are `Promise`-typed: boot is async (the store opens at
- * `start()` and can fail on lock contention, AD-9), and `stop` closes the
- * store. `startMining` is a capability command — a stub throwing
- * `{ code: 'SC-CORE-1' }` until epic 3 implements it (AD-9: every command
- * resolves its promise once implemented).
+ * lifecycle and are `Promise`-typed: boot is async — `start()` opens the
+ * store first (failing `SC-STORE-1` on lock contention, AD-9), then loads
+ * + validates the genesis (failing `SC-CONFIG-1` on a malformed/missing
+ * config, BEFORE any block is produced), then runs the slot loop ONCE (one
+ * block from the persisted head; emission flows from the validated genesis)
+ * and emits `CoreStarted`. It takes an optional `genesisPath` override (the
+ * `CorePorts.genesisPath` field is the default when the argument is absent).
+ * `stop` closes the store. `startMining` is a capability command — a stub
+ * throwing `{ code: 'SC-CORE-1' }` until epic 3 implements it (AD-9: every
+ * command resolves its promise once implemented).
  */
 export interface CoreCommands {
-  start(): Promise<void>
+  start(genesisPath?: string): Promise<void>
   stop(): Promise<void>
   startMining(): void
 }

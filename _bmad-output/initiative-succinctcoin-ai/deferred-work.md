@@ -5,6 +5,13 @@
      added `clearTimeout(watchdog)` + `process.exit(0)` after the results write (bench now exits 0
      in ~55s). Entry removed during the 1.6 review; kept here as a note only. -->
 
+<!-- RESOLVED 2026-10-06 (story 3.5): `createCore().start()` now runs the real boot
+     path — `store.open()` -> `loadGenesis` -> one `mineAndApply` loop block ->
+     `CoreStarted`. `loadGenesis` is called at boot (fail-fast `SC-CONFIG-1` on a
+     malformed/missing genesis, BEFORE any block), emission flows from the validated
+     genesis, and `CorePorts.genesisPath` (default repo-root `config/genesis.json`)
+     carries the path. Pinned by the new `packages/core/test/boot-path.test.ts` (5
+     matrix rows incl. the fail-fast order + resume). Kept here as a note only. -->
 - source_plan: `_bmad-output/initiative-succinctcoin-ai/epic-platform-baseline/story-refactor-sweep-closing-headless-verification-plan.md`
   summary: `createCore().start()` does not call `loadGenesis` — genesis config is validated by its own functions (`genesis.test.ts`) but not wired into the boot path yet.
   evidence: epic Done-when #6 says "parsed and validated at boot"; 1.3 deliberately made genesis a "config seam only" (full boot path wired in later epics). Verified by 1.6's closing review: grep of `src/` shows no boot caller of `loadGenesis`/`validateGenesis`. Home: the consensus epic (3), which owns the real boot path and the genesis-derived constants (K, L, emission).

@@ -1,11 +1,20 @@
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createCore } from '../src/index.js'
 import type { CorePorts } from '../src/ports.js'
 
+const here = fileURLToPath(new URL('.', import.meta.url))
+// test/ -> core/ -> packages/ -> repo root, then config/genesis.json.
+const GENESIS_PATH = join(here, '..', '..', '..', 'config', 'genesis.json')
+
 // Fake ports (no real network/store/clock). Matrix: FRESH_CORE, EVENT_SINK,
-// and UNIMPL_STUB.
+// and UNIMPL_STUB. The store stays a no-op: `start()` now runs one
+// `mineAndApply` over it, which is harmless (absent snapshot → seed mint,
+// empty head → slot 0, commit/saveState are no-ops).
 function makePorts(slot = 0): CorePorts {
   return {
+    genesisPath: GENESIS_PATH,
     net: {
       async start() {},
       async stop() {},

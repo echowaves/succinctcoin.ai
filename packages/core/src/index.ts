@@ -12,6 +12,11 @@
  * (AD-1). No capability logic lives here yet — epics 2-5 fill the seams.
  */
 import { EventEmitter } from 'node:events'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { loadGenesis } from './config/index.js'
+import { mineAndApply } from './consensus/index.js'
 
 import type {
   CoreCommands,
@@ -32,6 +37,24 @@ import type {
   StorePort,
   UiSink,
 } from './ports.js'
+
+/**
+ * The default boot genesis path: the repo-root `config/genesis.json`.
+ * Resolved relative to THIS file (`src/index.ts` → core → packages → repo
+ * root, three levels up) via `import.meta.url` — the same convention
+ * `genesis.test.ts` uses. Works identically from the built `dist/index.js`
+ * (dist sits at the same depth as src).
+ */
+function defaultGenesisPath(): string {
+  return join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    '..',
+    'config',
+    'genesis.json',
+  )
+}
 
 /**
  * Build a core instance from the five injected ports.
@@ -58,11 +81,26 @@ export function createCore(ports: CorePorts): CoreInstance {
       emitter.emit(event, payload)
       ports.uiSink.sink(event, payload)
     },
-    async start() {
-      // Boot: open the store FIRST (AD-9 — a contended data directory rejects
-      // here with SC-STORE-1, before any event is emitted), then emit
-      // CoreStarted (AD-3: chain-time slot, not wall clock).
+    async start(genesisPath) {
+      // Boot, in pinned fail-fast order (AD-9):
+      //   1. open the store FIRST — a contended data directory rejects here
+      //      with SC-STORE-1, before the genesis is even read;
+      //   2. load + validate the genesis — a malformed/missing config
+      //      rejects SC-CONFIG-1 BEFORE any block is produced. The path is
+      //      the command override, else the port field, else the default
+      //      (repo-root config/genesis.json);
+      //   3. run the slot loop ONCE — mineAndApply produces exactly one
+      //      block from the persisted head; emission flows from the
+      //      validated genesis (no inline literals);
+      //   4. emit CoreStarted (AD-3: chain-time slot, not wall clock) —
+      //      exactly once, AFTER the block.
       await ports.store.open()
+      const cfg = await loadGenesis(genesisPath ?? ports.genesisPath ?? defaultGenesisPath())
+      await mineAndApply({
+        store: ports.store,
+        rewardDisplay: cfg.emission.blockReward,
+        maxSupplyDisplay: cfg.emission.maxSupply,
+      })
       this.emit('CoreStarted', { slot: ports.clock.slotIndex() })
     },
     async stop() {

@@ -117,4 +117,11 @@ export interface CorePorts {
   clock: ClockPort
   gate: GateVerifier
   uiSink: UiSink
+  /**
+   * Optional boot-time genesis config file path. When absent, `createCore`
+   * resolves the default to the repo-root `config/genesis.json` (the single
+   * source). A host can point a node at an alternate config here. The
+   * fail-fast boot order (AD-9) reads it only AFTER `store.open()`.
+   */
+  genesisPath?: string
 }

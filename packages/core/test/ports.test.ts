@@ -1,12 +1,19 @@
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createCore } from '../src/index.js'
 import type { CorePorts } from '../src/ports.js'
+
+const here = fileURLToPath(new URL('.', import.meta.url))
+// test/ -> core/ -> packages/ -> repo root, then config/genesis.json.
+const GENESIS_PATH = join(here, '..', '..', '..', 'config', 'genesis.json')
 
 // FIVE_PORTS (matrix): all five port interfaces + the CorePorts bundle are
 // exported from @succinctcoin/core. The interfaces are type-only, so the
 // compile-time proof is that the fakes below satisfy `CorePorts`; the runtime
 // proof is that `createCore` is exported and callable.
 const fake: CorePorts = {
+  genesisPath: GENESIS_PATH,
   net: {
     async start() {},
     async stop() {},
