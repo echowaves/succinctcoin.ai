@@ -207,6 +207,8 @@ export {
 // verifiable draw). `createCore` is untouched — 3.5 wires the tracer into
 // the core lifecycle.
 export {
+  BURN_ID,
+  FEE_RATE,
   MINT_ID,
   TRACER_WINNER_ID,
   applyBlock,
@@ -217,6 +219,7 @@ export {
 export type {
   ApplyBlockParams,
   BlockTemplate,
+  BlockTx,
   OtherTicket,
 } from './consensus/index.js'
 

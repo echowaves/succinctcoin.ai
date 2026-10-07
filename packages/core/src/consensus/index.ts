@@ -20,8 +20,12 @@ export {
 } from './pow.js'
 export { MINT_ID, TRACER_WINNER_ID, mineBlock } from './miner.js'
 export type { BlockTemplate } from './miner.js'
+// Economic-model constants (3.6): the named fee rate (ONE origin — a
+// genesis field is a protocol change inception deferred) + the reserved
+// receive-only burn identity. A protocol version bump to change (AD-7/AD-12).
+export { BURN_ID, FEE_RATE } from './economics.js'
 export { applyBlock } from './apply-block.js'
-export type { ApplyBlockParams } from './apply-block.js'
+export type { ApplyBlockParams, BlockTx } from './apply-block.js'
 export { mineAndApply, nextSlotAndParent } from './slot-loop.js'
 export type { OtherTicket } from './slot-loop.js'
 // Draw verification (3.4, R2): the thin seam over the pinned `drawWindow`
