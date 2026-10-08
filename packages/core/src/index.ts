@@ -270,3 +270,15 @@ export {
   succinctcoin,
 } from './proto/index.js'
 export type { succinctcoinInput } from './proto/index.js'
+
+// Operator identity (epic 4, CAP-2): the OFFLINE gate-credential surface
+// (4.1). `createOfflineGateVerifier` is the deterministic offline
+// implementation of the AD-4 `GateVerifier` port (the port shape itself
+// stays in `ports.ts`); `issueGateCredential` is the offline gate-standin
+// the harness/sim uses to mint valid credentials.
+export {
+  GateError,
+  createOfflineGateVerifier,
+  issueGateCredential,
+} from './identity/index.js'
+export type { IssueGateCredentialParams } from './identity/index.js'
