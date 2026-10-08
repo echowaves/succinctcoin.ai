@@ -14,6 +14,20 @@ export {
 } from './gate-verifier.js'
 export type { IssueGateCredentialParams } from './gate-verifier.js'
 
+// 4.2 — the identity keypair (the AD-11 key material that lives in the
+// core) + the ticket signature sign/verify over the EXACT AD-12 digest.
+// `deriveIdentityKeypair` derives a deterministic Ed25519 keypair from a
+// 32-byte seed (no RNG — the golden vector is reproducible);
+// `signTicket` signs, `verifyTicketSignature` verifies from PUBLIC data
+// alone (a reject is a normal `false`, never a throw).
+export {
+  IdentityError,
+  deriveIdentityKeypair,
+  signTicket,
+  verifyTicketSignature,
+} from './identity.js'
+export type { IdentityKeypair, TicketFields } from './identity.js'
+
 // The credential / verification port types (AD-4) — re-exported so the
 // identity surface is import-complete from this module. The declarations
 // stay in `src/ports.ts` (4.1 adds the implementation, not the seam).

@@ -282,3 +282,19 @@ export {
   issueGateCredential,
 } from './identity/index.js'
 export type { IssueGateCredentialParams } from './identity/index.js'
+
+// Operator identity (epic 4, CAP-2): the identity keypair + ticket
+// signature (4.2, AD-11/AD-12). `deriveIdentityKeypair` is the
+// deterministic seed → Ed25519 keypair (no RNG — the golden vector is
+// reproducible; the AD-11 `secret` stays a distinct field); `signTicket`
+// / `verifyTicketSignature` sign/verify over the EXACT AD-12 digest
+// `sha256(identityId ‖ u64be(windowIndex) ‖ challenge ‖
+// nonceCommitment)` — verification reconstructs the public key from
+// `identityId` alone (public data), and a reject is a normal `false`.
+export {
+  IdentityError,
+  deriveIdentityKeypair,
+  signTicket,
+  verifyTicketSignature,
+} from './identity/index.js'
+export type { IdentityKeypair, TicketFields } from './identity/index.js'
