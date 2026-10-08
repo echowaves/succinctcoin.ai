@@ -258,6 +258,17 @@ export {
 } from './consensus/index.js'
 export type { SimNode } from './consensus/index.js'
 
+// Block-acceptance seam (4.3, E2 / AD-7 / AD-12): the conformance of a real
+// proto `Ticket` to the draw input set (`protoTicketToDrawTicket`, AD-7) +
+// the ONE cohesive acceptance-path seam (`acceptBlockWinner`) — a block is
+// accepted iff the winner ticket verifies the AD-7 draw (`verifyDraw`,
+// unchanged) AND carries a valid AD-12 identity-bound signature. Additive:
+// composes with `verifyDraw`, never weakens it.
+export {
+  acceptBlockWinner,
+  protoTicketToDrawTicket,
+} from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec

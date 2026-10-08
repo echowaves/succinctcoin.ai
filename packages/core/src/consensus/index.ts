@@ -51,3 +51,11 @@ export {
   windowAcceptedSet,
 } from './sim.js'
 export type { SimNode } from './sim.js'
+// Block-acceptance seam (4.3, E2 / AD-7 / AD-12): the conformance of a real
+// proto `Ticket` to the draw input set (`protoTicketToDrawTicket`, AD-7 — the
+// draw is imported, never re-implemented) + the ONE cohesive acceptance-path
+// seam (`acceptBlockWinner`) — a block is accepted iff the winner ticket
+// verifies the AD-7 draw (`verifyDraw`, unchanged) AND carries a valid AD-12
+// identity-bound signature. Additive: composes with `verifyDraw`, never
+// weakens it.
+export { acceptBlockWinner, protoTicketToDrawTicket } from './accept-winner.js'
