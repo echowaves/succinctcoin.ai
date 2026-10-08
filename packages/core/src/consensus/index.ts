@@ -59,3 +59,10 @@ export type { SimNode } from './sim.js'
 // identity-bound signature. Additive: composes with `verifyDraw`, never
 // weakens it.
 export { acceptBlockWinner, protoTicketToDrawTicket } from './accept-winner.js'
+// Acceptance cap (4.4, R1): the PURE pre-draw filter on a window's accepted
+// set — at most ONE ticket per identityId per window (keep-first, input
+// order, AD-3). A NEW standalone filter applied UPSTREAM of the draw: it
+// does not change `drawWindow` (AD-7), `acceptBlockWinner` (4.3), or the
+// sim (4.8 wires it into the multi-identity accepted-set construction).
+export { applyAcceptanceCap } from './acceptance-cap.js'
+export type { AcceptedSet, CappedSet } from './acceptance-cap.js'

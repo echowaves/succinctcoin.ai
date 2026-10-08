@@ -269,6 +269,13 @@ export {
   protoTicketToDrawTicket,
 } from './consensus/index.js'
 
+// Acceptance cap (4.4, R1): the PURE pre-draw filter on a window's accepted
+// set — at most ONE ticket per identityId per window (keep-first, input
+// order, AD-3). Additive: a NEW standalone filter; `drawWindow` (AD-7),
+// `acceptBlockWinner` (4.3), and the sim (4.8) are unchanged.
+export { applyAcceptanceCap } from './consensus/index.js'
+export type { AcceptedSet, CappedSet } from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
