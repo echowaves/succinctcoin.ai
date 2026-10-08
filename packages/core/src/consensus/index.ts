@@ -66,3 +66,12 @@ export { acceptBlockWinner, protoTicketToDrawTicket } from './accept-winner.js'
 // sim (4.8 wires it into the multi-identity accepted-set construction).
 export { applyAcceptanceCap } from './acceptance-cap.js'
 export type { AcceptedSet, CappedSet } from './acceptance-cap.js'
+// Uptime-weight derivation (4.5, R2): the PURE derivation of an identity's
+// draw weight from its ticket history — the COUNT of distinct valid windows
+// in the `L` windows strictly before the current one (ramp from zero, moving
+// lookback window; AD-3 chain-time, AD-5 integer bigint). A NEW standalone
+// derivation applied where the accepted-set weights are built: it does not
+// change `drawWindow` (AD-7 — the weight is a derived INPUT to the draw),
+// `acceptance-cap` (4.4), or the sim (4.8 wires it into the multi-identity
+// accepted-set weight construction).
+export { computeUptimeWeight } from './uptime.js'

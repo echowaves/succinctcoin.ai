@@ -276,6 +276,14 @@ export {
 export { applyAcceptanceCap } from './consensus/index.js'
 export type { AcceptedSet, CappedSet } from './consensus/index.js'
 
+// Uptime-weight derivation (4.5, R2): the PURE derivation of an identity's
+// draw weight from its ticket history — the COUNT of distinct valid windows
+// in the `L` windows strictly before the current one (ramp from zero, moving
+// lookback window; AD-3 chain-time, AD-5 integer bigint). Additive: a NEW
+// standalone derivation; `drawWindow` (AD-7 — the weight is a derived INPUT
+// to the draw), `applyAcceptanceCap` (4.4), and the sim (4.8) are unchanged.
+export { computeUptimeWeight } from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
