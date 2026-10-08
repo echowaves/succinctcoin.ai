@@ -1,0 +1,123 @@
+# tickets.toml — epic-operator-identity's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "GateVerifier port + GateCredential (offline)"
+description = "Adds the offline GateVerifier.verify(cred, window) -> { valid, identityId, attestedUntilWindow } port in core/identity with GateCredential = { gateId, blob } as the only representable credential shape (AD-4), plus a deterministic offline test verifier; the verifier enforces the accepted-gate registry (a credential whose gateId is not in genesis's accepted-gates list is rejected — gates enter only by protocol upgrade, must-hold (c)); no module parses credential fields outside the verifier, and a Ticket carries at most the credential hash, never the blob."
+verify = "GateVerifier.verify returns { valid, identityId, attestedUntilWindow } from an offline check only (no network call); a credential from an accepted gateId verifies and one from a non-accepted gateId is rejected (must-hold (c)); GateCredential is the only representable credential shape and no module outside the verifier reads the blob; a Ticket carries at most the credential hash, never the blob (verified by the schema + a test)."
+covers = ["R3"]
+after = ["1.4"]
+hitl = false
+risk = "medium"
+unknown = "The accepted-gates provenance (genesis gates field vs a named constant) and the offline test verifier's offline signature check are build decisions; the hard rule is that the verifier is the ONLY credential reader and it rejects any gateId not in the accepted registry (AD-4 / must-hold (c))."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Identity keypair + ticket signature (AD-12)"
+description = "Adds the identity keypair (identityId derived from the public key, 32-byte hex) plus the ticket signature sign/verify over sha256(identityId || u64be(windowIndex) || challenge || nonceCommitment) (AD-12) and a pinned golden round-trip vector, so an unselected node reusing a winner's public ticket (its identityId + nonceCommitment are readable off the chain) cannot forge a valid signature — closing the epic-3 residual replay."
+verify = "Signing a ticket with the identity key and verifying it over the exact AD-12 digest sha256(identityId || u64be(windowIndex) || challenge || nonceCommitment) round-trips (the pinned golden vector passes); a tampered ticket (wrong windowIndex / challenge / nonceCommitment, or a reused public ticket) fails verification."
+covers = ["E2"]
+after = ["1.4", 1]
+hitl = false
+risk = "high"
+unknown = "The signature scheme (which identity-bound signature algorithm + the deterministic test keypair) and whether identityId is derived from the public key vs a separate registration id are build decisions; the signature MUST be over the exact AD-12 digest (big-endian u64be windowIndex, AD-12/consistency conventions)."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Conform tickets to drawWindow + wire signature verification (AD-7 / AD-12)"
+description = "Conforms the proto Ticket to the draw input set (a Ticket maps to DrawTicket { identityId, nonceCommitment } for drawWindow — re-implementation banned) and wires the identity-bound ticket-signature verification into block acceptance, so a block is accepted only if the winner ticket verifies the draw AND carries a valid signature. The conformance + the signature check are ONE cohesive acceptance-path seam (a real ticket is accepted iff it conforms to the draw and its signature verifies) and are tested together; the signature check is ADDITIVE — it composes with epic-3's verifyDraw and does not weaken it, so epic-3's verify-draw (12), sim (5), and e2e (5) suites (which use empty signatures) stay green."
+verify = "A real signed ticket conforms to the draw input set and a block whose winner ticket verifies the draw AND its signature is accepted, while a block reusing a winner's public ticket (a valid commitment but an invalid signature) is rejected; drawWindow is imported, never re-implemented (AD-7); epic-3's verify-draw, sim, and e2e suites stay green."
+covers = ["E2"]
+after = ["1.4", 2, "3.3", "3.4"]
+hitl = false
+risk = "high"
+unknown = "Whether the signature check is a standalone acceptance gate composing with verifyDraw (leaving verifyDraw unchanged) vs an extension of it, and whether mined blocks (mineAndApply / the sim) produce signed tickets, are build decisions; the HARD constraint is that epic-3's verify-draw (12), sim (5), and e2e (5) suites — which use empty-signature tickets — stay green."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Acceptance cap (one valid ticket per identity per window)"
+description = "Enforces the acceptance cap — at most one valid ticket per identity per chain-window — in the per-window accepted-set, so extra identities of the same operator earn no extra eligibility and the mining reward never scales with identity count (the enforceable form of the registration design's R1; N identities = N× the creation cost and 1× the eligibility each)."
+verify = "The per-window accepted-set accepts at most one valid ticket per identity per chain-window; in a multi-identity set, a second ticket from the same identity in the same window is dropped so it earns no extra eligibility; the reward does not scale with identity count; drawWindow (epic 3) is unchanged."
+covers = ["R1"]
+after = [3, "3.4"]
+hitl = false
+risk = "medium"
+unknown = "How the accepted-set enforces 'one valid ticket per identity per window' (the set is per-window and chain-time; the cap is applied at ticket acceptance, before the draw) is a build decision; it must NOT change drawWindow (epic 3 owns the draw) — the cap is a pre-draw filter on the accepted set."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Uptime = valid tickets over lookback-L (ramp from zero)"
+description = "Computes uptime as the fraction of valid tickets over a moving lookback of L chain-time windows, ramping from zero for a new identity (no uptime inflation from a fresh identity claiming a long lookback), and replaces the fixed draw-weight input with a per-identity weight derived from that ticket history — the slot reward stays fixed emission with no stake component (R2)."
+verify = "Uptime for an identity = valid tickets over the lookback of L windows, ramping from zero for a new identity; over many windows an identity's win odds track its uptime (lookback ramp, no inflation from fresh identities); the per-identity draw weight is derived from the ticket history (L from genesis uptimeLookbackL); the reward is fixed emission with no stake component."
+covers = ["R2"]
+after = [4, "3.3"]
+hitl = false
+risk = "medium"
+unknown = "How the lookback window is threaded through the sim/node (chain-time: the last L windows of accepted tickets, AD-3) and how a new identity ramps from zero are build decisions; L is the genesis parameter uptimeLookbackL (not a protocol-logic choice); the weight feeds drawWindow as the uptime input (AD-7) and the reward stays fixed emission (epic 3's economic model, unchanged)."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Re-attestation every K windows + lapse = lose eligibility"
+description = "Makes an identity re-attest every K chain-time windows: its ticket is valid only while the current window is at or below the GateVerifier's attestedUntilWindow; a lapsed identity stops producing valid tickets and loses eligibility (the must-hold (d) made concrete — stop re-attesting and the identity stops being eligible; a compromised gate's fake IDs die within K of the gate being fixed). K is the genesis parameter reattestationK."
+verify = "A ticket is valid only while the current window <= the verifier's attestedUntilWindow; an identity that lapses stops producing valid tickets within K windows and loses eligibility (its tickets are no longer accepted); re-attestation extends attestedUntilWindow; K is read from genesis reattestationK (chain-time, not wall clock)."
+covers = ["R4"]
+after = [5, 1]
+hitl = false
+risk = "medium"
+unknown = "How attestedUntilWindow (from the verifier, entry 1) is checked against the current chain-time window and how the sim models the re-attestation cadence (an identity re-attesting every K windows) are build decisions; K = genesis reattestationK; the check is chain-time (AD-3)."
+
+[[entry]]
+id = 7
+type = "story"
+title = "Key material boundary (keys never leave core in plaintext)"
+description = "Guards AD-11 in the core: identity private keys live in core and are never exposed through the core read API or event payloads in plaintext — the core half of the boundary (the renderer/IPC half is epic 6); the UI-facing surface receives only identity ids, status, and signed artifacts."
+verify = "No core read-API method or event payload exposes an identity private key in plaintext (a test asserts the private key is absent from the read API surface and event payloads); the surface exposes only identity ids / status / signed artifacts (AD-11)."
+covers = ["E1"]
+after = [2]
+hitl = false
+risk = "low"
+unknown = "The exact mechanism guarding the read-API / event-payload surface (a type-level boundary + a test that the private key is never projected into a public payload) is a build decision; the renderer/IPC boundary itself is epic 6 (CAP-4), not this epic."
+
+[[entry]]
+id = 8
+type = "story"
+title = "Multi-identity simulation (acceptance cap + uptime + re-attestation)"
+description = "Builds the multi-identity memory-transport simulation proving the registration design's R1/R2 and the Done-when: N identities of one operator earn no more slot-eligibility throughput than one (enforced by the acceptance cap); a distinct operator running N gate-verified persons wins ~N× (uptime); identity rental is linear-cost (a per-identity floor, not per-operator equality — the accepted limitation); and every slot winner is verifiable from public data (an unselected node's block is rejected). The sim reuses 3.3's drawWindow and 3.4's verifyDraw (never re-implements the draw) and uses the epic-4 signed tickets + the uptime/re-attestation seams."
+verify = "In a multi-identity memory-transport sim: N identities of one operator win no more than one identity's share (acceptance cap); a distinct operator running N gate-verified persons wins ~N× (uptime); identity rental is linear-cost (per-identity floor); a lapsed identity's tickets stop being accepted; every slot winner is verifiable from public data and an unselected node's block is rejected; the draw is imported (never re-implemented)."
+covers = ["R1", "R2"]
+after = [6, "3.3", "3.4"]
+hitl = false
+risk = "high"
+unknown = "The statistical tolerance for the ~N× uptime assertion and the pinned sim parameters (identity count per operator, uptimes, window count, re-attestation schedule, K/L) are build decisions; the sim reuses 3.3's drawWindow + 3.4's verifyDraw (never re-implements the draw) and uses epic-4's signed tickets; K/L from genesis."
+
+[[entry]]
+id = 9
+type = "story"
+title = "Refactor sweep"
+description = "Runs the closing refactor sweep (cleanup only, scope set from the build records and deferred review findings) and confirms the identity suite is green headless."
+verify = "pnpm test and pnpm build pass in plain Node; the identity invariants (acceptance cap, uptime lookback, re-attestation, GateVerifier offline, ticket signature) and the AD-4/AD-7/AD-11/AD-12 guards hold; no capability logic was added."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Closing end-to-end suite (full Done-when)"
+description = "Runs the closing end-to-end suite across the epic — the full Done-when as one integrated headless check on the memory transport: N identities of one operator earn no more eligibility than one (cap) while a distinct operator wins ~N× (uptime); the slot winner is verifiable from public data and a non-selected node is rejected; a lapsed identity stops producing valid tickets within K windows; the GateVerifier is the only credential reader and a Ticket never carries the blob; and identity rental is linear-cost. It composes the epic-4 identity seams (verifier, signature, cap, uptime, re-attestation) with 3.3's drawWindow and 3.4's verifyDraw — never re-implementing the draw."
+verify = "The integrated suite proves all five Done-when checks green headless on the memory transport: (1) the cap holds (N identities of one operator <= one identity's eligibility) and a distinct operator wins ~N×; (2) the public-coin winner is verifiable from public data and a non-selected node's block is rejected; (3) a lapsed identity stops producing valid tickets within K windows; (4) the GateVerifier is the only credential reader and a Ticket never carries the credential blob; (5) identity rental is linear-cost (per-identity floor); the draw is imported, never re-implemented."
+covers = ["R1", "R2", "R3", "R4", "E1", "E2"]
+after = [9]
+hitl = false
+risk = "medium"
+unknown = "The integrated suite may need to pin the multi-identity sim parameters (window count, identity set per operator, uptimes, re-attestation schedule, K/L) so it is deterministic and not flaky; those pins are settled at build and recorded in the plan."
