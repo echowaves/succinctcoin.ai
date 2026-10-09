@@ -26,7 +26,8 @@
  *
  * The input `DrawTicket` is a lightweight draw-input interface that maps
  * to the existing proto `Ticket` (1.4, AD-12 — the proto message is NOT
- * redefined here); epic 4 conforms real tickets to it.
+ * redefined here); epic 4 (4.3,
+ * `protoTicketToDrawTicket`) conforms real tickets to it.
  */
 import { createHash } from 'node:crypto'
 
@@ -36,7 +37,7 @@ import { createHash } from 'node:crypto'
  * (spine convention); `nonceCommitment` is the commitment to the PoW
  * nonce (the draw's only randomness source). The proto `windowIndex`,
  * `challenge`, and `signature` fields are owned by verification (3.4 /
- * epic 4), not the draw.
+ * 4.3), not the draw.
  */
 export interface DrawTicket {
   /** 32-byte hex identity id of the minter (spine convention). */
@@ -177,8 +178,8 @@ function compareExact(
  *
  * `weights[i]` is `tickets[i]`'s non-negative integer uptime weight
  * (`W ≥ 0`; `W = 0` ⇒ `c^0 = 1`, the worst priority). Weights are INPUTS —
- * deriving a weight from the lookback-L valid-ticket count (AD-4) happens
- * where the accepted-ticket set is built (3.4 / epic 4), not here.
+ * deriving a weight from the lookback-L valid-ticket count (AD-7) happens
+ * where the accepted-ticket set is built (4.5/4.8), not here.
  *
  * Pure function: same `(tickets, challenge, weights)` ⇒ same winner, on
  * every node, with no RNG source other than the committed nonces.

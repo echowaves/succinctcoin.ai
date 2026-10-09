@@ -286,8 +286,8 @@ describe('CONSENSUS DRAW — the AD-7 public-coin draw (3.3)', () => {
 
   it('INTERFACE: a DrawTicket built per the interface is accepted by drawWindow via the barrel', () => {
     // Constructed from the barrel-exported `DrawTicket` type only — the
-    // proto `Ticket` (1.4) maps to this shape in epic 4 without
-    // re-inventing the proto message (AD-12).
+    // proto `Ticket` (1.4) maps to this shape via 4.3's
+    // `protoTicketToDrawTicket` without re-inventing the proto message (AD-12).
     const ticket: DrawTicket = {
       identityId: '1111111111111111111111111111111111111111111111111111111111111111',
       nonceCommitment: commit('interface-ticket'),

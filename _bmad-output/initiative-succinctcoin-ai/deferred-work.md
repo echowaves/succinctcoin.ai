@@ -26,3 +26,15 @@
      wrong — `assertStateDocument` had the same plain-object trap and dropped it too;
      that is why 2.6's forced deviation touched the store, not just the ledger. Kept
      here as a note only. -->
+
+<!-- OPEN 2026-10-08 (story 4.9, deferred from 3.8): DRY-extract the shared
+     big-endian byte helpers out of `src/consensus/pow.ts` and `src/consensus/draw.ts`
+     into one shared module. The genuinely shared surface is `u64be` (identical in
+     both); the big-endian byte→bigint reader is duplicated under DIFFERENT names
+     (`beBytesToBig` in pow.ts, `bytesToBig` in draw.ts); `concat` is draw-only.
+     DEFERRED — not done here: both are pinned AD-6/AD-7 modules with golden vectors
+     and import-scan guards (2.5 no-float guard, 3.9 mining-path guard); `u64be`'s
+     range guard throws each module's own `PowError`/`DrawError`, so a shared
+     extraction would either duplicate those or risk the guards. Defer to a
+     dedicated byte-helper sweep or epic 5 (which touches the wire path). Recorded
+     at the 4.9 sweep; no code change. -->

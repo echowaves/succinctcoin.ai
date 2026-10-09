@@ -136,7 +136,8 @@ const CHALLENGE: Uint8Array<ArrayBuffer> = Uint8Array.from(
 
 /**
  * Build a PROTO `Ticket` for an identity (the block's `winnerTicket` wire
- * form, AD-12) — `signature` empty (epic 4 verifies it). The `challenge`
+ * form, AD-12) — `signature` empty (this epic-3 harness predates 4.2's
+ * signature; 4.3/4.8 verify a real one). The `challenge`
  * defaults to the fixed test challenge.
  */
 function protoTicket(

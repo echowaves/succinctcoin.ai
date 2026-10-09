@@ -39,7 +39,7 @@ import type { DrawTicket } from './draw.js'
 /**
  * An other node's ticket + its draw weight (AD-7): the accepted-set member
  * the draw races against the node's own ticket. `weight` is the ticket's
- * non-negative integer uptime weight (draw input; epic 4 derives it from
+ * non-negative integer uptime weight (draw input; 4.5/4.8 derive it from
  * the lookback window).
  */
 export interface OtherTicket {
@@ -57,7 +57,8 @@ export interface OtherTicket {
  * randomness source — derived from `sha256("SC-TRACER-COMMIT/1" ‖
  * parentHash ‖ u64be(slot))`, so a rerun on the same chain reproduces the
  * same ticket; no wall clock, no RNG, AD-3), and an EMPTY `signature`
- * (epic 4 verifies it; the tracer signs nothing).
+ * (4.3/4.8 verify a real signature; the tracer — the single-node
+ * 3.5 loop — signs nothing).
  */
 function tracerTicket(
   slot: bigint,

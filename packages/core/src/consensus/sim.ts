@@ -25,11 +25,12 @@
  *
  * Determinism (AD-3, D5): NO `Math.random`, NO wall clock. Every commitment
  * and challenge is a pinned `sha256` of public data. `syntheticTicket` is the
- * pre-epic-4 stand-in for a real gate-verified ticket (epic 4): its
+ * pre-epic-4 stand-in for a real gate-verified ticket (epic 4 now ships 4.2's
+ * signed tickets): its
  * `nonceCommitment` is a deterministic per-(node, window) sha256 and its
  * `signature` is empty (the epic-3 convention — 3.4). The nodes' **uptime
- * weights are fixed inputs** to the draw (AD-7: weights are inputs; epic 4
- * derives real weights from the lookback window).
+ * weights are fixed inputs** to the draw (AD-7: weights are inputs; 4.5/4.8
+ * derive real weights from the lookback window).
  *
  * NOT wired into `createCore` — a standalone validation harness (3.5's one
  * block per `start()` loop is untouched). Additive surface only.
@@ -51,8 +52,9 @@ import { nextSlotAndParent } from './slot-loop.js'
  * A simulated node (3.7): a 64-hex identity id + its fixed uptime weight.
  *
  * `uptime` is the node's draw weight (AD-7: a non-negative integer INPUT to
- * the draw — the pre-epic-4 stand-in for "valid tickets over lookback L").
- * The always-up node carries the HIGHEST weight, so it wins the most (R1).
+ * the draw — the pre-epic-4 stand-in for "valid tickets over lookback L";
+ * 4.5 derives the real weight). The always-up node carries the HIGHEST
+ * weight, so it wins the most (R1).
  * Weights are distinct inputs, not derived from any observed traffic.
  */
 export interface SimNode {
@@ -123,7 +125,8 @@ const FIXED_PARENT = new Uint8Array(32)
  *   - `nonceCommitment` = `sha256("SC-SIM-COMMIT/1" ‖ utf8(identityId) ‖
  *     u64be(slot) ‖ parentHash)` — 32 bytes, a PINNED sha256 of public data
  *     (no RNG / wall clock), distinct per (node, window);
- *   - `signature` = empty (epic 4 verifies it — the epic-3 convention, 3.4).
+ *   - `signature` = empty (4.3/4.8 verify a real signature — this harness
+ *     keeps the epic-3 empty-signature convention, 3.4).
  *
  * The commitment does NOT depend on the challenge (the draw consumes only
  * `identityId` + `nonceCommitment`); the challenge is carried for the

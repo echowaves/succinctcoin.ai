@@ -315,7 +315,8 @@ describe('MULTI-NODE SIMULATION — the uptime-only slot rate (3.7, R1)', () => 
     expect(t.windowIndex).toBe(slot)
     // challenge byte-equals the input.
     expect(bytesEqual(t.challenge, challenge)).toBe(true)
-    // empty signature (epic 4 verifies it — the epic-3 convention).
+    // empty signature (4.3/4.8 verify a real signature — this harness keeps
+    // the epic-3 convention).
     expect(t.signature.byteLength).toBe(0)
 
     // The commitment is a PINNED sha256 of public data (AD-3): same inputs →

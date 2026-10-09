@@ -100,8 +100,9 @@ export function verifyDraw(
   //    unselected node — the draw winner is public — could claim the
   //    winner's identity with a fabricated / empty / truncated commitment
   //    and pass. (Replaying the winner's EXACT public ticket is the
-  //    residual case closed when epic 4 verifies the identity-bound
-  //    Ticket.signature.)
+  //    residual case closed by 4.3's `acceptBlockWinner`, which composes
+  //    `verifyDraw` with the identity-bound `verifyTicketSignature` (4.2,
+  //    AD-12).
   const inAcceptedSet = tickets.some(
     (t) =>
       t.identityId === winnerTicket.identityId &&

@@ -13,7 +13,7 @@
  *
  * This is a PURE standalone derivation (D1): it does NOT change `drawWindow`
  * (epic 3 owns the draw — the weight is a DERIVED INPUT to it, AD-7), the
- * acceptance cap (4.4), the acceptance seam (4.3), the sim (4.8 wires these
+ * acceptance cap (4.4), the acceptance seam (4.3), the sim (4.8 has wired these
  * derived weights into the multi-identity accepted-set construction, replacing
  * the fixed `SimNode.uptime` inputs), `applyBlock` / `economics` (3.6), the
  * genesis seam (1.6), or the proto. `L` is the genesis parameter
