@@ -28,6 +28,22 @@ export {
 } from './identity.js'
 export type { IdentityKeypair, TicketFields } from './identity.js'
 
+// 4.6 — the re-attestation lifecycle (R4 / must-hold (d)): the PURE lapse
+// gate (`isEligibleAtWindow` — eligible only while `currentWindow ≤
+// attestedUntilWindow`, inclusive through the deadline) + the PURE cadence
+// (`reattestationWindow` — re-attesting at window `W` extends the deadline
+// to `W + K`, `K` = genesis `reattestationK`) + the seam that COMPOSES with
+// the 4.1 verifier (`verifyReattestation` — `verifier.verify` is the only
+// credential reader, AD-4; a lapse is the normal `{ valid: false,
+// attestedUntilWindow: 0n }`, never an error). Chain-time only (AD-3), no
+// `big.js` (AD-5).
+export {
+  isEligibleAtWindow,
+  reattestationWindow,
+  verifyReattestation,
+} from './reattestation.js'
+export type { ReattestationResult } from './reattestation.js'
+
 // The credential / verification port types (AD-4) — re-exported so the
 // identity surface is import-complete from this module. The declarations
 // stay in `src/ports.ts` (4.1 adds the implementation, not the seam).

@@ -324,3 +324,20 @@ export {
   verifyTicketSignature,
 } from './identity/index.js'
 export type { IdentityKeypair, TicketFields } from './identity/index.js'
+
+// Operator identity (epic 4, CAP-2): the re-attestation lifecycle (4.6, R4 /
+// must-hold (d)). `isEligibleAtWindow` is the PURE lapse gate (an identity is
+// eligible only while `currentWindow ≤ attestedUntilWindow` — inclusive
+// through the deadline, lapses at `deadline + 1`); `reattestationWindow` is
+// the PURE cadence (re-attesting at window `W` extends the deadline to
+// `W + K`, `K` = genesis `reattestationK`); `verifyReattestation` is the
+// seam that COMPOSES with the 4.1 `GateVerifier` (`verifier.verify` is the
+// only credential reader, AD-4 — a lapse is the normal
+// `{ valid: false, attestedUntilWindow: 0n }`, never an error).
+// Chain-time only (AD-3); no `big.js` (AD-5).
+export {
+  isEligibleAtWindow,
+  reattestationWindow,
+  verifyReattestation,
+} from './identity/index.js'
+export type { ReattestationResult } from './identity/index.js'
