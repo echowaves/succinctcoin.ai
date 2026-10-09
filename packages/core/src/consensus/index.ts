@@ -75,3 +75,21 @@ export type { AcceptedSet, CappedSet } from './acceptance-cap.js'
 // `acceptance-cap` (4.4), or the sim (4.8 wires it into the multi-identity
 // accepted-set weight construction).
 export { computeUptimeWeight } from './uptime.js'
+// Multi-identity memory-transport simulation (4.8, R1/R2): the standalone
+// harness that generalizes 3.7's `sim.ts` into the epic-4 multi-identity
+// accepted set — SIGNED tickets (4.2, AD-12), uptime-derived weights (4.5),
+// re-attestation eligibility (4.6), and the acceptance cap (4.4) —
+// composing with the IMPORTED `drawWindow` (AD-7, never re-implemented)
+// and `acceptBlockWinner` (4.3: `verifyDraw` + `verifyTicketSignature`).
+// The keypair is a CORE-INTERNAL sim value (AD-11 — the module never reads
+// `.secret`; it signs via `signTicket`). NOT wired into `createCore` —
+// additive surface only.
+export {
+  buildCappedSet,
+  eligibleSignedSet,
+  multiDrawSchedule,
+  signedTicket,
+  simulateMultiNetwork,
+  simulateMultiWindow,
+} from './multi-sim.js'
+export type { MultiSimIdentity, MultiSimWindowResult, WindowAcceptedSet } from './multi-sim.js'

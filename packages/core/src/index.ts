@@ -284,6 +284,24 @@ export type { AcceptedSet, CappedSet } from './consensus/index.js'
 // to the draw), `applyAcceptanceCap` (4.4), and the sim (4.8) are unchanged.
 export { computeUptimeWeight } from './consensus/index.js'
 
+// Multi-identity memory-transport simulation (4.8, R1/R2): the standalone
+// harness generalizing 3.7's `sim.ts` into the epic-4 multi-identity
+// accepted set — SIGNED tickets (4.2, AD-12), uptime-derived weights (4.5),
+// re-attestation eligibility (4.6), and the acceptance cap (4.4) —
+// composing with the IMPORTED `drawWindow` (AD-7, never re-implemented) and
+// `acceptBlockWinner` (4.3). The keypair is a CORE-INTERNAL sim value
+// (AD-11 — the module never reads `.secret`; it signs via `signTicket`).
+// NOT wired into `createCore` — additive surface only.
+export {
+  buildCappedSet,
+  eligibleSignedSet,
+  multiDrawSchedule,
+  signedTicket,
+  simulateMultiNetwork,
+  simulateMultiWindow,
+} from './consensus/index.js'
+export type { MultiSimIdentity, MultiSimWindowResult, WindowAcceptedSet } from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
