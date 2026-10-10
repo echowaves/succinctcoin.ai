@@ -871,6 +871,668 @@ export namespace succinctcoin {
     }
   }
 
+  export interface BlockEnvelope {
+    block?: succinctcoin.Block
+    sourcePeerId: string
+  }
+
+  export interface BlockEnvelopeInput {
+    block?: succinctcoin.BlockInput
+    sourcePeerId?: string
+  }
+
+  export namespace BlockEnvelope {
+    let _codec: Codec<BlockEnvelope, BlockEnvelopeInput>
+
+    export const codec = (): Codec<BlockEnvelope, BlockEnvelopeInput> => {
+      if (_codec == null) {
+        _codec = message<BlockEnvelope, BlockEnvelopeInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.block != null) {
+            w.uint32(10)
+            succinctcoin.Block.codec().encode(obj.block, w)
+          }
+
+          if ((obj.sourcePeerId != null && obj.sourcePeerId !== '')) {
+            w.uint32(18)
+            w.string(obj.sourcePeerId)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            sourcePeerId: ''
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.block = succinctcoin.Block.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.block
+                })
+                break
+              }
+              case 2: {
+                obj.sourcePeerId = r.string()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.BlockEnvelope'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.Block.codec().stream(r, r.uint32(), `${prefix}block.`, {
+                  limits: opts.limits?.block
+                })
+
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}sourcePeerId`,
+                  value: r.string()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.BlockEnvelope'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface BlockEnvelopeBlockMessageStart {
+      field: '.block'
+      type: 'start'
+    }
+
+    export interface BlockEnvelopeBlockMessageEnd {
+      field: '.block'
+      type: 'end'
+    }
+
+    export interface BlockEnvelopeBlockSlotFieldEvent {
+      field: '.block.slot'
+      value: bigint
+    }
+
+    export interface BlockEnvelopeBlockParentHashFieldEvent {
+      field: '.block.parentHash'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface BlockEnvelopeBlockWinnerIdentityIdFieldEvent {
+      field: '.block.winnerIdentityId'
+      value: string
+    }
+
+    export interface BlockEnvelopeBlockWinnerTicketFieldEvent {
+      field: '.block.winnerTicket'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface BlockEnvelopeBlockNonceFieldEvent {
+      field: '.block.nonce'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface BlockEnvelopeBlockHashFieldEvent {
+      field: '.block.hash'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface BlockEnvelopeBlockTxCountFieldEvent {
+      field: '.block.txCount'
+      value: bigint
+    }
+
+    export interface BlockEnvelopeSourcePeerIdFieldEvent {
+      field: '.sourcePeerId'
+      value: string
+    }
+
+    export function encode (obj: BlockEnvelopeInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, BlockEnvelope.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<BlockEnvelope>): BlockEnvelope {
+      return decodeMessage(buf, BlockEnvelope.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<BlockEnvelope>): Generator<BlockEnvelopeBlockMessageStart | BlockEnvelopeBlockMessageEnd | BlockEnvelopeBlockSlotFieldEvent | BlockEnvelopeBlockParentHashFieldEvent | BlockEnvelopeBlockWinnerIdentityIdFieldEvent | BlockEnvelopeBlockWinnerTicketFieldEvent | BlockEnvelopeBlockNonceFieldEvent | BlockEnvelopeBlockHashFieldEvent | BlockEnvelopeBlockTxCountFieldEvent | BlockEnvelopeSourcePeerIdFieldEvent> {
+      return streamMessage(buf, BlockEnvelope.codec(), opts)
+    }
+  }
+
+  export interface TicketEnvelope {
+    ticket?: succinctcoin.Ticket
+    sourcePeerId: string
+  }
+
+  export interface TicketEnvelopeInput {
+    ticket?: succinctcoin.TicketInput
+    sourcePeerId?: string
+  }
+
+  export namespace TicketEnvelope {
+    let _codec: Codec<TicketEnvelope, TicketEnvelopeInput>
+
+    export const codec = (): Codec<TicketEnvelope, TicketEnvelopeInput> => {
+      if (_codec == null) {
+        _codec = message<TicketEnvelope, TicketEnvelopeInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.ticket != null) {
+            w.uint32(10)
+            succinctcoin.Ticket.codec().encode(obj.ticket, w)
+          }
+
+          if ((obj.sourcePeerId != null && obj.sourcePeerId !== '')) {
+            w.uint32(18)
+            w.string(obj.sourcePeerId)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            sourcePeerId: ''
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.ticket = succinctcoin.Ticket.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.ticket
+                })
+                break
+              }
+              case 2: {
+                obj.sourcePeerId = r.string()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.TicketEnvelope'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.Ticket.codec().stream(r, r.uint32(), `${prefix}ticket.`, {
+                  limits: opts.limits?.ticket
+                })
+
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}sourcePeerId`,
+                  value: r.string()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.TicketEnvelope'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface TicketEnvelopeTicketMessageStart {
+      field: '.ticket'
+      type: 'start'
+    }
+
+    export interface TicketEnvelopeTicketMessageEnd {
+      field: '.ticket'
+      type: 'end'
+    }
+
+    export interface TicketEnvelopeTicketIdentityIdFieldEvent {
+      field: '.ticket.identityId'
+      value: string
+    }
+
+    export interface TicketEnvelopeTicketWindowIndexFieldEvent {
+      field: '.ticket.windowIndex'
+      value: bigint
+    }
+
+    export interface TicketEnvelopeTicketChallengeFieldEvent {
+      field: '.ticket.challenge'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface TicketEnvelopeTicketNonceCommitmentFieldEvent {
+      field: '.ticket.nonceCommitment'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface TicketEnvelopeTicketSignatureFieldEvent {
+      field: '.ticket.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface TicketEnvelopeSourcePeerIdFieldEvent {
+      field: '.sourcePeerId'
+      value: string
+    }
+
+    export function encode (obj: TicketEnvelopeInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, TicketEnvelope.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<TicketEnvelope>): TicketEnvelope {
+      return decodeMessage(buf, TicketEnvelope.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<TicketEnvelope>): Generator<TicketEnvelopeTicketMessageStart | TicketEnvelopeTicketMessageEnd | TicketEnvelopeTicketIdentityIdFieldEvent | TicketEnvelopeTicketWindowIndexFieldEvent | TicketEnvelopeTicketChallengeFieldEvent | TicketEnvelopeTicketNonceCommitmentFieldEvent | TicketEnvelopeTicketSignatureFieldEvent | TicketEnvelopeSourcePeerIdFieldEvent> {
+      return streamMessage(buf, TicketEnvelope.codec(), opts)
+    }
+  }
+
+  export interface TxEnvelope {
+    tx?: succinctcoin.Tx
+    sourcePeerId: string
+  }
+
+  export interface TxEnvelopeInput {
+    tx?: succinctcoin.TxInput
+    sourcePeerId?: string
+  }
+
+  export namespace TxEnvelope {
+    let _codec: Codec<TxEnvelope, TxEnvelopeInput>
+
+    export const codec = (): Codec<TxEnvelope, TxEnvelopeInput> => {
+      if (_codec == null) {
+        _codec = message<TxEnvelope, TxEnvelopeInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.tx != null) {
+            w.uint32(10)
+            succinctcoin.Tx.codec().encode(obj.tx, w)
+          }
+
+          if ((obj.sourcePeerId != null && obj.sourcePeerId !== '')) {
+            w.uint32(18)
+            w.string(obj.sourcePeerId)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            sourcePeerId: ''
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.tx = succinctcoin.Tx.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.tx
+                })
+                break
+              }
+              case 2: {
+                obj.sourcePeerId = r.string()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.TxEnvelope'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.Tx.codec().stream(r, r.uint32(), `${prefix}tx.`, {
+                  limits: opts.limits?.tx
+                })
+
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}sourcePeerId`,
+                  value: r.string()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.TxEnvelope'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface TxEnvelopeTxMessageStart {
+      field: '.tx'
+      type: 'start'
+    }
+
+    export interface TxEnvelopeTxMessageEnd {
+      field: '.tx'
+      type: 'end'
+    }
+
+    export interface TxEnvelopeTxSenderFieldEvent {
+      field: '.tx.sender'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface TxEnvelopeTxRecipientFieldEvent {
+      field: '.tx.recipient'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface TxEnvelopeTxAmountFieldEvent {
+      field: '.tx.amount'
+      value: string
+    }
+
+    export interface TxEnvelopeTxFeeFieldEvent {
+      field: '.tx.fee'
+      value: string
+    }
+
+    export interface TxEnvelopeTxSlotFieldEvent {
+      field: '.tx.slot'
+      value: bigint
+    }
+
+    export interface TxEnvelopeTxSignatureFieldEvent {
+      field: '.tx.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface TxEnvelopeSourcePeerIdFieldEvent {
+      field: '.sourcePeerId'
+      value: string
+    }
+
+    export function encode (obj: TxEnvelopeInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, TxEnvelope.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<TxEnvelope>): TxEnvelope {
+      return decodeMessage(buf, TxEnvelope.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<TxEnvelope>): Generator<TxEnvelopeTxMessageStart | TxEnvelopeTxMessageEnd | TxEnvelopeTxSenderFieldEvent | TxEnvelopeTxRecipientFieldEvent | TxEnvelopeTxAmountFieldEvent | TxEnvelopeTxFeeFieldEvent | TxEnvelopeTxSlotFieldEvent | TxEnvelopeTxSignatureFieldEvent | TxEnvelopeSourcePeerIdFieldEvent> {
+      return streamMessage(buf, TxEnvelope.codec(), opts)
+    }
+  }
+
+  export interface PeerInfoEnvelope {
+    peerInfo?: succinctcoin.PeerInfo
+    sourcePeerId: string
+  }
+
+  export interface PeerInfoEnvelopeInput {
+    peerInfo?: succinctcoin.PeerInfoInput
+    sourcePeerId?: string
+  }
+
+  export namespace PeerInfoEnvelope {
+    let _codec: Codec<PeerInfoEnvelope, PeerInfoEnvelopeInput>
+
+    export const codec = (): Codec<PeerInfoEnvelope, PeerInfoEnvelopeInput> => {
+      if (_codec == null) {
+        _codec = message<PeerInfoEnvelope, PeerInfoEnvelopeInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.peerInfo != null) {
+            w.uint32(10)
+            succinctcoin.PeerInfo.codec().encode(obj.peerInfo, w)
+          }
+
+          if ((obj.sourcePeerId != null && obj.sourcePeerId !== '')) {
+            w.uint32(18)
+            w.string(obj.sourcePeerId)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            sourcePeerId: ''
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.peerInfo = succinctcoin.PeerInfo.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.peerInfo
+                })
+                break
+              }
+              case 2: {
+                obj.sourcePeerId = r.string()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.PeerInfoEnvelope'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.PeerInfo.codec().stream(r, r.uint32(), `${prefix}peerInfo.`, {
+                  limits: opts.limits?.peerInfo
+                })
+
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}sourcePeerId`,
+                  value: r.string()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.PeerInfoEnvelope'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface PeerInfoEnvelopePeerInfoMessageStart {
+      field: '.peerInfo'
+      type: 'start'
+    }
+
+    export interface PeerInfoEnvelopePeerInfoMessageEnd {
+      field: '.peerInfo'
+      type: 'end'
+    }
+
+    export interface PeerInfoEnvelopePeerInfoPeerIdFieldEvent {
+      field: '.peerInfo.peerId'
+      value: string
+    }
+
+    export interface PeerInfoEnvelopePeerInfoMultiaddrsFieldEvent {
+      field: '.peerInfo.multiaddrs[]'
+      index: number
+      value: string
+    }
+
+    export interface PeerInfoEnvelopePeerInfoUptimeFieldEvent {
+      field: '.peerInfo.uptime'
+      value: bigint
+    }
+
+    export interface PeerInfoEnvelopeSourcePeerIdFieldEvent {
+      field: '.sourcePeerId'
+      value: string
+    }
+
+    export function encode (obj: PeerInfoEnvelopeInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, PeerInfoEnvelope.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerInfoEnvelope>): PeerInfoEnvelope {
+      return decodeMessage(buf, PeerInfoEnvelope.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerInfoEnvelope>): Generator<PeerInfoEnvelopePeerInfoMessageStart | PeerInfoEnvelopePeerInfoMessageEnd | PeerInfoEnvelopePeerInfoPeerIdFieldEvent | PeerInfoEnvelopePeerInfoMultiaddrsFieldEvent | PeerInfoEnvelopePeerInfoUptimeFieldEvent | PeerInfoEnvelopeSourcePeerIdFieldEvent> {
+      return streamMessage(buf, PeerInfoEnvelope.codec(), opts)
+    }
+  }
+
   let _codec: Codec<succinctcoin, succinctcoinInput>
 
   export const codec = (): Codec<succinctcoin, succinctcoinInput> => {

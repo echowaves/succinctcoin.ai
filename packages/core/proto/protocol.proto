@@ -82,3 +82,54 @@ message PeerInfo {
   // Uptime in chain-time slots (draw weight input, AD-7).
   int64 uptime = 3;
 }
+
+// ---------------------------------------------------------------------------
+// Gossipsub message envelopes (epic 5, story 5.2 — AD-8/AD-12).
+//
+// Each envelope wraps one payload class + the publisher's PROTOCOL identity
+// id (the 4.2 Ed25519 identityId, 32-byte hex — NOT the libp2p transport
+// peer id) and travels on its OWN topic (one stable topic per message
+// class, AD-8):
+//
+//   /succinctcoin/blocks/1  → BlockEnvelope
+//   /succinctcoin/tickets/1 → TicketEnvelope
+//   /succinctcoin/tx/1      → TxEnvelope
+//   /succinctcoin/peers/1   → PeerInfoEnvelope
+//
+// The topic already says which class is in flight, so there is no class
+// discriminator field on the wire. PURELY ADDITIVE: the four payload
+// messages above (`Block`/`Ticket`/`Tx`/`PeerInfo`) are UNCHANGED — no
+// field-number or type changes (the ONE proto change in epic 5).
+// ---------------------------------------------------------------------------
+
+// Envelope for the blocks topic: the published block + its source.
+message BlockEnvelope {
+  // The published block (AD-7: carries the winner's ticket + nonce).
+  Block block = 1;
+  // 32-byte hex protocol identity id of the publishing node (4.2).
+  string sourcePeerId = 2;
+}
+
+// Envelope for the tickets topic: the published ticket + its source.
+message TicketEnvelope {
+  // The published ticket (AD-4: per-window proof-of-attestation).
+  Ticket ticket = 1;
+  // 32-byte hex protocol identity id of the publishing node (4.2).
+  string sourcePeerId = 2;
+}
+
+// Envelope for the tx topic: the published tx + its source.
+message TxEnvelope {
+  // The published tx (amounts as decimal strings, AD-5).
+  Tx tx = 1;
+  // 32-byte hex protocol identity id of the publishing node (4.2).
+  string sourcePeerId = 2;
+}
+
+// Envelope for the peers topic: the published peer info + its source.
+message PeerInfoEnvelope {
+  // The published peer info (AD-8 gossip surface).
+  PeerInfo peerInfo = 1;
+  // 32-byte hex protocol identity id of the publishing node (4.2).
+  string sourcePeerId = 2;
+}

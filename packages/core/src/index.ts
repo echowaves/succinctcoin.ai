@@ -306,11 +306,17 @@ export type { MultiSimIdentity, MultiSimWindowResult, WindowAcceptedSet } from '
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
 // namespace: `Block.encode`/`decode`/`codec`/`stream`) — see src/proto/index.ts.
+// Plus the four gossipsub envelope messages (5.2, AD-8/AD-12): each wraps a
+// payload class + `sourcePeerId` and travels on its own class topic.
 export {
   Block,
+  BlockEnvelope,
   PeerInfo,
+  PeerInfoEnvelope,
   Ticket,
+  TicketEnvelope,
   Tx,
+  TxEnvelope,
   succinctcoin,
 } from './proto/index.js'
 export type { succinctcoinInput } from './proto/index.js'
@@ -364,7 +370,9 @@ export type { ReattestationResult } from './identity/index.js'
 // the FULL 1.2 `NetPort` surface over libp2p + noise + yamux + gossipsub,
 // CI-exercised only on the memory transport (zero real sockets). The
 // transport identity is libp2p's own keypair (never the 4.2 protocol
-// identity, AD-11). 5.2 replaces the scratch topic with per-class topics +
-// proto envelopes; 5.3 wires discovery; 5.7 wires the relay transport.
-export { createNetAdapter } from './net/index.js'
-export type { NetAdapterConfig } from './net/index.js'
+// identity, AD-11). 5.2 replaced the scratch topic with the four per-class
+// topics (`TOPICS`) + proto envelopes: each `send*` encodes its class's
+// envelope and publishes on its own topic; 5.3 wires discovery; 5.7 wires
+// the relay transport.
+export { createNetAdapter, TOPICS } from './net/index.js'
+export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'
