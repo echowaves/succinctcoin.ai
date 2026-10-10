@@ -359,3 +359,12 @@ export {
   verifyReattestation,
 } from './identity/index.js'
 export type { ReattestationResult } from './identity/index.js'
+
+// Node network (epic 5, AD-8/AD-10): the libp2p adapter (5.1 scaffold) —
+// the FULL 1.2 `NetPort` surface over libp2p + noise + yamux + gossipsub,
+// CI-exercised only on the memory transport (zero real sockets). The
+// transport identity is libp2p's own keypair (never the 4.2 protocol
+// identity, AD-11). 5.2 replaces the scratch topic with per-class topics +
+// proto envelopes; 5.3 wires discovery; 5.7 wires the relay transport.
+export { createNetAdapter } from './net/index.js'
+export type { NetAdapterConfig } from './net/index.js'
