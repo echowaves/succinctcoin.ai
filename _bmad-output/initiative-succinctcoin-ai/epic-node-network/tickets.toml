@@ -1,0 +1,124 @@
+# tickets.toml — epic-node-network's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Network deps + libp2p adapter scaffold over @libp2p/memory"
+description = "Adds the pinned libp2p network deps (@libp2p/gossipsub 17.1.2, @libp2p/tcp 11.0.28, @libp2p/bootstrap 12.0.32, @libp2p/mdns 12.0.32, @libp2p/circuit-relay-v2 4.2.13) to packages/core and stands up src/net: the libp2p adapter (libp2p() with noise+yamux, circuitRelayTransport, gossipsub) that implements the 1.2 NetPort over the @libp2p/memory transport (AD-10) — two nodes connect and exchange one raw message over a scratch topic headless; the tcp/bootstrap/mdns/circuit-relay-v2 code paths are present and selected by a transport flag but the memory transport is the only one exercised in CI."
+verify = "Two in-process libp2p nodes (memory transport, zero real sockets) connect via the adapter and exchange one protobuf message on a scratch topic; the adapter implements the FULL 1.2 NetPort surface (start / stop / sendBlock / sendTicket / sendTx / peers); the pinned deps are in package.json + lockfile; no real socket (tcp) test runs in CI."
+covers = ["R1"]
+after = ["1.2", "1.4"]
+hitl = false
+risk = "medium"
+unknown = "The exact adapter factory surface (config in: transport kind, peer id key source, bootstrap list, topics) and how the peer id is derived (libp2p identity keypair vs the 4.2 Ed25519 identity keypair) are build decisions; the hard rules are AD-10 (memory transport in CI, zero real sockets), AD-8 (protobuf messages, one topic per class), and that the NetPort contract from 1.2 is what the core sees."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Gossipsub topics + protobuf message envelopes (blocks / tickets / tx / peer info)"
+description = "Defines the four stable gossipsub topics (one per message class: blocks, tickets, tx, peer info — AD-8) and the protobuf envelope messages in protocol.proto (wrapping the existing Block / Ticket / Tx / PeerInfo with a source peer id), generated via protons (AD-12), plus the publish/subscribe plumbing in the adapter: a node publishes to a topic and every other subscribed node receives the decoded message."
+verify = "A Block, a Ticket, a Tx, and a PeerInfo each round-trip through their own topic (encode → publish → decode on the receiving node, byte-identical fields); amounts travel as decimal strings and IDs as 32-byte hex (spine AD-5 / R3); one topic per class (four topics, no shared topic); the proto is the single schema owner (generated types, no hand-written protocol types)."
+covers = ["R3"]
+after = [1]
+hitl = false
+risk = "medium"
+unknown = "The envelope shape (a single Envelope message with a class field vs four distinct messages) and the topic naming scheme are build decisions; the hard rules are AD-8 (one stable topic per message class, protobuf, decimal-string amounts, 32-byte-hex ids) and AD-12 (proto is the schema owner)."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Discovery: bootstrap (genesis list) + mDNS (LAN)"
+description = "Wires discovery into the adapter: @libp2p/bootstrap against the genesis bootstrap list (1.3's validated config) and @libp2p/mdns for LAN discovery, so a node that starts with the genesis config finds its peers; in CI the discovery is exercised over the memory transport (a fresh node discovers the existing nodes and joins their gossip)."
+verify = "A node started with the validated genesis bootstrap config runs the bootstrap service against the configured list (memory-transport multiaddrs in the CI test, since the genesis /ip4/.../tcp/4001 entries are not connectable headless) and connects to the peers it is configured with; an mDNS-enabled node on the same (memory) network discovers a peer that announced itself; a fresh node that discovers existing nodes starts receiving their gossip (discovery → subscribe → receive, headless, zero real sockets)."
+covers = ["R1"]
+after = [2, "1.3"]
+hitl = false
+risk = "medium"
+unknown = "How mdns (a real-LAN, UDP-based service) is represented over the memory transport (a test double vs a no-op behind the same flag) and whether discovery is eager (on start) or on-demand are build decisions; the hard rules are R1 (bootstrap from genesis + mDNS for LAN) and AD-10 (no real sockets in CI — the real tcp/mdns services are present but CI exercises the memory path)."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Chain sync: a new node fetches the chain from a peer"
+description = "Adds the sync path: a newly-discovered node with an empty (or shorter) chain requests blocks from a peer that has them, and applies the fetched blocks through the existing applyBlock seam (AD-2 — the single mutation path, never re-implemented), so it catches up to the peer's head slot. Because a fresh syncing node does not pre-hold winner tickets for historical blocks, the per-window accepted set that 4.3's acceptance path needs is populated by the tickets gossiped on the tickets topic for that window (collected as they arrive, or fetched alongside the sync payload in the test) — sync + the tickets topic together supply it."
+verify = "A fresh node (empty store) that discovers a node with N mined blocks fetches and applies them — its store headSlot reaches the peer's head, every fetched block passes the existing acceptance path (4.3 acceptBlockWinner over public data, with the per-window accepted set supplied by the tickets gossiped for that window), and a tampered block in the sync payload is rejected (never applied); applyBlock is imported, not re-implemented (AD-2)."
+covers = ["R1"]
+after = [2, "1.5", "3.2", "4.3", "4.4"]
+hitl = false
+risk = "high"
+unknown = "The sync protocol shape (request/response over a libp2p stream vs a gossip topic) and the catch-up ordering (sequential from slot 0 vs binary search) are build decisions; the hard rules are AD-2 (blocks enter only through applyBlock), the 4.3 acceptance path verifies every synced block, and AD-12 (proto-encoded messages)."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Block propagation over gossipsub + a fresh node receives the next block"
+description = "Wires the live loop end to end over the memory transport: a node that mines a block (3.2's slot loop + 4.2's signed ticket) publishes it to the blocks topic; every peer validates it (4.3 acceptance path, over the per-window accepted set built from the tickets gossiped for that window — 4.4 cap + 4.5 weights) and applies it (AD-2); a node that joins mid-run discovers the others and receives the NEXT block via gossip — the full propagate/validate/apply loop with real signed tickets."
+verify = "In a 3-node memory-transport network, a block authored by one node is applied on the other two (each peer's store advances by one slot, each block passes 4.3 acceptance from public data over the gossiped-ticket accepted set); a node that joins after block N receives block N+1 via gossip and applies it; the signed ticket (AD-12) is what makes the block verifiable by the peers."
+covers = ["R1"]
+after = [3, 4, "3.2", "4.2", "4.3", "4.4", "4.5"]
+hitl = false
+risk = "high"
+unknown = "The mining cadence in the multi-node test (who mines which slot) is driven by a NEW multi-node memory-transport driver added in this epic — 3.7's sim is an in-process multi-identity sim (one shared store, synthetic identities) and 4.8's multi-sim is likewise in-process, so neither is a networked-node driver; the decision is new driver vs adapting 3.7's harness. The bounded-time assertion style is event-based, never wall-clock. The hard rules are AD-3 (chain-time only — no wall-clock assertions), AD-2 (applyBlock only), and AD-10 (memory transport, zero real sockets)."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Ticket + tx propagation on their own topics"
+description = "Tickets and transactions propagate on their own topics (per the 2 envelope): a node publishes a ticket (AD-12 signed) to the tickets topic and a tx (proto Tx, decimal-string amount — spine AD-5 / R3) to the tx topic; peers receive and (for tickets) record them into their per-window accepted-set construction (4.4 cap + 4.5 weights), and (for txs) hold them for the ledger path."
+verify = "A ticket published on the tickets topic is received and accepted into the peer's per-window accepted set (it becomes eligible for the draw on the receiving node — the 4.4 cap applies to gossiped tickets exactly as to local ones); a tx published on the tx topic is received with its decimal-string amount intact (spine AD-5 / R3); each class travels on its own topic (a block never on the tickets topic, verified by topic isolation)."
+covers = ["R1", "R3"]
+after = [5, "4.4", "4.5"]
+hitl = false
+risk = "medium"
+unknown = "Whether gossiped tickets feed the same eligibleSignedSet path as locally-mined tickets (the accepted answer is yes — the cap is per-identity-per-window regardless of origin) and whether txs are relayed further (re-gossiped) or only applied are build decisions; the hard rules are AD-8 (own topic per class), AD-5 (decimal-string amounts on the wire), and 4.4 (the cap is origin-agnostic)."
+
+[[entry]]
+id = 7
+type = "story"
+title = "circuit-relay-v2: a NATed node connects through a relay"
+description = "Adds the circuit-relay-v2 path: a node configured behind a (simulated) NAT connects to a relay and is reachable through it — a second NATed node discovers the first via the relay and exchanges a message. In CI the relay is a third in-process libp2p node running circuitRelayService over the memory transport (zero real sockets); the real relay (tcp) path is present but not exercised in CI (the spine [ASSUMPTION]: a community relay at launch, WebSocket outbound fallback otherwise)."
+verify = "In a memory-transport network with one relay node, a 'NATed' node (relayed=true, no direct transport) is reachable: a second node connects to it through the relay and a message round-trips; the relay itself is an ordinary libp2p node over the memory transport (zero real sockets); a node without relay access still works (relay is an optional capability, not a hard dependency)."
+covers = ["E1"]
+after = [5]
+hitl = false
+risk = "high"
+unknown = "How 'simulated NAT' is modeled on the memory transport (the memory transport has no NAT — the relay path is exercised by wiring circuitRelayTransport/circuitRelayService over memory and proving the hop happens) is a build decision; the hard rules are E1 (circuit-relay-v2 is the behind-NAT pattern), AD-10 (zero real sockets in CI), and that the relay is a capability, not a requirement (a direct node does not need it)."
+
+[[entry]]
+id = 8
+type = "spike"
+title = "DHT threshold spike: bootstrap + mDNS vs Kad-DHT"
+description = "Settles the DHT-threshold open question (E2): over a memory-transport simulation of N nodes (N swept, e.g. 10/50/200/1000), measure how many peers bootstrap + mDNS discovery reach (and how long, event-bounded) vs the cost/complexity of adding @libp2p/kad-dht; record the recommendation (the node count at which bootstrap+mDNS stop sufficing and Kad-DHT becomes warranted — or 'adopt DHT day-one' or 'never in our range') as a dated Decision line in the epic Notes. NO DHT is wired at launch unless the spike says so (the no-DHT non-goal holds by default)."
+verify = "The epic Notes carry a dated Decision line with the measured memory-transport numbers (peers reached + bounded time, per N) and the recommendation; the spike adds no production code (a test-only harness over the memory transport); @libp2p/kad-dht is NOT added as a dependency (the recommendation, if DHT, is a follow-up epic, not this one)."
+covers = ["E2"]
+after = [5]
+hitl = false
+risk = "medium"
+unknown = "The N sweep range and the 'suffices' criterion (a threshold on peers-reached or on time-to-k-peers) are spike decisions; the hard rule is that the recommendation is recorded in the Notes and nothing is wired based on it in this epic (the no-DHT non-goal holds by default)."
+
+[[entry]]
+id = 9
+type = "story"
+title = "Refactor sweep"
+description = "The closing sweep (ordering rule: >3 entries): a read-only survey of src/net + the new proto messages + the test files for dead code, stale forward-reference comments (epic 5 narrated in future tense), duplicate helpers (the OPEN deferred-work u64be/BE-reader DRY item from 3.8/4.9 may land here if the survey finds a clean seam — otherwise it stays deferred), and doc drift; cleanup only, no capability logic added. Scope is set when it starts, from the build records and review findings deferred during the epic."
+verify = "The comment-only diff filter is empty of non-comment changes (or the u64be DRY is done as a separate, named, behavior-preserving refactor with all existing suites + golden vectors green); no dead exports; no stale 'epic 5' future-tense comments; the full suite + typecheck + build PROTO_OK are green."
+covers = []
+after = [6, 7, 8]
+hitl = false
+risk = "low"
+unknown = "Whether the OPEN deferred u64be/BE-reader DRY (pow.ts beBytesToBig vs draw.ts bytesToBig, u64be same-named in both) is clean enough to land here is a survey finding; if it touches the pinned AD-6/AD-7 golden-vector modules it stays deferred (the 3.8/4.9 precedent)."
+
+[[entry]]
+id = 10
+type = "story"
+title = "Closing end-to-end suite (full Done-when)"
+description = "TEST-ONLY (the 3.9/4.10 precedent): one new file that proves ALL FIVE epic Done-when in ONE integrated headless memory-transport scenario — a node behind a simulated NAT discovers peers, syncs, and gossips a test block to k peers within a bounded (event-based, AD-3) time with zero real sockets; a block authored by one node propagates to k peers and a ticket + a tx propagate on their own topics; the relay adapter connects a NATed node through a (memory) relay; the DHT spike's recommendation is the recorded Decision (Kad-DHT NOT wired); @libp2p/memory runs the full net suite headless. It COMPOSES the epic-5 seams (adapter, topics, discovery, sync, propagation, relay) + the epic-3/4 seams (slot loop, signed ticket, acceptance path, applyBlock) imported from the root barrel — never re-implementing any of them (AD-7/AD-2)."
+verify = "All five Done-when checks pass in one integrated memory-transport run: (1) NATed-node discover+sync+gossip-to-k in bounded time, zero real sockets; (2) a block propagates to k peers and a ticket + tx on their own topics; (3) the relay connects a NATed node through a memory relay; (4) the epic Notes carry the DHT Decision and no DHT is wired; (5) the whole run is @libp2p/memory, headless, deterministic; src diff is EMPTY (test-only) AND `git diff --name-only -- packages/core/src/proto/` is empty (PROTO_OK, the 3.8/4.9 precedent — a builder who touches proto but not src still passes) and every prior suite stays green."
+covers = ["R1", "R2", "E1", "E2"]
+after = [9]
+hitl = false
+risk = "medium"
+unknown = "The 'k peers' and 'bounded time' are event-bounded (a count of received messages + an event-order assertion, AD-3 — never wall-clock) and the k is a small pinned integer (e.g. k=2 over 3 nodes + relay); the exact node topology (how many NATed, how many relayed) is a build decision; the hard rules are AD-10 (zero real sockets), AD-2/AD-7 (compose, never re-implement), and TEST-ONLY (no source change)."
