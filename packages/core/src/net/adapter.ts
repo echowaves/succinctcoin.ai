@@ -52,8 +52,8 @@
  *   single-shot send (publish→receive plumbing, not the live loop).
  * - **D7 — transport flag.** `'memory'` → `@libp2p/memory` (the only path
  *   exercised in CI, AD-10); `'tcp'` → `@libp2p/tcp` (present in code,
- *   never CI-exercised). bootstrap/mdns services are 5.3,
- *   circuitRelayTransport is 5.7 — the DEPS are pinned now, wired later.
+ *   never CI-exercised). bootstrap/mdns discovery are WIRED in 5.3 (see the
+ *   discovery notes in `buildNode`); circuitRelayTransport is 5.7.
  *
  * Hygiene: no `big.js` (AD-5), no `.secret` reads (AD-11), no RNG, no
  * wall-clock (AD-3 — the 10s dial bound is a timeout, not a timestamp).
@@ -64,12 +64,17 @@ import { memory } from '@libp2p/memory'
 import { tcp } from '@libp2p/tcp'
 import { gossipsub } from '@libp2p/gossipsub'
 import { identify } from '@libp2p/identify'
-import { multiaddr } from '@multiformats/multiaddr'
+import { bootstrap } from '@libp2p/bootstrap'
+import { mdns } from '@libp2p/mdns'
+import { peerIdFromString } from '@libp2p/peer-id'
+import { TypedEventEmitter } from 'main-event'
+import { multiaddr, CODE_P2P } from '@multiformats/multiaddr'
 import { createLibp2p } from 'libp2p'
 
-import type { Libp2p } from 'libp2p'
+import type { Libp2p, Libp2pInit } from 'libp2p'
 import type { GossipSub, Message } from '@libp2p/gossipsub'
 import type { Identify } from '@libp2p/identify'
+import type { PeerDiscovery, PeerDiscoveryEvents, PeerId } from '@libp2p/interface'
 import type { NetPort } from '../ports.js'
 import {
   Block,
@@ -101,6 +106,29 @@ export interface NetAdapterConfig {
    * node operator; a plain string field, never a keypair (AD-11).
    */
   protocolIdentityId: string
+  /**
+   * 5.3 D1 — the multiaddr list the REAL `@libp2p/bootstrap` service dials.
+   * In production this is the validated `genesis.bootstrap` (each entry
+   * `/…/p2p/<peerId>` — bootstrap requires a `/p2p` component and filters out
+   * entries without one). Optional: `undefined`/empty → no bootstrap service
+   * (discovery is OFF by default, AC-4).
+   */
+  bootstrap?: string[]
+  /**
+   * 5.3 D1 — when true, register a `PeerDiscovery` service for LAN discovery.
+   * Over the memory transport the service is the internal `buildMdnsDiscovery`
+   * double (D3); over tcp it is the real `@libp2p/mdns` `mdns()` (present in
+   * code, never CI-exercised — AD-10). The flag is the SAME either way. Default
+   * false → no mDNS service.
+   */
+  mdns?: boolean
+  /**
+   * 5.3 D1 — TEST-ONLY, honored only when `mdns` is true over the MEMORY
+   * transport. The list of `/…/p2p/<peerId>` multiaddrs the double announces
+   * (stands in for the UDP broadcast a real mdns node answers with). Ignored
+   * over tcp (the real `mdns()` announces the node itself, no list needed).
+   */
+  mdnsAnnounce?: string[]
 }
 
 /**
@@ -143,11 +171,104 @@ export interface NetAdapter extends NetPort {
 type Services = Record<string, unknown> & { gossip: GossipSub; identify: Identify }
 
 /**
+ * 5.3 D3 — the memory-transport mDNS service TEST DOUBLE (not a no-op).
+ *
+ * A `TypedEventEmitter<PeerDiscoveryEvents>` (assignable to `@libp2p/interface`
+ * `PeerDiscovery`) that is Startable, so libp2p's `components.start()` runs it.
+ * On `start()` it emits one `peer` event per announced `/…/p2p/<id>` multiaddr,
+ * filtering out any self-announcement (peer id === own) so it never
+ * "discovers" itself — mirroring libp2p's own self-guard in `#onDiscoveryPeer`.
+ *
+ * This exercises the REAL libp2p discovery bridge (the same
+ * `#onDiscoveryPeer` → `peer:update` → `peer:discovery` path a real mdns would
+ * drive), differing from real mdns only in the source of the announcement (the
+ * test-supplied `mdnsAnnounce` list instead of a UDP query). INTERNAL — driven
+ * through the public `createNetAdapter` config (`mdns: true` + `mdnsAnnounce`),
+ * never exported (D8).
+ */
+class MemoryMdnsDiscovery extends TypedEventEmitter<PeerDiscoveryEvents> {
+  private readonly announce: string[]
+  private readonly ownPeerId: PeerId
+
+  constructor(announce: string[], ownPeerId: PeerId) {
+    super()
+    this.announce = announce
+    this.ownPeerId = ownPeerId
+  }
+
+  /** Startable: `components.start()` invokes this. */
+  start(): void {
+    for (const str of this.announce) {
+      const ma = multiaddr(str)
+      // ES2022 target has no `Array.prototype.findLast` — walk the components
+      // (in order) for the `/p2p/<id>` one, keeping the LAST match (mirrors
+      // bootstrap's `findLast`).
+      let p2pComponent: string | undefined
+      for (const c of ma.getComponents()) {
+        if (c.code === CODE_P2P) p2pComponent = c.value
+      }
+      // Entries without a `/p2p/<id>` component carry no discoverable peer.
+      if (p2pComponent === undefined) continue
+      const id = peerIdFromString(p2pComponent)
+      // Self-guard: never "discover" our own peer id.
+      if (id.toString() === this.ownPeerId.toString()) continue
+      this.safeDispatchEvent('peer', { detail: { id, multiaddrs: [ma] } })
+    }
+  }
+
+  /** Startable: nothing to release — the double holds no timer or socket. */
+  stop(): void {
+    /* inert */
+  }
+}
+
+/**
+ * 5.3 D3 — factory for the memory-transport mDNS double. The param needs only
+ * `peerId` (for the self-filter); the libp2p `Components` the node passes it
+ * structurally satisfies that. Returns a `PeerDiscovery`-assignable service.
+ * INTERNAL — not exported (D8).
+ */
+function buildMdnsDiscovery(
+  announce: string[],
+): (components: { peerId: PeerId }) => PeerDiscovery {
+  return (components) => new MemoryMdnsDiscovery(announce, components.peerId)
+}
+
+/**
+ * 5.3 D2/D3 — build the node's `peerDiscovery` service array:
+ *  - the REAL `@libp2p/bootstrap` service dials `config.bootstrap` (the genesis
+ *    bootstrap list) after its 1 s timer and AUTO-DIALS each entry (D2);
+ *  - when `config.mdns`, the memory transport registers the internal
+ *    `buildMdnsDiscovery` double (D3) and the tcp transport the real `mdns()`
+ *    (present, never CI-exercised — AD-10);
+ *  - an EMPTY array when neither `bootstrap` nor `mdns` is set → discovery OFF
+ *    (AC-4: an additive-config node behaves exactly as it did in 5.2).
+ *
+ * The return type is `Libp2pInit['peerDiscovery']` so the libp2p `Components`
+ * type (not re-exported from the `libp2p` root) is checked at the call site.
+ */
+function buildPeerDiscovery(config: NetAdapterConfig): Libp2pInit['peerDiscovery'] {
+  const discovery = []
+  if (config.bootstrap !== undefined && config.bootstrap.length > 0) {
+    discovery.push(bootstrap({ list: config.bootstrap }))
+  }
+  if (config.mdns === true) {
+    discovery.push(
+      config.transport === 'memory'
+        ? buildMdnsDiscovery(config.mdnsAnnounce ?? [])
+        : mdns(),
+    )
+  }
+  return discovery
+}
+
+/**
  * Build the libp2p node for `config` (D7: transport selected by flag; both
  * paths use noise + yamux). Gossipsub is registered as the `gossip` service;
  * the `message` handler decodes each received envelope on its topic into
- * `received` (5.2 D5). The transport keypair is auto-generated internally
- * by libp2p (D1) — never exposed or read here.
+ * `received` (5.2 D5). 5.3 adds the discovery services (`peerDiscovery`) and a
+ * single `peer:discovery` dial listener. The transport keypair is
+ * auto-generated internally by libp2p (D1) — never exposed or read here.
  */
 async function buildNode(
   config: NetAdapterConfig,
@@ -163,6 +284,21 @@ async function buildNode(
     // 3.3.11 ships NO defaults, so `identify()` must be registered here or
     // `createLibp2p` throws `UnmetServiceDependenciesError`.
     services: { gossip: gossipsub(), identify: identify() },
+    // 5.3 D2/D3 — the discovery services (real `bootstrap` over the genesis
+    // list; the mDNS double over memory / real `mdns()` over tcp). Empty when
+    // neither `bootstrap` nor `mdns` is set → discovery OFF (AC-4, additive).
+    peerDiscovery: buildPeerDiscovery(config),
+    // 5.3 D4 (critical) — CONSTRUCT but do NOT START. `createLibp2p` otherwise
+    // awaits `node.start()` internally, and `components.start()` runs every
+    // Startable discovery service's `start()` at that point (the mDNS double
+    // emits its `peer` events then). The node-level `peer:discovery` dial
+    // listener (below) would be attached AFTER that internal start and would
+    // MISS the early event. With `start: false` the node is only constructed;
+    // the two listeners are attached here, and the adapter's `start()` then
+    // calls `node.start()` — so the listener is in place before any discovery
+    // service can fire (D4: "registered before `node.start()`, so it cannot
+    // miss an early event").
+    start: false,
   })
 
   // 5.2 D5 — observe all four class topics. Registered before `node.start()`,
@@ -175,6 +311,26 @@ async function buildNode(
     if (entry !== null) {
       received.set(entry.class, [...(received.get(entry.class) ?? []), entry.env])
     }
+  })
+
+  // 5.3 D4 — ONE node-level `peer:discovery` listener dials discovered peers.
+  // Registered before `node.start()` (buildNode runs first) so it cannot miss
+  // an early event. For each discovered non-self `PeerInfo`, dial the first
+  // announced multiaddr fire-and-forget with the 10 s bound (AD-3 — a
+  // timeout, not a clock read); a failed dial is ignored (the peer may
+  // already be connected via bootstrap's auto-dial, or transiently
+  // unreachable — normal, never a throw). This ADDS discovery-driven
+  // connecting alongside 5.1's explicit `dial()` (AC-5 — not a replacement).
+  node.addEventListener('peer:discovery', (event) => {
+    const info = event.detail
+    if (info.id.toString() === node.peerId.toString()) return
+    const ma = info.multiaddrs[0]
+    if (ma === undefined) return
+    void node
+      .dial(ma, { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
+      .catch(() => {
+        /* fire-and-forget: a failed dial is a NORMAL ignore (spine). */
+      })
   })
 
   return node

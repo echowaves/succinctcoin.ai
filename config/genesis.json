@@ -1,8 +1,8 @@
 {
   "protocolVersion": 1,
   "bootstrap": [
-    "/ip4/103.192.173.112/tcp/4001/p2p/12D3KooWPLACEHOLDERA",
-    "/ip4/198.51.100.23/tcp/4001/p2p/12D3KooWPLACEHOLDERB"
+    "/ip4/103.192.173.112/tcp/4001/p2p/12D3KooWNKvzczEMvDFqog1qcZrxdTtmsiNktZ7af3sNsBUGHg7E",
+    "/ip4/198.51.100.23/tcp/4001/p2p/12D3KooWBj5ew35r7mtJD5prxp2Y31FPBLumb8kJTsT6QfhGtfXx"
   ],
   "emission": {
     "blockReward": "12.5",

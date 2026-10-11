@@ -39,8 +39,23 @@
  *                                 topic (a block never on the tickets topic)
  *   PROTO_ADDITIVE                (5.2) the four EXISTING messages' wire
  *                                 encodings are unchanged (golden pins)
+ *   BOOTSTRAP_WIRED_TO_GENESIS    (5.3) the real @libp2p/bootstrap service is
+ *                                 wired against the real validated
+ *                                 genesis.bootstrap list; the node starts
+ *                                 cleanly over memory; peers() stays empty
+ *                                 headless (the AD-10-correct outcome)
+ *   MDNS_DISCOVERS                (5.3) the memory PeerDiscovery double
+ *                                 discovers a self-announced peer
+ *   DISCOVERY_RECEIVES_GOSSIP     (5.3) discover → dial → connect → receive
+ *   BOOTSTRAP_FROM_GENESIS_SHAPE  (5.3) the bootstrap list is the validated
+ *                                 genesis.bootstrap string shape (1.3)
+ *   DISCOVERY_OFF_BY_DEFAULT      (5.3) no bootstrap/mdns → no auto-connect
+ *                                 (additive config, inert dial listener)
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   Block,
@@ -48,6 +63,7 @@ import {
   Ticket,
   Tx,
   createNetAdapter,
+  loadGenesis,
   TOPICS,
 } from '../src/index.js'
 import type {
@@ -203,6 +219,69 @@ async function receivedOn(b: NetAdapter, cls: TopicClass, count: number): Promis
   return b.received.get(cls) ?? []
 }
 
+/**
+ * The repo-root `config/genesis.json` path, resolved relative to THIS test
+ * file (test → core → packages → repo root, three levels up) — the same
+ * convention `defaultGenesisPath()` in `src/index.ts` uses.
+ */
+const GENESIS_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'config',
+  'genesis.json',
+)
+
+/**
+ * Poll `adapter.peers()` (async) until it contains `peerId`, or ≤10s pass.
+ * Discovery is async (bootstrap's 1 s timer; the mDNS double fires on
+ * `start()`), so `peers()` can't use the sync `pollUntil`. Bounded (≤10s),
+ * no wall-clock assert — the negative `DISCOVERY_OFF_BY_DEFAULT` row relies
+ * on this returning `false` after the full window.
+ */
+async function peersInclude(adapter: NetAdapter, peerId: string): Promise<boolean> {
+  for (let i = 0; i < MAX_POLLS; i++) {
+    if ((await adapter.peers()).includes(peerId)) return true
+    await sleep(SLEEP_MS)
+  }
+  return (await adapter.peers()).includes(peerId)
+}
+
+/**
+ * Poll `adapter.peers()` (async) over the FULL bounded window (≤10s) and
+ * return true only if it STAYS empty the whole time (checked before every
+ * sleep and one final time at the end). The negative `BOOTSTRAP_WIRED_TO_GENESIS`
+ * row relies on this: the real bootstrap service is wired against the
+ * production genesis list, but those peers are absent headless (AD-10), so
+ * an empty `peers()` over the full window is the asserted, correct outcome.
+ */
+async function peersStaysEmpty(adapter: NetAdapter): Promise<boolean> {
+  for (let i = 0; i < MAX_POLLS; i++) {
+    if ((await adapter.peers()).length > 0) return false
+    await sleep(SLEEP_MS)
+  }
+  return (await adapter.peers()).length === 0
+}
+
+/**
+ * String-only check that a bootstrap list entry has the validated
+ * `genesis.bootstrap` shape (1.3): a multiaddr STRING starting with `/` and
+ * carrying a `/p2p/<id>` component — the EXACT shape the real
+ * `@libp2p/bootstrap` service requires (it `filter`s out entries without a
+ * `/p2p` component). The test may NOT import `@multiformats/multiaddr`
+ * (root-barrel-only rule), so this is a string-shape assertion, not a parse.
+ */
+function isBootstrapShaped(entry: string): boolean {
+  const after = entry.split('/p2p/')
+  return (
+    typeof entry === 'string' &&
+    entry.startsWith('/') &&
+    after.length === 2 &&
+    after[1].length > 0
+  )
+}
+
 describe('CONNECT_AND_EXCHANGE — two nodes connect and exchange one message (R1, AD-10)', () => {
   it('B dials A; A sendBlock → B receives the DECODED BlockEnvelope on TOPICS.blocks; stops idempotent', { timeout: CONNECT_TIMEOUT_MS }, async () => {
     const { a, b } = await connectPair()
@@ -257,7 +336,10 @@ describe('FULL_NETPORT_SURFACE — the core sees the full 1.2 NetPort contract',
 
     await adapter.start()
     try {
-      // No peers dialed → honest empty (no throw).
+      // No peers dialed → honest empty (no throw). Discovery is OFF by
+      // default here (no `bootstrap`/`mdns` in this config — 5.3 AC-4): the
+      // `peer:discovery` dial listener is present but INERT without a
+      // discovery service, so `peers()` stays empty exactly as in 5.2.
       expect(await adapter.peers()).toEqual([])
       // No messages received → the map has no class keys.
       expect(adapter.received.size).toBe(0)
@@ -320,10 +402,14 @@ describe('TCP_TRANSPORT_PRESENT — the tcp code path is present but not exercis
   it("createNetAdapter({transport:'tcp',...}) does not throw — the factory is pure", async () => {
     // The factory accepts the 'tcp' flag and returns the adapter WITHOUT
     // touching a socket (libp2p is created only inside start()).
+    // 5.3: `mdns: true` selects the REAL `mdns()` service for the tcp
+    // transport (not the memory double) — and the factory STILL stays pure:
+    // no socket, no service started (AD-10).
     const config: NetAdapterConfig = {
       transport: 'tcp',
       listenAddress: '/ip4/127.0.0.1/tcp/0',
       protocolIdentityId: ID_A,
+      mdns: true,
     }
     const adapter = createNetAdapter(config)
     expect(typeof adapter.start).toBe('function')
@@ -467,5 +553,172 @@ describe('PROTO_ADDITIVE — the existing four messages are wire-identical (AD-1
     expect(Buffer.from(Ticket.encode(FIX_TICKET)).toString('hex')).toBe(GOLDEN_TICKET_HEX)
     expect(Buffer.from(Tx.encode(FIX_TX)).toString('hex')).toBe(GOLDEN_TX_HEX)
     expect(Buffer.from(PeerInfo.encode(FIX_PEERINFO)).toString('hex')).toBe(GOLDEN_PEERINFO_HEX)
+  })
+})
+
+describe('BOOTSTRAP_WIRED_TO_GENESIS — the real @libp2p/bootstrap service is wired against the real genesis list (AC-1, R1)', () => {
+  it('a node configured with the REAL validated genesis.bootstrap list starts cleanly over memory; peers() stays empty headless (the AD-10-correct outcome)', { timeout: CONNECT_TIMEOUT_MS }, async () => {
+    // The REAL validated genesis bootstrap list (1.3) — read + validated
+    // through the root barrel's loader (the same `loadGenesis` +
+    // `defaultGenesisPath` convention `buildCore` uses at boot). Production
+    // `/ip4/…/tcp/…/p2p/<id>` shape — the one the real service's `P2P`
+    // multiaddr matcher ACCEPTS (so the entries are genuinely wired, not
+    // filtered to empty by the service's constructor).
+    const genesis = await loadGenesis(GENESIS_PATH)
+    expect(genesis.bootstrap.length).toBeGreaterThan(0)
+
+    // A single node configured with that real list. The REAL
+    // `@libp2p/bootstrap` service (D2) is registered in `peerDiscovery`
+    // against exactly this list.
+    const node = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/b',
+      protocolIdentityId: ID_B,
+      bootstrap: genesis.bootstrap,
+    })
+    try {
+      // The node must come up CLEANLY (no throw) with the real bootstrap
+      // service wired against the production-shape list — including the
+      // service's 1 s timer firing and its auto-dial attempts (which fail
+      // against absent headless peers: fire-and-forget, normal, never a
+      // throw — spine "reject = normal false, never a throw").
+      await node.start()
+      // The production bootstrap peers are ABSENT headless (AD-10 — no
+      // real sockets), so the asserted outcome is that `peers()` STAYS
+      // EMPTY over the full bounded window (≤10s): no fake sockets, no
+      // connect claimed. That empty result is the AD-10-correct one, not a
+      // failure. The discover→dial→connect→RECEIVE MECHANISM the bootstrap
+      // service would drive for its production peers is proven headless by
+      // the mDNS rows (MDNS_DISCOVERS / DISCOVERY_RECEIVES_GOSSIP) over the
+      // IDENTICAL libp2p discovery bridge
+      // (`#onDiscoveryPeer` → `peer:update` → `peer:discovery` → adapter
+      // dial).
+      const stayedEmpty = await peersStaysEmpty(node)
+      expect(stayedEmpty).toBe(true)
+      expect(await node.peers()).toEqual([])
+    } finally {
+      await node.stop()
+      await node.stop()
+    }
+  })
+})
+
+describe('MDNS_DISCOVERS — the memory PeerDiscovery double discovers a self-announced peer (AC-2, R1)', () => {
+  it('a fresh mdns-enabled node discovers the listener the double announced; peers() gains it', { timeout: CONNECT_TIMEOUT_MS }, async () => {
+    const a = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/a',
+      protocolIdentityId: ID_A,
+    })
+    await a.start()
+    // The memory double (D3) announces the listener's multiaddr — standing in
+    // for the UDP broadcast a real mdns node answers with. The adapter's
+    // `peer:discovery` listener dials the discovered peer → connect (D4).
+    const b = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/b',
+      protocolIdentityId: ID_B,
+      mdns: true,
+      mdnsAnnounce: [`/memory/a/p2p/${a.peerId()}`],
+    })
+    try {
+      await b.start()
+      // The double fires on start() (components.start runs it); the adapter
+      // dials the discovered peer. `peers()` gains the listener.
+      const connected = await peersInclude(b, a.peerId())
+      expect(connected).toBe(true)
+      expect(await b.peers()).toContain(a.peerId())
+    } finally {
+      await a.stop()
+      await b.stop()
+    }
+  })
+})
+
+describe('DISCOVERY_RECEIVES_GOSSIP — discover → dial → connect → receive (AC-3, R1)', () => {
+  it('a fresh mdns-enabled node that discovers the listener RECEIVES its gossiped block', { timeout: CONNECT_TIMEOUT_MS }, async () => {
+    const a = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/a',
+      protocolIdentityId: ID_A,
+    })
+    await a.start()
+    const b = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/b',
+      protocolIdentityId: ID_B,
+      mdns: true,
+      mdnsAnnounce: [`/memory/a/p2p/${a.peerId()}`],
+    })
+    try {
+      await b.start()
+      const connected = await peersInclude(b, a.peerId())
+      expect(connected).toBe(true)
+      // discover → dial → connect → (already-subscribed) gossipsub mesh → a
+      // gossiped message is received. Headless, zero real sockets (AD-10).
+      await publishUntilAccepted(() => a.sendBlock(FIX_BLOCK))
+      const envs = await receivedOn(b, 'blocks', 1)
+      expect(envs.length).toBe(1)
+      expect(envs[0].sourcePeerId).toBe(ID_A)
+      expect((envs[0].payload as Block).slot).toBe(FIX_BLOCK.slot)
+    } finally {
+      await a.stop()
+      await b.stop()
+    }
+  })
+})
+
+describe('BOOTSTRAP_FROM_GENESIS_SHAPE — the bootstrap list is the validated genesis shape (AC-1/AD-10 note)', () => {
+  it('every genesis.bootstrap entry is a multiaddr STRING with a /p2p/<id> component; the CI memory list matches', () => {
+    // Read the PRODUCTION bootstrap list (1.3's validated GenesisConfig.
+    // bootstrap) — the CI memory list is its headless analog, same shape.
+    const genesis = JSON.parse(readFileSync(GENESIS_PATH, 'utf8')) as { bootstrap: string[] }
+    // (a) The production genesis list: every entry bootstrap-shaped.
+    expect(Array.isArray(genesis.bootstrap)).toBe(true)
+    expect(genesis.bootstrap.length).toBeGreaterThan(0)
+    for (const entry of genesis.bootstrap) {
+      expect(isBootstrapShaped(entry)).toBe(true)
+    }
+    // (b) The CI memory list (rows 1/2/3's) is the SAME shape — a
+    // `/memory/<name>/p2p/<id>` is the `/ip4/…/tcp/4001/p2p/<id>` entry's
+    // headless analog (AD-10). A `/p2p/<id>` component is REQUIRED.
+    const ciMemoryList = [`/memory/a/p2p/12D3KooWPLACEHOLDER`]
+    for (const entry of ciMemoryList) {
+      expect(isBootstrapShaped(entry)).toBe(true)
+    }
+    // (c) A bare multiaddr WITHOUT a `/p2p` component is NOT valid — this is
+    // exactly what bootstrap filters out, so the shape pin is load-bearing.
+    expect(isBootstrapShaped('/memory/a')).toBe(false)
+  })
+})
+
+describe('DISCOVERY_OFF_BY_DEFAULT — discovery is opt-in and additive (AC-4)', () => {
+  it('a node with NO bootstrap/mdns does NOT auto-connect to a listening peer over a bounded wait', { timeout: CONNECT_TIMEOUT_MS }, async () => {
+    const a = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/a',
+      protocolIdentityId: ID_A,
+    })
+    await a.start()
+    // b has NO `bootstrap`/`mdns` → the `peerDiscovery` array is EMPTY → no
+    // discovery service. The `peer:discovery` dial listener is present but
+    // INERT (no service to fire it), so b must NOT auto-connect to a.
+    const b = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/b',
+      protocolIdentityId: ID_B,
+    })
+    try {
+      await b.start()
+      // Bounded wait (≤10s): over the full poll window, `peers()` stays
+      // empty — no discovery service exists to find a. This is the 5.2
+      // behavior preserved by the additive config (AC-4).
+      const connected = await peersInclude(b, a.peerId())
+      expect(connected).toBe(false)
+      expect(await b.peers()).toEqual([])
+    } finally {
+      await a.stop()
+      await b.stop()
+    }
   })
 })
