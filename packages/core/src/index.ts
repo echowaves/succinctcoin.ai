@@ -302,6 +302,23 @@ export {
 } from './consensus/index.js'
 export type { MultiSimIdentity, MultiSimWindowResult, WindowAcceptedSet } from './consensus/index.js'
 
+// Chain-sync orchestration (5.4, D2/D3/D7/D9): the CLIENT catch-up
+// (`syncChain` — derive the challenge (3.3) → `acceptBlockWinner` (4.3) →
+// `applyBlock` (AD-2), threading balances, reject = a normal stop) + the
+// SERVER factory (`buildSyncSource` — stream the peer's per-window
+// `{ block, acceptedTickets, weights }` from `fromSlot`). Composes ONLY
+// imported seams (never re-implements them). NOT wired into `createCore`
+// (AD-1) — the test drives it. The `SyncClient`/`SyncSource`/
+// `SyncWindowRecord` types are the structural seams (no net import, D7).
+export { buildSyncSource, syncChain } from './consensus/index.js'
+export type {
+  SyncChainParams,
+  SyncChainResult,
+  SyncClient,
+  SyncSource,
+  SyncWindowRecord,
+} from './consensus/index.js'
+
 // Canonical wire schema (AD-8/AD-12): the four protocol messages, each as a
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
@@ -313,6 +330,8 @@ export {
   BlockEnvelope,
   PeerInfo,
   PeerInfoEnvelope,
+  SyncBlock,
+  SyncRequest,
   Ticket,
   TicketEnvelope,
   Tx,
@@ -374,5 +393,5 @@ export type { ReattestationResult } from './identity/index.js'
 // topics (`TOPICS`) + proto envelopes: each `send*` encodes its class's
 // envelope and publishes on its own topic; 5.3 wires discovery; 5.7 wires
 // the relay transport.
-export { createNetAdapter, TOPICS } from './net/index.js'
+export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
 export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'

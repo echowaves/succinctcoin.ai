@@ -133,3 +133,47 @@ message PeerInfoEnvelope {
   // 32-byte hex protocol identity id of the publishing node (4.2).
   string sourcePeerId = 2;
 }
+
+// ---------------------------------------------------------------------------
+// Chain sync (epic 5, story 5.4 — AD-8/AD-12).
+//
+// Sync is a PULL (a directed request/response over a dedicated libp2p STREAM
+// — NOT a gossip topic, D1): the client sends ONE `SyncRequest`
+// (`fromSlot`, the client's head + 1), half-closes, and reads the server's
+// stream of `SyncBlock`s (one per window, `fromSlot` up to the peer's head)
+// until the server half-closes. Both messages are proto-encoded (AD-12) and
+// u32be length-prefix framed on the stream (framing is the transport's job,
+// not the schema's). Each `SyncBlock` carries, for its window, the block +
+// the window's accepted ticket set + the per-ticket uptime weights — exactly
+// what the 4.3 acceptance path (`acceptBlockWinner`) needs, so a fresh node
+// can verify every block it applies without having collected the gossiped
+// tickets for historical windows itself (D3 — fetched alongside the payload).
+// The challenge is NOT on the wire: the fresh node derives it from the block's
+// own public data (`deriveWindowChallenge(parentHash, slot)`, 3.3).
+//
+// PURELY ADDITIVE: the eight existing messages (`Block`/`Ticket`/`Tx`/
+// `PeerInfo` + the four envelopes) are UNCHANGED — no field-number or type
+// changes.
+// ---------------------------------------------------------------------------
+
+// The sync request: the slot the client is missing STARTING FROM (its
+// `headSlot + 1`; slot 0 for an empty chain). The server streams one
+// `SyncBlock` per window from this slot up to its head.
+message SyncRequest {
+  // Chain-time slot to start the catch-up from (inclusive).
+  int64 fromSlot = 1;
+}
+
+// One window of the sync stream: the block + the per-window accepted set the
+// 4.3 acceptance path needs (D3 — supplied by the sync payload).
+message SyncBlock {
+  // The window's mined block (AD-7: carries the winner's ticket + nonce).
+  Block block = 1;
+  // The window's ACCEPTED ticket set (proto `Ticket`, AD-12 wire form) —
+  // the per-ticket inputs to `acceptBlockWinner` (4.3), in the SAME order
+  // as `weights`.
+  repeated Ticket acceptedTickets = 2;
+  // The window's per-ticket uptime weights (4.5), one per `acceptedTickets`
+  // entry, in the SAME order.
+  repeated int64 weights = 3;
+}

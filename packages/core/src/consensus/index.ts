@@ -93,3 +93,19 @@ export {
   simulateMultiWindow,
 } from './multi-sim.js'
 export type { MultiSimIdentity, MultiSimWindowResult, WindowAcceptedSet } from './multi-sim.js'
+// Chain-sync orchestration (5.4, D2/D3/D7/D9): the CLIENT catch-up
+// (`syncChain` — derive the challenge (3.3) → `acceptBlockWinner` (4.3) →
+// `applyBlock` (AD-2), threading balances, reject = a normal stop) + the
+// SERVER factory (`buildSyncSource` — stream the peer's per-window
+// `{ block, acceptedTickets, weights }` from `fromSlot`). Composes ONLY
+// imported seams (never re-implements them). NOT wired into `createCore`
+// (AD-1) — the test drives it. The `SyncSource`/`SyncClient` types are the
+// structural seams (no net import, D7).
+export { buildSyncSource, syncChain } from './sync.js'
+export type {
+  SyncChainParams,
+  SyncChainResult,
+  SyncClient,
+  SyncSource,
+  SyncWindowRecord,
+} from './sync.js'

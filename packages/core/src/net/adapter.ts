@@ -85,9 +85,13 @@ import {
   TicketEnvelope,
   TxEnvelope,
   PeerInfoEnvelope,
+  SyncRequest,
+  SyncBlock,
 } from '../proto/index.js'
 import { TOPICS } from './topics.js'
 import type { TopicClass } from './topics.js'
+import { SYNC_PROTOCOL, makeSyncHandler, syncFrom } from './sync.js'
+import type { SyncSource } from './sync.js'
 
 /** The dial bound for `dial()` (D2 — a timeout, never a clock read). */
 const DIAL_TIMEOUT_MS = 10_000
@@ -161,6 +165,33 @@ export interface NetAdapter extends NetPort {
    * into the core (acceptance path / accepted-set construction).
    */
   readonly received: ReadonlyMap<TopicClass, ReceivedEnvelope[]>
+
+  // -------------------------------------------------------------------------
+  // 5.4 — chain sync (D7/D8 — NOT on the 1.2 `NetPort`; the `NetAdapter`
+  // extension, like `dial`/`peerId`/`sendPeerInfo`). The sync transport is
+  // a dedicated request/response STREAM (`SYNC_PROTOCOL`), distinct from the
+  // four gossip topics. The source is registered on the SERVER (the peer
+  // with the chain); `syncFrom` is the CLIENT (the fresh node pulling).
+  // -------------------------------------------------------------------------
+  /**
+   * Register the sync SOURCE the peer streams on inbound sync requests (the
+   * server side, D7). The source yields the peer's per-window
+   * `{ block, acceptedTickets, weights }` from `fromSlot` to its head.
+   * Registered lazily: `start()` registers the stream handler once, and the
+   * handler reads the CURRENT source at stream-open time (the operator may
+   * call `setSyncSource` after `start()`). `null` clears it (inbound sync
+   * requests then yield zero blocks). NOT on the `NetPort` (D8).
+   */
+  setSyncSource(source: SyncSource | null): void
+  /**
+   * The CLIENT sync (D4/D7): dial `peer`'s `SYNC_PROTOCOL`, send ONE
+   * `SyncRequest`, half-close, and YIELD the server's streamed `SyncBlock`s
+   * (proto-decoded, AD-12). `peer` is a multiaddr string (the 5.1 `dial`
+   * form). Returns an `AsyncIterable<SyncBlock>` (the decoded blocks in
+   * stream order — the structural-client shape the consensus `syncChain`
+   * consumes, D7). NOT on the `NetPort` (D8).
+   */
+  syncFrom(peer: string, request: SyncRequest): AsyncIterable<SyncBlock>
 }
 
 /** The service map this adapter's node carries.
@@ -273,6 +304,7 @@ function buildPeerDiscovery(config: NetAdapterConfig): Libp2pInit['peerDiscovery
 async function buildNode(
   config: NetAdapterConfig,
   received: Map<TopicClass, ReceivedEnvelope[]>,
+  getSource: () => SyncSource | null,
 ): Promise<Libp2p<Services>> {
   const node = await createLibp2p<Services>({
     addresses: { listen: [config.listenAddress] },
@@ -312,6 +344,15 @@ async function buildNode(
       received.set(entry.class, [...(received.get(entry.class) ?? []), entry.env])
     }
   })
+
+  // 5.4 — register the sync STREAM handler (request/response over a
+  // dedicated libp2p stream, D1 — NOT a gossip topic). Registered BEFORE
+  // `node.start()` (buildNode runs first) so the protocol is advertised
+  // once the node is up — a dialer that connects after `node.start()` finds
+  // the protocol already handled (multistream-select routing). The handler
+  // reads the CURRENT source lazily (the operator may `setSyncSource` after
+  // `start()`).
+  await node.handle(SYNC_PROTOCOL, makeSyncHandler(getSource))
 
   // 5.3 D4 — ONE node-level `peer:discovery` listener dials discovered peers.
   // Registered before `node.start()` (buildNode runs first) so it cannot miss
@@ -379,6 +420,12 @@ function decodeReceived(
 export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
   const received = new Map<TopicClass, ReceivedEnvelope[]>()
   let node: Libp2p<Services> | null = null
+  // 5.4 — the sync source (server side). Captured by `buildNode`'s handler
+  // via a GETTER so the operator may `setSyncSource` after `start()` (the
+  // handler reads the current source at stream-open time). `null` = no
+  // source (inbound sync requests yield zero blocks).
+  let syncSource: SyncSource | null = null
+  const getSyncSource = (): SyncSource | null => syncSource
 
   function requireNode(): Libp2p<Services> {
     if (node === null) {
@@ -402,7 +449,7 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // Idempotent: a second start() on a running adapter is a no-op; a
       // start() after stop() re-creates a fresh node.
       if (node !== null) return
-      node = await buildNode(config, received)
+      node = await buildNode(config, received, getSyncSource)
       await node.start()
       // 5.2 D4 — subscribe to ALL FOUR class topics (the 5.1 scratch
       // topic is gone).
@@ -454,6 +501,25 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
     },
     peerId() {
       return requireNode().peerId.toString()
+    },
+    // 5.4 — chain sync (D7/D8 — NOT on the 1.2 `NetPort`).
+    setSyncSource(source: SyncSource | null) {
+      // Store the source the registered stream handler reads LAZILY at
+      // stream-open time (the handler is registered in `start()`, before the
+      // operator may call this — the getter is the seam). `null` clears it
+      // (inbound sync requests then yield zero blocks, a normal stop).
+      syncSource = source
+    },
+    syncFrom(peer: string, request: SyncRequest) {
+      // The CLIENT (D4/D7): delegate to the transport client, dialing the
+      // node's own `dialProtocol` (the 5.1 `dial` mechanism — an explicit
+      // connection, not discovery). The multiaddr string is parsed to the
+      // `DialTarget` `dialProtocol` accepts (the same `multiaddr()` the
+      // adapter's `dial` uses). Returns the `AsyncIterable` of decoded
+      // `SyncBlock`s (stream order — the server streams them `fromSlot` →
+      // head, D2). NOT `async`: the transport client returns the iterable
+      // synchronously (the dial is lazy, inside the generator).
+      return syncFrom(requireNode(), multiaddr(peer), request)
     },
     get received() {
       return received

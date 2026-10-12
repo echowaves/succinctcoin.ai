@@ -1,4 +1,4 @@
-import { decodeMessage, encodeMessage, MaxLengthError, message, streamMessage } from 'protons-runtime'
+import { decodeMessage, encodeMessage, MaxLengthError, message, reader, streamMessage } from 'protons-runtime'
 import { alloc as uint8ArrayAlloc } from 'uint8arrays/alloc'
 import type { Codec, DecodeOptions } from 'protons-runtime'
 import type { Uint8ArrayList } from 'uint8arraylist'
@@ -1530,6 +1530,406 @@ export namespace succinctcoin {
 
     export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerInfoEnvelope>): Generator<PeerInfoEnvelopePeerInfoMessageStart | PeerInfoEnvelopePeerInfoMessageEnd | PeerInfoEnvelopePeerInfoPeerIdFieldEvent | PeerInfoEnvelopePeerInfoMultiaddrsFieldEvent | PeerInfoEnvelopePeerInfoUptimeFieldEvent | PeerInfoEnvelopeSourcePeerIdFieldEvent> {
       return streamMessage(buf, PeerInfoEnvelope.codec(), opts)
+    }
+  }
+
+  export interface SyncRequest {
+    fromSlot: bigint
+  }
+
+  export interface SyncRequestInput {
+    fromSlot?: bigint
+  }
+
+  export namespace SyncRequest {
+    let _codec: Codec<SyncRequest, SyncRequestInput>
+
+    export const codec = (): Codec<SyncRequest, SyncRequestInput> => {
+      if (_codec == null) {
+        _codec = message<SyncRequest, SyncRequestInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if ((obj.fromSlot != null && obj.fromSlot !== 0n)) {
+            w.uint32(8)
+            w.int64(obj.fromSlot)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length) => {
+          const obj: any = {
+            fromSlot: 0n
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.fromSlot = r.int64()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.SyncRequest'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield {
+                  field: `${prefix}fromSlot`,
+                  value: r.int64()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.SyncRequest'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface SyncRequestFromSlotFieldEvent {
+      field: '.fromSlot'
+      value: bigint
+    }
+
+    export function encode (obj: SyncRequestInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, SyncRequest.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<SyncRequest>): SyncRequest {
+      return decodeMessage(buf, SyncRequest.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<SyncRequest>): Generator<SyncRequestFromSlotFieldEvent> {
+      return streamMessage(buf, SyncRequest.codec(), opts)
+    }
+  }
+
+  export interface SyncBlock {
+    block?: succinctcoin.Block
+    acceptedTickets: succinctcoin.Ticket[]
+    weights: bigint[]
+  }
+
+  export interface SyncBlockInput {
+    block?: succinctcoin.BlockInput
+    acceptedTickets?: succinctcoin.TicketInput[]
+    weights?: bigint[]
+  }
+
+  export namespace SyncBlock {
+    let _codec: Codec<SyncBlock, SyncBlockInput>
+
+    export const codec = (): Codec<SyncBlock, SyncBlockInput> => {
+      if (_codec == null) {
+        _codec = message<SyncBlock, SyncBlockInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.block != null) {
+            w.uint32(10)
+            succinctcoin.Block.codec().encode(obj.block, w)
+          }
+
+          if (obj.acceptedTickets != null && obj.acceptedTickets.length > 0) {
+            for (const value of obj.acceptedTickets) {
+              w.uint32(18)
+              succinctcoin.Ticket.codec().encode(value, w)
+            }
+          }
+
+          if (obj.weights != null && obj.weights.length > 0) {
+            w.uint32(26)
+            w.fork()
+
+            for (const value of obj.weights) {
+              w.int64(value)
+            }
+
+            w.ldelim()
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            acceptedTickets: [],
+            weights: []
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.block = succinctcoin.Block.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.block
+                })
+                break
+              }
+              case 2: {
+                if (opts.limits?.acceptedTickets != null && obj.acceptedTickets.length === opts.limits.acceptedTickets) {
+                  throw new MaxLengthError('Decode error - repeated field "acceptedTickets" had too many elements')
+                }
+
+                obj.acceptedTickets.push(succinctcoin.Ticket.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.acceptedTickets$
+                }))
+                break
+              }
+              case 3: {
+                const b = r.bytes()
+                const r2 = reader(b)
+
+                while (r2.pos < r2.len) {
+                  if (opts.limits?.weights != null && obj.weights.length === opts.limits.weights) {
+                    throw new MaxLengthError('Decode error - repeated field "weights" had too many elements')
+                  }
+
+                  obj.weights.push(r2.int64())
+                }
+
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const obj = {
+            acceptedTickets: 0,
+            weights: 0
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.SyncBlock'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.Block.codec().stream(r, r.uint32(), `${prefix}block.`, {
+                  limits: opts.limits?.block
+                })
+
+                break
+              }
+              case 2: {
+                if (opts.limits?.acceptedTickets != null && obj.acceptedTickets === opts.limits.acceptedTickets) {
+                  throw new MaxLengthError('Streaming decode error - repeated field "acceptedTickets" had too many elements')
+                }
+
+                for (const evt of succinctcoin.Ticket.codec().stream(r, r.uint32(), `${prefix}acceptedTickets[].`, {
+                  limits: opts.limits?.acceptedTickets$
+                })) {
+                  yield {
+                    ...evt,
+                    index: obj.acceptedTickets
+                  }
+                }
+
+                obj.acceptedTickets++
+
+                break
+              }
+              case 3: {
+                const b = r.bytes()
+                const r2 = reader(b)
+
+                while (r2.pos < r2.len) {
+                  if (opts.limits?.weights != null && obj.weights === opts.limits.weights) {
+                    throw new MaxLengthError('Streaming decode error - repeated field "weights" had too many elements')
+                  }
+
+                  yield {
+                    field: `${prefix}weights[]`,
+                    index: obj.weights,
+                    value: r2.int64()
+                  }
+
+                  obj.weights++
+                }
+
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.SyncBlock'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface SyncBlockBlockMessageStart {
+      field: '.block'
+      type: 'start'
+    }
+
+    export interface SyncBlockBlockMessageEnd {
+      field: '.block'
+      type: 'end'
+    }
+
+    export interface SyncBlockBlockSlotFieldEvent {
+      field: '.block.slot'
+      value: bigint
+    }
+
+    export interface SyncBlockBlockParentHashFieldEvent {
+      field: '.block.parentHash'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface SyncBlockBlockWinnerIdentityIdFieldEvent {
+      field: '.block.winnerIdentityId'
+      value: string
+    }
+
+    export interface SyncBlockBlockWinnerTicketFieldEvent {
+      field: '.block.winnerTicket'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface SyncBlockBlockNonceFieldEvent {
+      field: '.block.nonce'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface SyncBlockBlockHashFieldEvent {
+      field: '.block.hash'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface SyncBlockBlockTxCountFieldEvent {
+      field: '.block.txCount'
+      value: bigint
+    }
+
+    export interface SyncBlockAcceptedTicketsIdentityIdFieldEvent {
+      field: '.acceptedTickets[].identityId'
+      value: string
+      index: number
+    }
+
+    export interface SyncBlockAcceptedTicketsWindowIndexFieldEvent {
+      field: '.acceptedTickets[].windowIndex'
+      value: bigint
+      index: number
+    }
+
+    export interface SyncBlockAcceptedTicketsChallengeFieldEvent {
+      field: '.acceptedTickets[].challenge'
+      value: Uint8Array<ArrayBuffer>
+      index: number
+    }
+
+    export interface SyncBlockAcceptedTicketsNonceCommitmentFieldEvent {
+      field: '.acceptedTickets[].nonceCommitment'
+      value: Uint8Array<ArrayBuffer>
+      index: number
+    }
+
+    export interface SyncBlockAcceptedTicketsSignatureFieldEvent {
+      field: '.acceptedTickets[].signature'
+      value: Uint8Array<ArrayBuffer>
+      index: number
+    }
+
+    export interface SyncBlockAcceptedTicketsMessageStartEvent {
+      field: '.acceptedTickets[]'
+      index: number
+      type: 'start'
+      message: string
+    }
+
+    export interface SyncBlockAcceptedTicketsMessageEndEvent {
+      field: '.acceptedTickets[]'
+      index: number
+      type: 'end'
+      message: string
+    }
+
+    export interface SyncBlockWeightsFieldEvent {
+      field: '.weights[]'
+      index: number
+      value: bigint
+    }
+
+    export function encode (obj: SyncBlockInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, SyncBlock.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<SyncBlock>): SyncBlock {
+      return decodeMessage(buf, SyncBlock.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<SyncBlock>): Generator<SyncBlockBlockMessageStart | SyncBlockBlockMessageEnd | SyncBlockBlockSlotFieldEvent | SyncBlockBlockParentHashFieldEvent | SyncBlockBlockWinnerIdentityIdFieldEvent | SyncBlockBlockWinnerTicketFieldEvent | SyncBlockBlockNonceFieldEvent | SyncBlockBlockHashFieldEvent | SyncBlockBlockTxCountFieldEvent | SyncBlockAcceptedTicketsIdentityIdFieldEvent | SyncBlockAcceptedTicketsWindowIndexFieldEvent | SyncBlockAcceptedTicketsChallengeFieldEvent | SyncBlockAcceptedTicketsNonceCommitmentFieldEvent | SyncBlockAcceptedTicketsSignatureFieldEvent | SyncBlockAcceptedTicketsMessageStartEvent | SyncBlockAcceptedTicketsMessageEndEvent | SyncBlockWeightsFieldEvent> {
+      return streamMessage(buf, SyncBlock.codec(), opts)
     }
   }
 

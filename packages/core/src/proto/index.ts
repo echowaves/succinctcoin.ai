@@ -30,6 +30,12 @@ export type TicketEnvelope = succinctcoin.TicketEnvelope
 export type TxEnvelope = succinctcoin.TxEnvelope
 export type PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
 
+// Chain sync field-set types (5.4 — request/response over a dedicated
+// stream, AD-12: `SyncRequest { fromSlot }` + `SyncBlock { block,
+// acceptedTickets, weights }`).
+export type SyncRequest = succinctcoin.SyncRequest
+export type SyncBlock = succinctcoin.SyncBlock
+
 // Codec namespaces (value space): `codec` / `encode` / `decode` / `stream`.
 export const Block = succinctcoin.Block
 export const Ticket = succinctcoin.Ticket
@@ -41,6 +47,10 @@ export const BlockEnvelope = succinctcoin.BlockEnvelope
 export const TicketEnvelope = succinctcoin.TicketEnvelope
 export const TxEnvelope = succinctcoin.TxEnvelope
 export const PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
+
+// Chain sync codec namespaces (5.4 — AD-12 proto codecs).
+export const SyncRequest = succinctcoin.SyncRequest
+export const SyncBlock = succinctcoin.SyncBlock
 
 // Full generated namespace (type + value) and the wire input types, for
 // `succinctcoin.Block`-style access and `*Input` partial field sets.

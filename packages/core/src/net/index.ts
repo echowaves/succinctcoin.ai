@@ -7,3 +7,9 @@ export { createNetAdapter } from './adapter.js'
 export type { NetAdapterConfig, NetAdapter, ReceivedEnvelope } from './adapter.js'
 export { TOPICS } from './topics.js'
 export type { TopicClass } from './topics.js'
+// 5.4 — chain sync (AD-8/AD-10/AD-12): the stable `SYNC_PROTOCOL` (a
+// dedicated request/response STREAM protocol, distinct from the four gossip
+// topics) + the sync source/client surface (`SyncSource` is structural — the
+// consensus module's `buildSyncSource` satisfies it without a net import, D7).
+export { SYNC_PROTOCOL } from './sync.js'
+export type { SyncSource } from './sync.js'
