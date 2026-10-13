@@ -26,8 +26,8 @@
  * root-barrel seams (never re-implementing them — AD-7: the draw is
  * imported; the challenge is derived via the imported
  * `deriveWindowChallenge`; the cap / uptime / commitment are imported).
- * A shared-driver extraction from 5.5 is 5.9's (the sweep) domain if
- * wanted — this file is self-contained. `src/`, `proto/`,
+ * A shared-driver extraction from 5.5 is a future test-refactor (not part
+ * of the 5.9 comment-only sweep) — this file is self-contained. `src/`, `proto/`,
  * `package.json`, and `pnpm-lock.yaml` are untouched (AD-1 preserved —
  * the driver is not wired into `createCore`).
  *

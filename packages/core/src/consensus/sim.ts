@@ -4,8 +4,8 @@
  *
  * The sim proves the core promise on a MEMORY TRANSPORT (D1 — no sockets,
  * no real network; the "network" is ONE chain + ONE accepted ticket set per
- * window, carried by the single-writer store in a single process; epic 5 adds
- * the real network): a single always-up node wins slots at the expected
+ * window, carried by the single-writer store in a single process; epic 5 (src/net)
+ * adds the real network): a single always-up node wins slots at the expected
  * **uptime-proportional rate** (its weight over the sum of the window's ticket
  * weights, from the ONE pinned draw — `drawWindow`, AD-7), **regardless of
  * hardware**, and **no node wins a slot without a valid per-slot ticket**

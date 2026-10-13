@@ -113,8 +113,9 @@ export function createCore(ports: CorePorts): CoreInstance {
       throw notImplemented('startMining')
     },
     async getPeers() {
-      // Read-API — owned by epic 5 (node-network). Stub: `async` so the throw
-      // surfaces as a rejected promise, honoring the Promise<> return type.
+      // Read-API — stub (the net adapter, epic 5/src/net, exposes `peers()`;
+      // this Read-API is not yet wired to it). `async` so the throw surfaces
+      // as a rejected promise, honoring the Promise<> return type.
       throw notImplemented('getPeers')
     },
     async getBlock(slot) {
@@ -391,7 +392,7 @@ export type { ReattestationResult } from './identity/index.js'
 // transport identity is libp2p's own keypair (never the 4.2 protocol
 // identity, AD-11). 5.2 replaced the scratch topic with the four per-class
 // topics (`TOPICS`) + proto envelopes: each `send*` encodes its class's
-// envelope and publishes on its own topic; 5.3 wires discovery; 5.7 wires
+// envelope and publishes on its own topic; 5.3 wired discovery; 5.7 wired
 // the relay transport.
 export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
 export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'

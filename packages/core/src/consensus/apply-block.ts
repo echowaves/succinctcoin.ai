@@ -26,10 +26,11 @@
  *
  * The `txs` are an in-memory VIEW (sender/recipient/amount per tx), not a
  * block payload: the proto `Block` carries only `txCount` (a `Tx` is a
- * separate message, verified on epic 5's ledger path). `txs` is OPTIONAL —
+ * separate message). `txs` is OPTIONAL —
  * default `[]` — so a 0-tx block (the tracer's `mineAndApply` path)
  * behaves exactly as 3.2/3.5: reward credit only, no fee, `totalSupply`
- * conserved. Carrying real, verified txs through the loop is epic 5.
+ * conserved. Carrying real, verified txs through the loop is beyond epic 5
+ * (its networking propagates txs over gossipsub; the loop stays 0-tx).
  *
  * Ordering: ledger first (an over-draw — `SC-LEDGER-1` — leaves the chain
  * and the snapshot untouched), then `store.commit(block)`, then
@@ -46,9 +47,8 @@ import { BURN_ID, FEE_RATE } from './economics.js'
  * One tx's in-memory view (3.6): the sender/recipient/amount the ledger
  * math consumes. `amount` is the VALUE moved `from → to` in integer base
  * units (the fee on top of it is computed at the 2.2 boundary, not
- * carried here). The proto `Tx` message (a separate wire form, verified on
- * epic 5's ledger path) is NOT this view — this is the projection
- * `applyBlock` needs.
+ * carried here). The proto `Tx` message (a separate wire form) is NOT this
+ * view — this is the projection `applyBlock` needs.
  */
 export interface BlockTx {
   from: string
