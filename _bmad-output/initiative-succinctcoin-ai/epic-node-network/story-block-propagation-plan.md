@@ -1,5 +1,5 @@
 ---
-ticket: "5.5"
+ticket: "5"
 epic: epic-node-network
 status: "built"
 review: quick
