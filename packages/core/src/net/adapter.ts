@@ -53,7 +53,34 @@
  * - **D7 — transport flag.** `'memory'` → `@libp2p/memory` (the only path
  *   exercised in CI, AD-10); `'tcp'` → `@libp2p/tcp` (present in code,
  *   never CI-exercised). bootstrap/mdns discovery are WIRED in 5.3 (see the
- *   discovery notes in `buildNode`); circuitRelayTransport is 5.7.
+ *   discovery notes in `buildNode`); circuitRelayTransport is 5.7 (D9).
+ * - **D8 — relay role (5.7).** `relayRole` selects the circuit-relay-v2
+ *   capability (spine E1 / AD-10): `'relay'` registers
+ *   `circuitRelayServer()` as the `circuitRelay` service — an ORDINARY node
+ *   that also serves circuits; `'client'` (the NATed node) listens on
+ *   NOTHING (`addresses.listen = []` — no direct inbound listener, inbound
+ *   only via the relay; the config's `listenAddress` is IGNORED for this
+ *   role) and registers a circuit reservation on the configured
+ *   `relayAddress` WHEN THE OPERATOR DIALS IT via `dial()` (the explicit-
+ *   `dial` model — the adapter never auto-dials); `'none'` (default) is the
+ *   unchanged direct node. A client is reachable at
+ *   `/p2p/<relayPeerId>/p2p-circuit/p2p/<natedPeerId>` (the dialer builds
+ *   that multiaddr explicitly — no discovery/advertise).
+ * - **D9 — circuitRelayTransport always (5.7).** The circuit transport is
+ *   ALWAYS wired (after the direct transport), for EVERY role: it is the
+ *   dial-THROUGH-relay capability — even a `'none'` node needs it to dial a
+ *   NATed peer's relay-proxied multiaddr. It is inert for a node that never
+ *   touches a relay (no reservation), so the 5.1–5.6 nodes are unaffected
+ *   (the full-suite gate verifies this). The client's reservation is a
+ *   'configured' `addRelay` (D8) — deliberately NOT the circuit LISTEN
+ *   path: a 'discovered' reservation needs a pending reservation (which only
+ *   exists behind a circuit listen), and the circuit listener's `addedRelay`
+ *   would confirm the relay's process-local `/memory/...` addr via
+ *   `confirmObservedAddr`, throwing `InvalidParametersError` inside a
+ *   library-internal event handler (uncatchable from the adapter — libp2p
+ *   3.3.11 + @libp2p/circuit-relay-v2 4.2.13). Gossipsub runs with
+ *   `runOnLimitedConnection: true` so gossip flows over relayed (limited)
+ *   connections (a no-op for direct ones).
  *
  * Hygiene: no `big.js` (AD-5), no `.secret` reads (AD-11), no RNG, no
  * wall-clock (AD-3 — the 10s dial bound is a timeout, not a timestamp).
@@ -64,6 +91,7 @@ import { memory } from '@libp2p/memory'
 import { tcp } from '@libp2p/tcp'
 import { gossipsub } from '@libp2p/gossipsub'
 import { identify } from '@libp2p/identify'
+import { circuitRelayServer, circuitRelayTransport } from '@libp2p/circuit-relay-v2'
 import { bootstrap } from '@libp2p/bootstrap'
 import { mdns } from '@libp2p/mdns'
 import { peerIdFromString } from '@libp2p/peer-id'
@@ -74,6 +102,7 @@ import { createLibp2p } from 'libp2p'
 import type { Libp2p, Libp2pInit } from 'libp2p'
 import type { GossipSub, Message } from '@libp2p/gossipsub'
 import type { Identify } from '@libp2p/identify'
+import type { CircuitRelayService } from '@libp2p/circuit-relay-v2'
 import type { PeerDiscovery, PeerDiscoveryEvents, PeerId } from '@libp2p/interface'
 import type { NetPort } from '../ports.js'
 import {
@@ -133,6 +162,24 @@ export interface NetAdapterConfig {
    * over tcp (the real `mdns()` announces the node itself, no list needed).
    */
   mdnsAnnounce?: string[]
+  /**
+   * 5.7 D8 — the circuit-relay role. `'relay'` registers the
+   * `circuitRelayServer()` service (an ordinary node that also serves
+   * circuits); `'client'` is the NATed node — NO direct listen (`listen`
+   * address ignored, inbound only via the relay) + a circuit reservation on
+   * `relayAddress` when the operator dials it; `'none'` (default) is the
+   * unchanged direct node.
+   */
+  relayRole?: 'none' | 'relay' | 'client'
+  /**
+   * 5.7 D8 — the relay's multiaddr (`client` role only). The OPERATOR dials
+   * it via the adapter's `dial()`; dialing it registers a circuit
+   * reservation on that relay (the adapter does NOT auto-dial — the
+   * explicit-`dial` model, 5.1). The NATed node is then reachable at
+   * `/p2p/<relayPeerId>/p2p-circuit/p2p/<natedPeerId>` (the dialer builds
+   * that multiaddr explicitly).
+   */
+  relayAddress?: string
 }
 
 /**
@@ -198,8 +245,13 @@ export interface NetAdapter extends NetPort {
  *  `createLibp2p<T>` requires `T extends Record<string, unknown>`; a local
  *  alias keeps the index signature that an `interface` would lose.
  *  `identify` is present because gossipsub hard-depends on it (see
- *  buildNode's services comment). */
-type Services = Record<string, unknown> & { gossip: GossipSub; identify: Identify }
+ *  buildNode's services comment). 5.7 D8: `circuitRelay` is present only
+ *  for `relayRole: 'relay'` nodes (the circuit-relay SERVER). */
+type Services = Record<string, unknown> & {
+  gossip: GossipSub
+  identify: Identify
+  circuitRelay?: CircuitRelayService
+}
 
 /**
  * 5.3 D3 — the memory-transport mDNS service TEST DOUBLE (not a no-op).
@@ -306,16 +358,31 @@ async function buildNode(
   received: Map<TopicClass, ReceivedEnvelope[]>,
   getSource: () => SyncSource | null,
 ): Promise<Libp2p<Services>> {
+  // 5.7 D8 — the client (NATed) role listens on NOTHING: no direct inbound
+  // listener (inbound only via the relay), so the config's `listenAddress`
+  // is ignored for this role.
+  const isClient = config.relayRole === 'client'
   const node = await createLibp2p<Services>({
-    addresses: { listen: [config.listenAddress] },
-    transports: [config.transport === 'memory' ? memory() : tcp()],
+    addresses: { listen: isClient ? [] : [config.listenAddress] },
+    // 5.7 D9 — `circuitRelayTransport` is ALWAYS wired (after the direct
+    // transport): the dial-THROUGH-relay capability a 'none' node needs to
+    // reach a relayed peer; inert for a node that never touches a relay.
+    transports: [config.transport === 'memory' ? memory() : tcp(), circuitRelayTransport()],
     connectionEncrypters: [noise()],
     streamMuxers: [yamux()],
     // Gossipsub declares the `@libp2p/identify` capability as a hard
     // `serviceDependency` (it tags/penalizes peers via identify). libp2p
     // 3.3.11 ships NO defaults, so `identify()` must be registered here or
     // `createLibp2p` throws `UnmetServiceDependenciesError`.
-    services: { gossip: gossipsub(), identify: identify() },
+    // 5.7 D9 — `runOnLimitedConnection: true` lets gossip flow over relayed
+    // (limited) connections (a no-op for direct ones).
+    services: {
+      gossip: gossipsub({ runOnLimitedConnection: true }),
+      identify: identify(),
+      // 5.7 D8 — the relay role registers the circuit-relay SERVER (serves
+      // hops to reserved clients); 'none'/'client' nodes carry no server.
+      ...(config.relayRole === 'relay' ? { circuitRelay: circuitRelayServer() } : {}),
+    },
     // 5.3 D2/D3 — the discovery services (real `bootstrap` over the genesis
     // list; the mDNS double over memory / real `mdns()` over tcp). Empty when
     // neither `bootstrap` nor `mdns` is set → discovery OFF (AC-4, additive).
@@ -413,6 +480,70 @@ function decodeReceived(
 }
 
 /**
+ * 5.7 D8 — the minimal structural views the reservation helper needs.
+ * The `libp2p` root exports the `Libp2p` INTERFACE (no `components`
+ * member); the concrete class carries `components.transportManager` at
+ * runtime, so the helper reads it through `NodeWithTransportManager`. And
+ * `circuitRelayTransport()` returns a FACTORY (the package does not export
+ * the transport class), so the instantiated transport is located by its
+ * `Symbol.toStringTag` and read through `CircuitReservationSeam`:
+ * `reservationStore.addRelay(peer, 'configured')` registers the client's
+ * circuit reservation on that relay.
+ * INTERNAL — not exported.
+ */
+interface NodeWithTransportManager {
+  components: {
+    transportManager: {
+      getTransports(): unknown[]
+    }
+  }
+}
+interface CircuitReservationSeam {
+  reservationStore: {
+    addRelay(peerId: PeerId, type: 'discovered' | 'configured'): Promise<unknown>
+  }
+}
+
+/**
+ * 5.7 D8/D9 — register a circuit reservation on the relay a client-role
+ * node just dialed. The 'configured' relay type — deliberately NOT the
+ * circuit LISTEN / 'discovered' path: a 'discovered' reservation needs a
+ * PENDING reservation (which only exists behind a circuit listen, and the
+ * client role listens on nothing — `addresses.listen = []`), and the
+ * circuit listener's `addedRelay` would confirm the relay's process-local
+ * `/memory/...` reservation addr via `confirmObservedAddr`, throwing
+ * `InvalidParametersError` (non-IP/DNS) inside a library-internal event
+ * handler — an uncatchable uncaughtException (libp2p 3.3.11 +
+ * @libp2p/circuit-relay-v2 4.2.13). A 'configured' `addRelay` needs no
+ * pending reservation and, with no circuit listener registered, nothing
+ * confirms the reservation addrs. The `addRelay` also runs the RESERVE
+ * handshake, which creates the RELAY-side reservation entry the relay's
+ * hop handler checks (`get(dstPeer)` + an open connection to it); the
+ * client-side entry additionally keeps the NATed node's own `onStop` off
+ * the crashing circuit-listen path.
+ * Fire-and-forget: a failed reservation is a NORMAL outcome (spine — never
+ * a throw); a later relay-proxied dial then simply fails (NO_RESERVATION)
+ * and the operator retries.
+ * INTERNAL — driven by `dial(relayAddress)`, not on the NetPort surface.
+ */
+function reserveCircuitOnRelay(
+  node: Libp2p<Services> & NodeWithTransportManager,
+  relayPeer: PeerId,
+): void {
+  const transport = node.components.transportManager
+    .getTransports()
+    .find(
+      (t) =>
+        Object.prototype.toString.call(t) ===
+        '[object @libp2p/circuit-relay-v2-transport]',
+    ) as unknown as CircuitReservationSeam | undefined
+  if (transport === undefined) return
+  void transport.reservationStore.addRelay(relayPeer, 'configured').catch(() => {
+    /* a failed reservation is a NORMAL outcome (spine) — never a throw. */
+  })
+}
+
+/**
  * `createNetAdapter` — the pure factory (D2). Stores the config, returns
  * the adapter object. The libp2p node is created only inside `start()`, so
  * a `'tcp'` config can be constructed headlessly without opening a socket.
@@ -497,7 +628,24 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
     },
     async dial(address: string) {
       const ma = multiaddr(address)
-      await requireNode().dial(ma, { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
+      const conn = await requireNode().dial(ma, { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
+      // 5.7 D8 — client role: dialing the CONFIGURED relay registers a
+      // circuit reservation on it (the operator's explicit dial drives the
+      // capability — the adapter never auto-dials). Fire-and-forget: a
+      // failed reservation is a NORMAL outcome (the relay may be offline or
+      // not speak the hop codec) — see `reserveCircuitOnRelay`.
+      if (
+        config.relayRole === 'client' &&
+        config.relayAddress !== undefined &&
+        address === config.relayAddress
+      ) {
+        // The runtime node is the concrete `Libp2p` class (it carries
+        // `components`); the root export is the interface without it.
+        void reserveCircuitOnRelay(
+          requireNode() as Libp2p<Services> & NodeWithTransportManager,
+          conn.remotePeer,
+        )
+      }
     },
     peerId() {
       return requireNode().peerId.toString()
