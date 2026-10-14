@@ -9,9 +9,12 @@ const here = fileURLToPath(new URL('.', import.meta.url))
 const GENESIS_PATH = join(here, '..', '..', '..', 'config', 'genesis.json')
 
 // Fake ports (no real network/store/clock). Matrix: FRESH_CORE, EVENT_SINK,
-// and UNIMPL_STUB. The store stays a no-op: `start()` now runs one
-// `mineAndApply` over it, which is harmless (absent snapshot → seed mint,
-// empty head → slot 0, commit/saveState are no-ops).
+// and LIVE_START_MINING (the 1.2 UNIMPL_STUB row is REPLACED at 6.1 — the
+// startMining/getPeers/getBlock stubs are gone; the loop and read-API are
+// real, and their behavior is covered by test/core-node-loop.test.ts).
+// The store stays a no-op: `start()` runs one `mineAndApply` over it, which
+// is harmless (absent snapshot → seed mint, empty head → slot 0,
+// commit/saveState are no-ops).
 function makePorts(slot = 0): CorePorts {
   return {
     genesisPath: GENESIS_PATH,
@@ -55,7 +58,7 @@ function makePorts(slot = 0): CorePorts {
   }
 }
 
-describe('createCore — wiring + surface (FRESH_CORE / EVENT_SINK / UNIMPL_STUB)', () => {
+describe('createCore — wiring + surface (FRESH_CORE / EVENT_SINK / LIVE_START_MINING)', () => {
   it('FRESH_CORE: returns an instance; on() subscribes; start() resolves without throwing', async () => {
     const core = createCore(makePorts())
     const off = core.on('CoreStarted', () => {})
@@ -92,24 +95,30 @@ describe('createCore — wiring + surface (FRESH_CORE / EVENT_SINK / UNIMPL_STUB
     expect(payloads).toEqual([{ slot: 7 }])
   })
 
-  it('UNIMPL_STUB: getPeers / getBlock / startMining fail with { code: SC-CORE-1 }', async () => {
+  it('LIVE_START_MINING: startMining before start() rejects { code }; after start() it is idempotent and stop() halts the loop', async () => {
     const core = createCore(makePorts())
-    // startMining is a void command — throws synchronously.
-    let miningErr: unknown = null
-    try {
-      core.startMining()
-    } catch (e) {
-      miningErr = e
-    }
-    expect(miningErr).toBeInstanceOf(Error)
-    expect((miningErr as { code: string }).code).toBe('SC-CORE-1')
-    // getPeers / getBlock are Promise-typed — they reject (not sync-throw),
-    // carrying SC-CORE-1.
-    const peerErr: unknown = await core.getPeers().catch((e) => e)
-    expect(peerErr).toBeInstanceOf(Error)
-    expect((peerErr as { code: string }).code).toBe('SC-CORE-1')
-    const blockErr: unknown = await core.getBlock(3).catch((e) => e)
-    expect(blockErr).toBeInstanceOf(Error)
-    expect((blockErr as { code: string }).code).toBe('SC-CORE-1')
+    // D5 — startMining before start(): a NORMAL reject with a `{ code }`
+    // (the command is Promise-typed — never a sync throw). The stub
+    // (UNIMPL_STUB, 1.2) is gone: the loop is real (6.1), it just needs
+    // the genesis-derived parameters captured in start().
+    const err: unknown = await core.startMining().catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as { code?: string }).code).toBe('SC-CORE-1')
+
+    // After start(): startMining starts the integrated slot loop (idempotent
+    // — a second call is a no-op) and stop() halts it before closing. The
+    // full mining behavior is covered by test/core-node-loop.test.ts
+    // (AC-1/AC-2) — this row pins the lifecycle contract only.
+    await core.start()
+    await core.startMining()
+    await core.startMining() // idempotent no-op
+    await core.stop()
+    // After stop(): startMining() must REJECT { code } — not silently
+    // re-create a loop that would tick forever against the closed store
+    // (the genesis params are reset on stop, so the "start() has not run"
+    // guard fires — a normal reject, never a sync throw).
+    const postStopErr: unknown = await core.startMining().catch((e) => e)
+    expect(postStopErr).toBeInstanceOf(Error)
+    expect((postStopErr as { code?: string }).code).toBe('SC-CORE-1')
   })
 })

@@ -20,6 +20,17 @@ export {
 } from './pow.js'
 export { MINT_ID, TRACER_WINNER_ID, mineBlock } from './miner.js'
 export type { BlockTemplate } from './miner.js'
+// The integrated slot loop (6.1, AD-9 "the consensus loop, the single
+// writer in the main process"): the `setTimeout`-driven bounded-poll loop
+// that composes the built seams (next slot/parent → the window's challenge
+// → the local signed/tracer ticket + the gossiped tickets for the window →
+// the 4.4 acceptance cap → the 4.5 uptime weights → the ONE pinned AD-7
+// draw → `mineBlock` → `applyBlock` → gossip → the key-free
+// `BlockApplied` event, AD-11). It NEVER re-implements the draw (AD-7),
+// the ledger apply (AD-2), or the net, and never reads `.secret` (AD-11).
+// Wired into `createCore` at 6.1 (`startMining`).
+export { createNodeLoop } from './node-loop.js'
+export type { BlockAppliedPayload, NodeLoopOptions } from './node-loop.js'
 // Economic-model constants (3.6): the named fee rate (ONE origin — a
 // genesis field is a protocol change inception deferred) + the reserved
 // receive-only burn identity. A protocol version bump to change (AD-7/AD-12).

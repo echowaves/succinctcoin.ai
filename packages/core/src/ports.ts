@@ -10,6 +10,7 @@
  * sink and the core forwards every emitted event to it, so the core never
  * imports `electron`.
  */
+import type { IdentityKeypair } from './identity/identity.js'
 
 /**
  * The only representable gate-credential shape (AD-4). The `blob` is
@@ -124,4 +125,15 @@ export interface CorePorts {
    * fail-fast boot order (AD-9) reads it only AFTER `store.open()`.
    */
   genesisPath?: string
+  /**
+   * The node's 4.2 PROTOCOL identity (6.1, D2 / AD-11): the keypair the
+   * integrated slot loop (`startMining`) signs its tickets with — via
+   * `signTicket`, the identity module's single `.secret` reader. OPTIONAL:
+   * when absent, the loop uses the tracer ticket (empty signature,
+   * `TRACER_WINNER_ID`), preserving the single-node default (every
+   * `createCore(makePorts())` caller that passes no identity still mines).
+   * The host creates it via `deriveIdentityKeypair(seed)` (e.g. in the
+   * Electron main process, where the keys live — AD-11).
+   */
+  identity?: IdentityKeypair
 }

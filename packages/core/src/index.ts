@@ -3,20 +3,28 @@
  *
  * Public surface, all owned by `core/events/` (AD-1/AD-9):
  *   - events out  → `CoreEvents` map + typed `on`/`emit`
- *   - commands in → `CoreCommands` (baseline lifecycle works; capability
- *                   commands stub `{ code: 'SC-CORE-1' }`)
- *   - read-API    → `CoreReadApi` (`getPeers`/`getBlock` → UI read-models)
- *   - ports       → `NetPort`/`StorePort`/`ClockPort`/`GateVerifier`/`UiSink`
+ *   - commands in → `CoreCommands` (baseline lifecycle + the integrated
+ *                   slot loop via `startMining`, 6.1)
+ *   - read-API    → `CoreReadApi` (`getPeers`/`getBlock`/`getChainHead`/
+ *                   `getBalances` → UI read-models)
+ *   - ports       → `NetPort`/`StorePort`/`ClockPort`/`GateVerifier`/
+ *                   `UiSink` (+ the optional 4.2 `identity`, 6.1)
  *
  * Zero UI imports: the core reaches the host only via the injected `UiSink`
- * (AD-1). No capability logic lives here yet — epics 2-5 fill the seams.
+ * (AD-1). Epics 2-5 filled the seams; 6.1 integrates them — `start()`
+ * keeps its one-block tracer boot, and `startMining()` starts the running
+ * node (the AD-9 consensus loop, the single writer in the main process)
+ * that mines a block per window and emits the AD-9 UI data source
+ * (`BlockApplied` + the real read-API).
  */
 import { EventEmitter } from 'node:events'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadGenesis } from './config/index.js'
-import { mineAndApply } from './consensus/index.js'
+import { MINT_ID, createNodeLoop, mineAndApply } from './consensus/index.js'
+import { Block } from './proto/index.js'
+import { fromDisplay, fromJson, toJson, toDisplay, totalSupply } from './ledger/index.js'
 
 import type {
   CoreCommands,
@@ -57,18 +65,56 @@ function defaultGenesisPath(): string {
 }
 
 /**
- * Build a core instance from the five injected ports.
+ * The integrated slot loop's tick cadence (6.1, D1): a host/test constant —
+ * the `setTimeout` period between windows. The slot advances by loop
+ * iteration (`nextSlotAndParent` over the persisted head), NEVER derived
+ * from this value (AD-3: no wall clock in the chain logic).
+ */
+const NODE_LOOP_TICK_MS = 15
+
+/** Bytes → lowercase hex (the read-API's hash projection, AD-12 public data). */
+function bytesToHex(buf: Uint8Array): string {
+  let out = ''
+  for (let i = 0; i < buf.byteLength; i += 1) {
+    out += buf[i].toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+/**
+ * Build a core instance from the injected ports.
  *
  * Wires a `NodeJS.EventEmitter` and forwards every emitted event to the
  * registered `UiSink` (the AD-1 seam — the core reaches the host without
  * importing electron). Capability epics attach logic to the returned instance
- * without forking it. Read-API and capability commands are stubs throwing
- * `SC-CORE-1` until a capability epic implements them.
+ * without forking it. 6.1 completes the integration: `start()` keeps its
+ * one-block tracer boot (AD-9) and ALSO captures the genesis-derived loop
+ * parameters; `startMining()` starts the integrated slot loop (the running
+ * node — the AD-9 single writer); `stop()` halts the loop before closing;
+ * the read-API (`getPeers`/`getBlock`/`getChainHead`/`getBalances`) is real
+ * — a miss is a normal reject with a `{ code }`, never a sync throw.
  */
 export function createCore(ports: CorePorts): CoreInstance {
   // `NodeJS.EventEmitter` is a type namespace, not a runtime value — construct
   // the real emitter from node:events and type it with the plan's naming.
   const emitter: NodeJS.EventEmitter = new EventEmitter()
+
+  // The integrated slot loop (6.1, AD-9) — `null` until `startMining()`;
+  // `stop()` halts it (if running) before emitting `CoreStopped` (D5).
+  let loop: { stop(): void } | null = null
+  // The genesis-derived loop parameters, captured ONCE in `start()` (D5) —
+  // the one-time display→base-unit conversion (`fromDisplay`, the AD-5
+  // big.js boundary) happens here, never per window.
+  let genesis: {
+    rewardBaseUnits: bigint
+    maxSupplyDisplay: string
+    lookbackL: bigint
+  } | null = null
+  // The loop's most recently emitted window (the D6 note): the decoded
+  // `Block` proto carries NO ticket count, so the read-API projects the
+  // accepted-set size from the loop's tracked window (`1` when only the
+  // winner ticket is known — a documented projection).
+  let lastWindow: { slot: number; ticketCount: number } | null = null
 
   return {
     on<K extends keyof CoreEvents>(event: K, listener: (payload: CoreEvents[K]) => void) {
@@ -92,7 +138,9 @@ export function createCore(ports: CorePorts): CoreInstance {
       //   3. run the slot loop ONCE — mineAndApply produces exactly one
       //      block from the persisted head; emission flows from the
       //      validated genesis (no inline literals);
-      //   4. emit CoreStarted (AD-3: chain-time slot, not wall clock) —
+      //   4. capture the genesis-derived loop parameters (6.1, D5) — the
+      //      one-time display→base-unit conversion (AD-5 boundary);
+      //   5. emit CoreStarted (AD-3: chain-time slot, not wall clock) —
       //      exactly once, AFTER the block.
       await ports.store.open()
       const cfg = await loadGenesis(genesisPath ?? ports.genesisPath ?? defaultGenesisPath())
@@ -101,35 +149,126 @@ export function createCore(ports: CorePorts): CoreInstance {
         rewardDisplay: cfg.emission.blockReward,
         maxSupplyDisplay: cfg.emission.maxSupply,
       })
+      genesis = {
+        rewardBaseUnits: fromDisplay(cfg.emission.blockReward),
+        maxSupplyDisplay: cfg.emission.maxSupply,
+        lookbackL: BigInt(cfg.uptimeLookbackL),
+      }
       this.emit('CoreStarted', { slot: ports.clock.slotIndex() })
     },
     async stop() {
-      // Shutdown: emit CoreStopped, then close the store (releases the lock).
+      // Shutdown (AD-9 order, D5): halt the loop first (if running), then
+      // emit CoreStopped, then close the store (releases the lock). Reset
+      // the captured genesis params too — a `startMining()` after `stop()`
+      // (without a fresh `start()`) must reject `SC-CORE-1`, not re-create a
+      // loop that would tick forever against the closed store.
+      if (loop !== null) {
+        loop.stop()
+        loop = null
+      }
+      genesis = null
       this.emit('CoreStopped', { slot: ports.clock.slotIndex() })
       await ports.store.close()
     },
-    startMining() {
-      // Capability command — owned by epic 3 (equal-node-mining). Stub.
-      throw notImplemented('startMining')
+    async startMining() {
+      // The integrated slot loop (6.1, AD-9): idempotent — a second call is
+      // a no-op. Rejects (a normal `{ code }`, never a sync throw) if
+      // `start()` has not run (the genesis-derived parameters are captured
+      // there, D5). The loop COMPOSES the built seams (AD-7/AD-2) — it never
+      // re-implements the draw, the ledger apply, or the net — and signs its
+      // ticket via `signTicket` when `ports.identity` is injected (AD-11/
+      // AD-12), else the tracer ticket (D2 — the single-node default).
+      if (loop !== null) return
+      if (genesis === null) {
+        const err = new Error(
+          'SC-CORE-1: startMining requires start() to have run first',
+        )
+        ;(err as { code?: string }).code = 'SC-CORE-1'
+        throw err
+      }
+      loop = createNodeLoop({
+        store: ports.store,
+        net: ports.net,
+        identity: ports.identity,
+        rewardBaseUnits: genesis.rewardBaseUnits,
+        maxSupplyDisplay: genesis.maxSupplyDisplay,
+        mintId: MINT_ID,
+        lookbackL: genesis.lookbackL,
+        emitBlockApplied: (p) => {
+          lastWindow = { slot: p.slot, ticketCount: p.ticketCount }
+          this.emit('BlockApplied', p)
+        },
+        tickMs: NODE_LOOP_TICK_MS,
+      })
     },
     async getPeers() {
-      // Read-API — stub (the net adapter, epic 5/src/net, exposes `peers()`;
-      // this Read-API is not yet wired to it). `async` so the throw surfaces
-      // as a rejected promise, honoring the Promise<> return type.
-      throw notImplemented('getPeers')
+      // The net adapter's connected peer ids (AD-8). `multiaddrs` is always
+      // `[]` — the adapter exposes peer ids only (a documented projection
+      // limitation, not a defect — D4).
+      const ids = await ports.net.peers()
+      return ids.map((peerId) => ({ peerId, multiaddrs: [] as string[] }))
     },
     async getBlock(slot) {
-      // Read-API — owned by the capability epics. Stub: rejected promise.
-      throw notImplemented(`getBlock(slot=${slot})`)
+      // The block read-model for `slot` (D4): a missing slot is a NORMAL
+      // reject with a `{ code }` — never a sync throw. `ticketCount` is the
+      // loop's tracked accepted-set size for that window (the D6 note; `1`
+      // when only the winner ticket is known).
+      const bytes = await ports.store.getBlock(slot)
+      if (bytes === null) {
+        const err = new Error(`SC-CORE-1: no block stored at slot ${slot}`)
+        ;(err as { code?: string }).code = 'SC-CORE-1'
+        throw err
+      }
+      const block = Block.decode(bytes)
+      return {
+        slot: Number(block.slot),
+        hash: bytesToHex(block.hash),
+        winnerIdentityId: block.winnerIdentityId,
+        ticketCount: lastWindow !== null && lastWindow.slot === slot ? lastWindow.ticketCount : 1,
+        txCount: Number(block.txCount),
+      }
+    },
+    async getChainHead() {
+      // The chain-head read-model (D4): `headSlot()` (−1 → the zero/empty
+      // head read-model) → `getBlock(head)` → `Block.decode` → project
+      // (`totalSupplyDisplay` via the ledger's display boundary, AD-5).
+      const head = await ports.store.headSlot()
+      if (head === -1) {
+        return {
+          slot: 0,
+          hash: '0'.repeat(64),
+          winnerIdentityId: '',
+          ticketCount: 0,
+          txCount: 0,
+          totalSupplyDisplay: '0',
+        }
+      }
+      const bytes = await ports.store.getBlock(head)
+      if (bytes === null) {
+        const err = new Error(`SC-CORE-1: head slot ${head} has no stored block`)
+        ;(err as { code?: string }).code = 'SC-CORE-1'
+        throw err
+      }
+      const block = Block.decode(bytes)
+      const doc = await ports.store.loadState()
+      const balances = doc === null ? new Map<string, bigint>() : fromJson(doc)
+      return {
+        slot: Number(block.slot),
+        hash: bytesToHex(block.hash),
+        winnerIdentityId: block.winnerIdentityId,
+        ticketCount: lastWindow !== null && lastWindow.slot === head ? lastWindow.ticketCount : 1,
+        txCount: Number(block.txCount),
+        totalSupplyDisplay: toDisplay(totalSupply(balances)),
+      }
+    },
+    async getBalances() {
+      // The balance read-model (D4, AD-5): `loadState()` (null → empty)
+      // → `fromJson` → `toJson` (identity id → decimal-string base units).
+      const doc = await ports.store.loadState()
+      if (doc === null) return { balances: {} }
+      return { balances: toJson(fromJson(doc)) }
     },
   }
-}
-
-/** Build the canonical `{ code: 'SC-CORE-1', message }` not-implemented error. */
-function notImplemented(op: string): Error {
-  const err = new Error(`SC-CORE-1: ${op} is not implemented yet`)
-  ;(err as { code?: string }).code = 'SC-CORE-1'
-  return err
 }
 
 // Re-export the public surface so consumers import everything from the
@@ -140,7 +279,9 @@ export type {
   CoreEventsEmitter,
   CoreInstance,
   CoreReadApi,
+  ReadBalances,
   ReadBlock,
+  ReadChainHead,
   ReadPeer,
 } from './events/types.js'
 export type {

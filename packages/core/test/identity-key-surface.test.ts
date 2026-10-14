@@ -21,7 +21,9 @@
  *                            key set — `ReadPeer` = `{ multiaddrs,
  *                            peerId }`, `ReadBlock` = `{ hash, slot,
  *                            ticketCount, txCount, winnerIdentityId }`,
- *                            `CoreStarted` / `CoreStopped` = `{ slot }` —
+                            `CoreStarted` / `CoreStopped` = `{ slot }`,
+                            `BlockApplied` (6.1) = `{ hash, slot,
+                            ticketCount, txCount, winnerIdentityId }` —
  *                            and none contains a key-material key (AD-11:
  *                            only identity ids / status / signed
  *                            artifacts).
@@ -155,6 +157,13 @@ function surfacePayloads(): Record<'ReadPeer' | 'ReadBlock' | keyof CoreEvents, 
   const events = {
     CoreStarted: { slot: 0 },
     CoreStopped: { slot: 9 },
+    BlockApplied: {
+      slot: 5,
+      hash: '3'.repeat(64),
+      winnerIdentityId: '4'.repeat(64),
+      ticketCount: 2,
+      txCount: 1,
+    },
   } as const
   return { ReadPeer: peer, ReadBlock: block, ...events }
 }
@@ -169,6 +178,7 @@ const EXPECTED_KEY_SETS: Record<
   ReadBlock: ['hash', 'slot', 'ticketCount', 'txCount', 'winnerIdentityId'],
   CoreStarted: ['slot'],
   CoreStopped: ['slot'],
+  BlockApplied: ['hash', 'slot', 'ticketCount', 'txCount', 'winnerIdentityId'],
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +219,7 @@ describe('4.7 AD-11 key-material boundary (core half, E1) — frozen matrix', ()
     const allEventPayloadsClean: AllEventPayloadsClean = {
       CoreStarted: clean,
       CoreStopped: clean,
+      BlockApplied: clean,
     }
 
     // The type bindings are exercised at compile time (the assignments
@@ -218,6 +229,7 @@ describe('4.7 AD-11 key-material boundary (core half, E1) — frozen matrix', ()
     expect(readBlockClean).toEqual(clean)
     expect(allEventPayloadsClean.CoreStarted).toEqual(clean)
     expect(allEventPayloadsClean.CoreStopped).toEqual(clean)
+    expect(allEventPayloadsClean.BlockApplied).toEqual(clean)
 
     // Runtime shadow (non-vacuous name set, D3): the key-material name set
     // is exactly the four names — a set narrowed to `[]` would make the
