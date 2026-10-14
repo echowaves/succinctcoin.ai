@@ -5,5 +5,14 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  /*
+    6.3 review F5: the renderer `.ts` modules (`ui-state.ts`,
+    `useSuccinctcoin.ts`) match this `include` glob, so the tsc build emitted
+    them into `dist/renderer/` before the Vite build wiped the directory
+    (`emptyOutDir`). Excluding the renderer keeps the ownership clean: the tsc
+    owns `dist/main/` + `dist/preload.js`; only the Vite build owns
+    `dist/renderer/`.
+  */
+  "exclude": ["src/renderer"]
 }

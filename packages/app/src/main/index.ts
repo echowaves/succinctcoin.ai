@@ -120,17 +120,21 @@ async function boot(): Promise<void> {
     },
   })
 
-  // The placeholder renderer (6.2): load the page when the asset pipeline
-  // has placed it next to the build (6.3/6.4 wire the copy step); the
-  // `data:` URL fallback keeps the 6.2 shell runnable without one.
-  const placeholder = fileURLToPath(new URL('../renderer/index.html', import.meta.url))
-  if (existsSync(placeholder)) {
-    await mainWindow.loadFile(placeholder)
+  // The Vite-built renderer (6.3): the app build's `vite build` step
+  // produces `dist/renderer/index.html` (from `dist/main/` it is
+  // `../renderer/index.html` — the same path the 6.2 placeholder used, so
+  // the asset now lands where the shell already looks). `base: './'` keeps
+  // the bundle's asset paths relative for the `file://` load. The `data:`
+  // URL fallback keeps a missing bundle a startup error, not a silent
+  // blank window.
+  const rendererEntry = fileURLToPath(new URL('../renderer/index.html', import.meta.url))
+  if (existsSync(rendererEntry)) {
+    await mainWindow.loadFile(rendererEntry)
   } else {
     await mainWindow.loadURL(
       'data:text/html,' +
         encodeURIComponent(
-          '<html><body><h1>SuccinctCoin</h1><p>Electron shell up (story 6.2) — the React renderer lands in story 6.3.</p></body></html>',
+          '<html><body><h1>SuccinctCoin</h1><p>Electron shell up — the renderer bundle is missing (run the app build: `tsc -p tsconfig.build.json && vite build`).</p></body></html>',
         ),
     )
   }
