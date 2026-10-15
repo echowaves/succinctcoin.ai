@@ -3,15 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./dist/main/index.js",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json && vite build"
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "package": "electron-forge package"
   },
   "dependencies": {
     "@succinctcoin/core": "workspace:*"
   },
   "devDependencies": {
+    "@electron-forge/cli": "8.0.1",
     "@types/node": "24.9.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

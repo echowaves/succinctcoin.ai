@@ -38,3 +38,25 @@
      extraction would either duplicate those or risk the guards. Defer to a
      dedicated byte-helper sweep or epic 5 (which touches the wire path). Recorded
      at the 4.9 sweep; no code change. -->
+
+<!-- OPEN 2026-10-14 (story 6.4 — carried items, disposition per the plan §3.4;
+     none of the four is in the 6.4 ticket `verify`, so all stay DEFERRED):
+     (1) F2 snapshot race in the 6.3 live hook (`useSuccinctcoin.ts`): a
+     `CoreStarted`/`BlockApplied` firing while a snapshot is in flight yields
+     two concurrent `buildInitialSnapshot` calls; the later-RESOLVING wins.
+     Benign — each snapshot reads the current read-API state and the next
+     event self-corrects. The 6.4 e2e drives the reducer with a synchronous
+     event feed (no concurrent snapshot calls) and was NOT flaky (5
+     consecutive green runs), so the optional sequence guard is NOT added.
+     (2) The 6.2 F2 genesis-path fix (thread the app's `genesisPath()` into
+     `host.start()`): a latent-defect fix for a packaged/relocated layout —
+     the app + core independently resolve the same repo-root
+     `config/genesis.json` today. The 6.4 e2e drives `createCoreHost`
+     directly (it does not exercise the thin electron glue `index.ts` where
+     the fix would land), so an untested glue change is out of scope.
+     (3) Per-install random identity seed (`node:crypto` `randomBytes(32)`
+     persisted to `userData`): a real feature (randomness + persistence)
+     not in the 6.4 verify — the pinned 32-byte seed (AD-3, key in main)
+     stays. (4) Real net transport config choice (tcp+noise+yamux): a
+     production deployment concern; `@libp2p/memory` stays the testnet
+     default (AD-10). No code change. -->

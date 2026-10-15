@@ -138,6 +138,17 @@ async function boot(): Promise<void> {
         ),
     )
   }
+
+  // Auto-start the node on boot (Done-when #1 — "the packaged app's main
+  // process starts a node on a testnet … the UI shows blocks being mined").
+  // The renderer is loaded FIRST (above) so the `forwardEvent` seam can
+  // deliver the `CoreStarted` + `BlockApplied` events to it (the 6.3 hook's
+  // event-driven re-snapshot recovers the initial state). The display-only
+  // renderer never calls `start`/`startMining` — the app auto-starts them
+  // here (the 6.2 plan's "the main process runs the node"). The `stop`
+  // handler below remains for a future user-driven stop.
+  await host.start()
+  await host.startMining()
 }
 
 void app.whenReady().then(() =>
