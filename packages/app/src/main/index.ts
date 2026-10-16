@@ -11,6 +11,14 @@
  * crosses the IPC boundary. The `ipcMain.handle` handlers expose ONLY the
  * commands + the read-API; the event stream flows main → renderer via
  * `webContents.send` (the core's key-free payloads, AD-11).
+ *
+ * plan-packaged-app-boot — the app is SELF-CONTAINED + BOOTABLE: the ONE
+ * genesis source is the BUNDLED `dist/config/genesis.json` (the app build
+ * copies the repo `config/genesis.json` there byte-identical; `genesisPath()`
+ * is threaded into EVERY `host.start` call, so the gate registry AND the
+ * core's boot read the same single copy), and the preload is loaded as
+ * `../preload.mjs` (the Electron ESM-preload rule — an ESM preload in a
+ * `.js` file is parsed as CJS and never loads).
  */
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -38,21 +46,18 @@ import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
 const IDENTITY_SEED = new Uint8Array(Array.from({ length: 32 }, (_, i) => (0x5c + i) % 256))
 
 /**
- * The repo-root `config/genesis.json` (the single source — the same
- * default the core resolves at boot, four levels up from `dist/main/`:
- * main → app → packages → repo root). Read here for the accepted-gate
- * registry (AD-4) only.
+ * The BUNDLED `dist/config/genesis.json` — the ONE genesis source (the
+ * app build copies the repo `config/genesis.json` there byte-identical —
+ * the build's last step). ONE level up from `dist/main/`: main → dist.
+ * Threaded into EVERY `host.start` call (the auto-start + the IPC `start`
+ * handler), so the gate registry AND the core's boot read this single
+ * copy — the core's independent default (the repo root) is never relied
+ * on, because the repo root is NOT in the package. `import.meta.url`
+ * survives the Vite node/ssr build, so this resolves identically in dev
+ * and inside the packaged asar.
  */
 function genesisPath(): string {
-  return join(
-    dirname(fileURLToPath(import.meta.url)),
-    '..',
-    '..',
-    '..',
-    '..',
-    'config',
-    'genesis.json',
-  )
+  return join(dirname(fileURLToPath(import.meta.url)), '..', 'config', 'genesis.json')
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -94,8 +99,9 @@ async function boot(): Promise<void> {
   })
 
   // The command surface (renderer → main): commands ONLY — no key material
-  // (AD-11).
-  ipcMain.handle(IPC_COMMANDS.start, () => host.start())
+  // (AD-11). `start` threads the bundled `genesisPath()` — the ONE source
+  // (never the core's independent default).
+  ipcMain.handle(IPC_COMMANDS.start, () => host.start(genesisPath()))
   ipcMain.handle(IPC_COMMANDS.stop, () => host.stop())
   ipcMain.handle(IPC_COMMANDS.startMining, () => host.startMining())
 
@@ -108,12 +114,18 @@ async function boot(): Promise<void> {
 
   // The BrowserWindow: contextIsolation ON, nodeIntegration OFF — the ONLY
   // bridge to the main process is the preload's `contextBridge` surface
-  // (AD-11). `sandbox: false` is required for the ESM preload.
+  // (AD-11). `sandbox: false` is required for the ESM preload. The
+  // preload MUST be the `.mjs` emit (`../preload.mjs` — the Electron
+  // ESM-preload rule): preload scripts IGNORE the package's
+  // `"type": "module"` field, so an ESM preload in a `.js` file is parsed
+  // as CJS — a SyntaxError that would leave `contextBridge.
+  // exposeInMainWorld` unrun, `window.succinctcoin` undefined, and the
+  // renderer's entire data source dead while main boots and mines.
   mainWindow = new BrowserWindow({
     width: 960,
     height: 640,
     webPreferences: {
-      preload: fileURLToPath(new URL('../preload.js', import.meta.url)),
+      preload: fileURLToPath(new URL('../preload.mjs', import.meta.url)),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -134,7 +146,7 @@ async function boot(): Promise<void> {
     await mainWindow.loadURL(
       'data:text/html,' +
         encodeURIComponent(
-          '<html><body><h1>SuccinctCoin</h1><p>Electron shell up — the renderer bundle is missing (run the app build: `tsc -p tsconfig.build.json && vite build`).</p></body></html>',
+          '<html><body><h1>SuccinctCoin</h1><p>Electron shell up — the renderer bundle is missing (run the package build script: `pnpm build`).</p></body></html>',
         ),
     )
   }
@@ -146,8 +158,10 @@ async function boot(): Promise<void> {
   // event-driven re-snapshot recovers the initial state). The display-only
   // renderer never calls `start`/`startMining` — the app auto-starts them
   // here (the 6.2 plan's "the main process runs the node"). The `stop`
-  // handler below remains for a future user-driven stop.
-  await host.start()
+  // handler below remains for a future user-driven stop. `start` threads
+  // the bundled `genesisPath()` — the ONE source (never the core's
+  // independent default, whose repo-root path is not in the package).
+  await host.start(genesisPath())
   await host.startMining()
 }
 

@@ -39,8 +39,8 @@
      dedicated byte-helper sweep or epic 5 (which touches the wire path). Recorded
      at the 4.9 sweep; no code change. -->
 
-<!-- OPEN 2026-10-14 (story 6.4 — carried items, disposition per the plan §3.4;
-     none of the four is in the 6.4 ticket `verify`, so all stay DEFERRED):
+<!-- 2026-10-14 OPEN (story 6.4 — carried items, disposition per the plan §3.4;
+     none of the four was in the 6.4 ticket `verify`):
      (1) F2 snapshot race in the 6.3 live hook (`useSuccinctcoin.ts`): a
      `CoreStarted`/`BlockApplied` firing while a snapshot is in flight yields
      two concurrent `buildInitialSnapshot` calls; the later-RESOLVING wins.
@@ -48,15 +48,47 @@
      event self-corrects. The 6.4 e2e drives the reducer with a synchronous
      event feed (no concurrent snapshot calls) and was NOT flaky (5
      consecutive green runs), so the optional sequence guard is NOT added.
+     DEFERRED.
      (2) The 6.2 F2 genesis-path fix (thread the app's `genesisPath()` into
-     `host.start()`): a latent-defect fix for a packaged/relocated layout —
-     the app + core independently resolve the same repo-root
-     `config/genesis.json` today. The 6.4 e2e drives `createCoreHost`
-     directly (it does not exercise the thin electron glue `index.ts` where
-     the fix would land), so an untested glue change is out of scope.
+     `host.start()`): RESOLVED 2026-10-15 (plan-packaged-app-boot): the app
+     build now copies the repo `config/genesis.json` into
+     `packages/app/dist/config/genesis.json` BYTE-IDENTICAL (the build's
+     last step, `scripts/copy-genesis.mjs`), `index.ts`'s `genesisPath()`
+     resolves that bundled copy (ONE level up from `dist/main/`), and it is
+     threaded into EVERY `host.start` call — the gate registry AND the
+     core's boot read the one single source; the core's independent default
+     (repo root — NOT in the package) is never relied on (the core is
+     UNTOUCHED). Pinned by `packages/app/test/packaged-boot.test.ts`
+     (GENESIS_COPY / BOOT_FROM_BUNDLED / PATH_THREADED / MISSING_GENESIS).
+     The plan's renegotiated problem statement also names a THIRD boot
+     blocker: the ESM preload emitted as `dist/preload.js` — Electron ≥ v28
+     parses preloads as CJS (they ignore `"type": "module"`), so the bridge
+     never loaded; the emit is now `dist/preload.mjs` (the Electron
+     ESM-preload rule) and loaded via `../preload.mjs`.
      (3) Per-install random identity seed (`node:crypto` `randomBytes(32)`
      persisted to `userData`): a real feature (randomness + persistence)
      not in the 6.4 verify — the pinned 32-byte seed (AD-3, key in main)
-     stays. (4) Real net transport config choice (tcp+noise+yamux): a
-     production deployment concern; `@libp2p/memory` stays the testnet
-     default (AD-10). No code change. -->
+     stays. DEFERRED.
+     (4) Real net transport config choice (tcp+noise+yamux): re-reviewed
+     2026-10-15 (plan-packaged-app-boot) — STAYS DEFERRED: still a
+     production-deployment concern; `@libp2p/memory` stays the testnet
+     default (AD-10); the packaged-app work does not change the transport
+     choice.
+     6.4 F2 blockers note (what kept `electron-forge package` from
+     actually running) — dispositioned 2026-10-15 (plan-packaged-app-boot):
+     blocker (b) — the `workspace:*` core dep unresolvable outside the
+     workspace (pnpm's strict layout, the core's deps all devDependencies)
+     → RESOLVED: the main + preload bundles INLINE the whole core graph
+     (the vite node/ssr builds, `ssr.noExternal: true` +
+     `ssr.external: ['electron']` — bundle externals are exactly
+     {`electron`, node builtins}); the package needs no workspace
+     node_modules (pinned by BUNDLE_SELF_CONTAINED). Blocker (c) — the
+     third boot blocker the 6.4 note did not name: the ESM preload in a
+     `.js` file (parsed as CJS by Electron ≥ v28 → `window.succinctcoin`
+     undefined, the renderer's data source dead while main booted and
+     mined) → RESOLVED by the `dist/preload.mjs` emit + the
+     `../preload.mjs` load. Blocker (a) — the install-skipped electron
+     binary (`ELECTRON_SKIP_BINARY_DOWNLOAD`) → remains the SOLE residual
+     for actually running `electron-forge package` + launching the `.app`;
+     the gates prove the package's module graph is self-contained (the
+     bundle scan) and the boot inputs are real (the bundled-genesis rows). -->

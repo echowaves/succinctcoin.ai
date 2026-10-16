@@ -1,18 +1,20 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": false,
-    "rootDir": "src",
-    "outDir": "dist"
+    "noEmit": true
   },
   "include": ["src/**/*.ts"],
   /*
-    6.3 review F5: the renderer `.ts` modules (`ui-state.ts`,
-    `useSuccinctcoin.ts`) match this `include` glob, so the tsc build emitted
-    them into `dist/renderer/` before the Vite build wiped the directory
-    (`emptyOutDir`). Excluding the renderer keeps the ownership clean: the tsc
-    owns `dist/main/` + `dist/preload.js`; only the Vite build owns
-    `dist/renderer/`.
+    plan-packaged-app-boot: this is the TYPECHECK-ONLY program — Vite owns
+    the main + preload emit (the node/ssr lib builds in
+    `vite.main.config.ts` + `vite.preload.config.ts`, the core inlined,
+    externals {`electron`, node builtins}), and the renderer Vite config
+    owns `dist/renderer/`. The tsc step in the `build` script typechecks
+    the main + preload sources (and `src/preload.d.ts`) WITHOUT emitting —
+    no stale tsc emit can reach `dist/` by construction, and the build's
+    clean step (`scripts/clean-dist.mjs`) removes any prior-pipeline
+    artifacts at the head. The renderer `.ts` modules stay excluded (they
+    are the renderer Vite build's input, not the main/preload program).
   */
   "exclude": ["src/renderer"]
 }

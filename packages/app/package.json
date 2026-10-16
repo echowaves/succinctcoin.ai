@@ -7,7 +7,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json && vite build",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && vite build && vite build -c vite.main.config.ts && vite build -c vite.preload.config.ts && node scripts/copy-genesis.mjs",
     "package": "electron-forge package"
   },
   "dependencies": {
