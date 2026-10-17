@@ -98,3 +98,17 @@
      for actually running `electron-forge package` + launching the `.app`;
      the gates prove the package's module graph is self-contained (the
      bundle scan) and the boot inputs are real (the bundled-genesis rows). -->
+
+<!-- OPEN 2026-10-17 (ticket 7.2 review): the pinned `IDENTITY_SEED`
+     (6.2 — AD-11, per 6.2(3)'s deferral) makes EVERY install derive the
+     SAME identity keypair. Harmless while every instance was its own
+     memory network; now that ticket 7.2 puts instances on a real LAN it is
+     load-bearing: the node-loop's accepted-ticket set dedupes by
+     `identityId` (keep-first, local first), so two instances each drop the
+     other's gossiped tickets as same-identity duplicates — peer discovery
+     and block gossip work, but ticket interplay does not. Blocks the full
+     R2 observation in 7.3's two-instance proof until a per-install random
+     seed lands (reversing 6.2(3) is a human-owned call: it touches the
+     pinned AD-11 seed decision + its test pins). Evidence: consensus/
+     node-loop.ts step 6 (`raw = [localTicket, ...gossiped]` dedupe) vs the
+     constant seed in app/main/index.ts. -->

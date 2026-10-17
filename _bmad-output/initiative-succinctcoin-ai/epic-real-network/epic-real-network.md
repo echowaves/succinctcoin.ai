@@ -114,6 +114,12 @@ privacy rules.
   is the only core change, named in R3/done-when.
 - **Ownership:** from 7.1 onward epic `epic-real-network` owns
   `config/genesis.json`; epic-platform-baseline's touch point stands as history.
+- **Surfaced by 7.2 (review, 2026-10-17):** the pinned per-install identity
+  seed (deferred-work 6.2(3)) means two instances share one protocol identity;
+  on a real network the node-loop dedupes their tickets as same-identity
+  duplicates. Discovery + block gossip still prove R2; ticket interplay needs
+  the per-install seed (human-owned reversal of 6.2(3)). Recorded in
+  deferred-work.md and in 7.3's unknown — not silently fixed here.
 - **Decision 2026-10-16 (inception):** 3 stories, genesis-first order — the
   validation relaxation + empty-list genesis must land before the app selects
   bootstrap-from-genesis (7.2 consumes 7.1). No refactor sweep: exactly three

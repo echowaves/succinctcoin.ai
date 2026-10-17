@@ -37,7 +37,7 @@ corepack pnpm build       # clean → typecheck → renderer → main bundle →
 corepack pnpm exec electron .
 ```
 
-On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory; the network transport is the in-memory testnet default.
+On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory. The node runs on the real network stack (tcp + noise + yamux) with mDNS LAN discovery; see "Joining a network" below.
 
 ## Joining a network
 
@@ -88,6 +88,6 @@ Key design boundaries worth knowing before reading the code:
 
 ## Notes
 
-- Network transports: tests always run on `@libp2p/memory` (zero real sockets, AD-10). The app is moving to the real transport (tcp + noise + yamux, mDNS LAN discovery, bootstrap from genesis) under epic `epic-real-network` — see "Joining a network" above.
+- Network transports: the app boots on the real stack (tcp + noise + yamux, mDNS LAN discovery, bootstrap from genesis — see "Joining a network" above). Tests always run on `@libp2p/memory` (zero real sockets, AD-10); the memory transport is reachable only via explicit test injection.
 - The node identity is currently a pinned seed; a per-install random seed is recorded deferred work.
 - `electron-forge package` needs the Electron binary; a plain `corepack pnpm install` fetches it. (In this repository's CI/dev environment the download is skipped via `ELECTRON_SKIP_BINARY_DOWNLOAD`, so the package step is a local operation.)

@@ -37,4 +37,4 @@ covers = ["R2", "R4"]
 after = [1, 2]
 hitl = true
 risk = "low"
-unknown = "The user's LAN/NAT environment (AP isolation or mDNS-blocking networks would force the documented genesis-bootstrap fallback instead of multicast discovery)."
+unknown = "The user's LAN/NAT environment (AP isolation or mDNS-blocking networks would force the documented genesis-bootstrap fallback instead of multicast discovery). KNOWN CAVEAT (7.2 review): all installs share the pinned IDENTITY_SEED (deferred-work 6.2(3)), so the node-loop dedupes cross-instance tickets as same-identity duplicates — expect peer discovery + block gossip to work while ticket interplay does not; record it in the evidence rather than treating it as a discovery failure (see the OPEN 2026-10-17 deferred-work entry)."

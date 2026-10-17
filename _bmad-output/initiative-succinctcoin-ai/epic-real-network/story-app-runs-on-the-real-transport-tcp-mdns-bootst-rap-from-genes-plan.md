@@ -3,12 +3,12 @@ title: 'App runs on the real transport: tcp + mDNS, bootstrap from genesis (memo
 type: 'feature'
 ticket: '2'
 created: '2026-10-16'
-status: 'in-progress'
+status: 'built'
 route: 'full'
 route_source: 'auto'
 review: 'quick'
 review_source: 'pinned'
-lenses_ran: []
+lenses_ran: ['quick']
 review_loop_iteration: 0
 baseline_revision: '8856bc8762bb8068987eb25943c4ba1247c55774'
 context:
@@ -83,3 +83,12 @@ context:
 ## Plan Change Log
 
 - (none — implemented as planned)
+
+## Review Triage Log
+
+- **Shared pinned IDENTITY_SEED makes cross-instance tickets dedupe on a real network** — real, high-impact for 7.3's observation; root cause is the human-owned deferral 6.2(3) (pinned AD-11 seed), not this change. Not silently reversed: recorded as an OPEN deferred-work entry (2026-10-17), a caveat in 7.3's `unknown`, and an epic Notes line. The proof should observe discovery + block gossip; ticket interplay waits for the per-install seed decision.
+- **README boot paragraph + Notes bullet stale after this change** — real (medium). Patched: both now state the real stack ships with memory test-only.
+- **BOOT_PATH_NO_MEMORY scan gaps (unscanned core-host.ts / identifier forms / `//`-in-string stripping)** — real (low): inherited 4.7-style helper convention, plan-scoped to the two boot-path sources; a proper fix needs a parser — rejected as low.
+- **Non-vacuity guard is file-wide** — real (low), reviewer itself calls it acceptable per plan design; rejected as low.
+- **Bootstrap passed by reference** — false: verbatim-by-reference is pinned in the frozen I/O matrix (`toBe`); intentional coupling.
+- **Plan status bookkeeping** — real, fixed: status `built` + this triage log (finalize step).
