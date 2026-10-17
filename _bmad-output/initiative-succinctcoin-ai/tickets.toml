@@ -54,3 +54,13 @@ slug = "epic-desktop-app"
 title = "Desktop app: Electron shell, IPC bridge, React UI, packaging"
 covers = ["CAP-4", "CAP-6"]
 after = [{ epic = 5, needs = "a full, working node core to host and drive" }]
+
+[[epic]]
+id = 7
+slug = "epic-real-network"
+title = "Real network: the app joins a LAN + internet network"
+covers = ["CAP-3", "CAP-6"]
+after = [
+  { epic = 5, needs = "the core net adapter's tcp transport + bootstrap + mdns code paths (built headless in epic 5)" },
+  { epic = 6, needs = "a bootable desktop app hosting the core node" },
+]

@@ -73,7 +73,13 @@
      2026-10-15 (plan-packaged-app-boot) — STAYS DEFERRED: still a
      production-deployment concern; `@libp2p/memory` stays the testnet
      default (AD-10); the packaged-app work does not change the transport
-     choice.
+     choice. **LIFTED 2026-10-16 → epic `epic-real-network`** (user report:
+     LAN peers cannot find each other — the app's `transport: 'memory'` pin
+     is the root cause; AD-10 constrains tests/CI, not the app runtime).
+     3 stories: 7.1 empty-bootstrap genesis + validation relaxation + join
+     docs, 7.2 app selects tcp + mDNS + genesis bootstrap (pure seam),
+     7.3 two-instance LAN proof (hitl). Mark this item RESOLVED when 7.3
+     completes.
      6.4 F2 blockers note (what kept `electron-forge package` from
      actually running) — dispositioned 2026-10-15 (plan-packaged-app-boot):
      blocker (b) — the `workspace:*` core dep unresolvable outside the

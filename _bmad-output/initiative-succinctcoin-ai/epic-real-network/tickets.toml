@@ -1,0 +1,40 @@
+# tickets.toml — epic-real-network's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Genesis bootstrap hygiene: LAN-only genesis (empty list) + joining-a-network docs"
+description = "config/genesis.json today lists two unreachable placeholder bootstrap peers (103.192.173.112 — a generic libp2p bootstrap that does not run SuccinctCoin; 198.51.100.23 — RFC 5737 TEST-NET-2). Replace them with an empty list: the testnet is LAN-only by default (mDNS discovery), and public peers are opt-in data. This requires the epic's one named core change: validateGenesis rejects an empty bootstrap array (SC-CONFIG-1, packages/core/src/config/genesis.ts) — relax that row to 'must be an array of multiaddr strings; an EMPTY array is valid and means no hardwired peers', matching the adapter's own gate (the @libp2p/bootstrap service is only wired when the list is non-empty). Update the three non-empty pins: the repo-genesis assertion in packages/core/test/genesis.test.ts, and BOOTSTRAP_WIRED_TO_GENESIS + BOOTSTRAP_FROM_GENESIS_SHAPE in packages/core/test/net-adapter.test.ts (drive their positive assertions from a test-provided list instead of requiring the repo genesis to be non-empty). Document joining in README.md: add public peers to config/genesis.json as /ip4/<ip>/tcp/<port>/p2p/<peerId> multiaddrs and run two instances. The app is NOT touched here — it still boots memory transport until 7.2."
+verify = "Core suite green with the updated pins: validateGenesis accepts bootstrap: [] (new test row) and still rejects malformed entries; every repo-genesis boot test passes against the emptied config/genesis.json; the two 5.3 bootstrap tests assert via a provided list. README.md gains a join-a-network section (multiaddr format, example genesis snippet, two-instance note). Root suite green headless — zero real sockets (AD-10)."
+covers = ["R3"]
+after = []
+hitl = false
+risk = "low"
+unknown = "The blast radius of the empty-bootstrap relaxation beyond the three known pins (any other test/fixture assuming a non-empty repo genesis — search at build time); whether the 5.3 tests switch to synthetic lists or keep reading repo genesis with an injected override — build-time call."
+
+[[entry]]
+id = 2
+type = "story"
+title = "App runs on the real transport: tcp + mDNS, bootstrap from genesis (memory test-only)"
+description = "Replace the hardcoded net config in packages/app/src/main/index.ts (transport: 'memory', /memory/succinctcoin-app) with a PURE exported seam in packages/app, e.g. defaultNetConfig(genesis, identityId) returning { transport: 'tcp', listenAddress: '/ip4/0.0.0.0/tcp/0', mdns: true, bootstrap: genesis.bootstrap, protocolIdentityId }; boot() passes the result to createNetAdapter unchanged. No literal 'memory' remains anywhere in the app's boot path — memory stays reachable only via explicit test injection of a net adapter/config. Zero new imports or bundle risk: the tcp/mdns/bootstrap/circuit-relay code paths already exist in the core and are already inlined in the app bundle (verified at 0bba993); BUNDLE_SELF_CONTAINED pins unaffected."
+verify = "Pure unit rows for defaultNetConfig: selects tcp, ephemeral listen address, mdns true, bootstrap passed through from genesis (including the empty list), identity id passed through; memory is never returned. A source-scan test asserts no literal 'memory' transport in main's boot path. App suite + full root suite green headless — tests keep the memory transport or pure seams (AD-10)."
+covers = ["R1", "R2", "R3"]
+after = [1, "5.3", "epic-desktop-app"]
+hitl = false
+risk = "medium"
+unknown = "Whether mDNS multicast works between two Electron instances on ONE machine (same interface) or the 7.3 proof needs a second device/subnet; whether macOS firewall/sandbox blocks multicast from the packaged app (dev-launch fallback may be needed) — build-time/verification-time calls."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Two-instance LAN proof on a real network (closing, hitl)"
+description = "Closing story, run by the user. Start two instances of the built app on one LAN and observe: each node's peers read-API/UI shows the other instance's peer id with no manual multiaddrs (mDNS discovery), and gossip flows both ways (block/ticket events observed on both sides — chain heads advance). Record the evidence in THIS ticket file (both peer ids, slots observed, date), mark deferred-work.md item (4) RESOLVED, and move this file to done/. If discovery fails, fix and re-run until the observation holds."
+verify = "On a real LAN: two app instances discover each other with zero manual configuration; blocks/tickets gossip both ways; evidence recorded in this ticket file AND deferred-work.md item (4) marked RESOLVED. Root suite still green headless."
+covers = ["R2", "R4"]
+after = [1, 2]
+hitl = true
+risk = "low"
+unknown = "The user's LAN/NAT environment (AP isolation or mDNS-blocking networks would force the documented genesis-bootstrap fallback instead of multicast discovery)."
