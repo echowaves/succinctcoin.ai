@@ -1,7 +1,7 @@
 ---
 title: 'Packaged app boots: bundled genesis, self-contained bundles, ESM preload'
 type: 'feature'
-ticket: ''
+ticket: '5'
 created: '2026-10-15'
 baseline_revision: '42564e60dd08d73b57798765139dff97fc5a5fe5'
 status: 'built'

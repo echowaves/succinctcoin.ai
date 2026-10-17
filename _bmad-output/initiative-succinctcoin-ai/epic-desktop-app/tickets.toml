@@ -50,3 +50,15 @@ after = [3]
 hitl = false
 risk = "high"
 unknown = "Whether the e2e boots a real (headless) electron spawn vs drives the main-process code path directly under vitest via the @libp2p/memory electron-main target is a build decision (the memory electron-main target is the spine's in-app path; a full electron spawn may be flaky headless — the decision is made when it starts); the hard rules are R2 (packaged app on a testnet + the core suite passes unchanged), R3 (CAP-6 headless parity, no shell, no sockets), E2 (no keys in the renderer), and AD-10 (memory transport, zero real sockets in CI)."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Packaged app boots: bundled genesis, self-contained bundles, ESM preload"
+description = "Follow-up to 6.4, delivered as its own plan (plan-packaged-app-boot.md): makes `electron-forge package` produce an app that actually boots. Fixes the three blockers found against the v1 bundle: (1) ONE genesis source — the app build copies the repo config/genesis.json into dist/config/ and both the gate registry and host.start read the app's genesisPath() (never the core's independent default); (2) self-contained bundles — main + preload built with the app's Vite, the core INLINED, externals limited to electron + node builtins, so no workspace node_modules is needed at runtime; (3) the ESM preload emitted as dist/preload.mjs and loaded via new URL('../preload.mjs', import.meta.url) — the Electron >= 28 rule that preload scripts ignore type:module (a .js ESM preload never loads; window.succinctcoin was undefined while main mined happily)."
+verify = "The app's packaged-boot rows (self-sufficient: they build what they scan): the bundle contains no @succinctcoin/core import, dist/config/genesis.json is byte-identical to the repo genesis, the preload is .mjs and exposes the bridge, every host.start call passes the app's genesisPath(), stale emits are cleaned before build. Full root suite green."
+covers = ["R2"]
+after = [4]
+hitl = false
+risk = "medium"
+unknown = "The plan's frozen Intent/Boundaries block was renegotiated during the work (commit 0bba993) and that renegotiation still awaits human ratification — see the frozen-after-approval block in the linked plan."
