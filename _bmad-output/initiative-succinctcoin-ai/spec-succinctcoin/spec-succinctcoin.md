@@ -4,9 +4,11 @@ companions:
   - stack.md
   - registration-design.md
   - testing.md
+  - discovery-design.md
   - ../research-equal-node-js-cryptocurrency-architectur/research-equal-node-js-cryptocurrency-architectur.md
   - ../architecture-succinctcoin/architecture-succinctcoin.md
-sources: []
+sources:
+  - ../brainstorm-bootstrap-free-auto-discovery/brainstorm-bootstrap-free-auto-discovery.md
 ---
 
 > **Canonical contract.** This SPEC and the files in `companions:` are the complete, preservation-validated contract for what to build, test, and validate. Source documents listed in frontmatter are for traceability — consult them only if you need narrative rationale or prose color this contract intentionally omits.
@@ -15,7 +17,7 @@ sources: []
 
 ## Why
 
-A vision to realize: a currency whose protocol makes a running node's chance to mine a function of **uptime alone** — no ASIC, no stake advantage, no way to buy more odds. The backdrop is 2026 cost-theory (arXiv:2605.29651): every deployed family (PoW, PoS, proof-of-space) weighs a *parallelizable* resource, which makes N-identity Sybil near-free — so the coin's novel contribution is the **registration economics** (a non-scaling entry/survival cost), not the crypto. Simplicity is a first-class mandate: any developer must be able to read, build, run, and test the whole node.
+A vision to realize: a currency whose protocol makes a running node's chance to mine a function of **uptime alone** — no ASIC, no stake advantage, no way to buy more odds. The backdrop is 2026 cost-theory (arXiv:2605.29651): every deployed family (PoW, PoS, proof-of-space) weighs a *parallelizable* resource, which makes N-identity Sybil near-free — so the coin's novel contribution is the **registration economics** (a non-scaling entry/survival cost), not the crypto. Simplicity is a first-class mandate: any developer must be able to read, build, run, and test the whole node. Networking carries one more ambition: joining the network must never depend on a hardwired peer — discovery without a bootstrap list (CAP-7) is the differentiator that makes the currency's decentralization real at first contact.
 
 ## Capabilities
 
@@ -26,8 +28,8 @@ A vision to realize: a currency whose protocol makes a running node's chance to 
   - **intent:** a gate-verified person acquires exactly one base identity through a personhood gate; the protocol enforces an acceptance cap (one valid ticket per identity per window) so a second identity is never cheaper than the first, and the mining reward never scales with identity count.
   - **success:** in a multi-identity simulation, N identities of one operator earn no more slot-eligibility throughput than one (enforced by the acceptance cap, not by challenge hardness); the slot winner is verifiable from public data by any node (public-coin draw); a node not selected by the draw cannot win a slot; lapsing re-attestation loses eligibility.
 - **CAP-3** — node network
-  - **intent:** nodes join via a static bootstrap list (genesis) and mDNS (LAN), traverse home NAT via circuit-relay v2, and propagate blocks and transactions via gossipsub over tcp+noise+yamux.
-  - **success:** a node behind a simulated NAT discovers peers, syncs, and gossips a test block to k peers within a bounded time, with no real sockets in CI.
+  - **intent:** nodes join with no preconfigured peer — mDNS on LAN, ticket-seeded discovery (CAP-7) beyond it; the genesis bootstrap list is an optional hint source (empty = LAN-only), never a requirement. Home NAT traversed via circuit-relay v2; blocks and transactions propagate via gossipsub over tcp+noise+yamux.
+  - **success:** a node behind a simulated NAT discovers peers, syncs, and gossips a test block to k peers within a bounded time, with no real sockets in CI and zero configured addresses.
 - **CAP-4** — desktop app
   - **intent:** an Electron shell runs the node in its main process (plain Node) with a React UI for balance, mining status, and network peers.
   - **success:** the packaged app starts a node on a testnet and shows blocks being mined, while the same core package's test suite passes unchanged under a plain-Node runner with no shell.
@@ -37,6 +39,9 @@ A vision to realize: a currency whose protocol makes a running node's chance to 
 - **CAP-6** — testable in plain Node
   - **intent:** the core's full test suite (unit + property) runs with a plain-Node runner, no desktop shell, and no real network sockets.
   - **success:** CI runs the entire core suite headless in a bare Node environment, with all libp2p-dependent tests on the in-process memory transport.
+- **CAP-7** — ticket-seeded bootstrap-free discovery
+  - **intent:** a node joining with zero preconfigured peers discovers the network automatically on LAN and internet; presence is proven by artifacts the chain already receives — mining tickets are signed liveness proofs, so forging presence costs mining work — and every learned address is a hint until verified through independent corroboration; no single channel is load-bearing (mechanism: `discovery-design.md`).
+  - **success:** Amnesiac Boot Proof — a wiped node with empty config re-enters from ONE block-grade artifact obtained via any non-peer channel and reaches ≥ k healthy peers across distinct /24s within 30 s on LAN and NATed-internet testnets; injected forged or hint-grade records never produce a dial or a re-gossip.
 
 ## Constraints
 
@@ -46,10 +51,13 @@ A vision to realize: a currency whose protocol makes a running node's chance to 
 - No VDF anywhere as a time anchor (Ethereum abandoned its Minroot-VDF plan after a discovered attack); long-range anchoring is PoW-like accumulated work.
 - The per-PoW-attempt path must not call big.js `times` (~1000× slower than `plus`, measured) nor pure-JS keccak (~35× slower than native sha256, measured); node:crypto sha256 + plain integer counter only.
 - The node core (libp2p + consensus + ledger + chain store) is a pure Node package with zero UI imports; only the shell imports electron.
+- Discovery state is chain data: announcements expire by slot count, re-announce on block-applied events, and roll back with reorgs — no wall-clock expiry or clocks anywhere in discovery (AD-3 native).
+- Verify-before-connect: no single channel is ever trusted for reachability; sub-block-grade records need independent corroboration before dialing or re-gossiping, and a poisoned hint must fail soft — never fork trust.
 
 ## Non-goals
 
 - No DHT at launch — bootstrap + mDNS; Kad-DHT deferred until the network outgrows them.
+- The project operates no official discovery infrastructure — no seed, relay, or registry endpoints it runs; volunteer and community tiers are community-owned (kills the bootstrap SPOF at the operational layer too).
 - No browser-runtime node (the node is a Node.js process; browser transports are not in scope).
 - No proof-of-space.
 - No EVM-compatible execution layer.
@@ -63,10 +71,14 @@ In a multi-node simulation over the in-process transport, slot odds track uptime
 
 - TypeScript + Vitest + pnpm + Node 24 toolchain (settled by two independent production JS consensus clients, Lodestar and EthereumJS).
 - Small community scale at launch (10 → few thousand mostly-stable nodes); bootstrap + mDNS suffice at that size.
+- Block metadata can carry small announcement records without breaking block-size or validation budgets — verify by measurement at build time; the proto change runs the PROTO_OK gate.
 
 ## Open Questions
 
+- Per-install identity seed (prerequisite for CAP-7): while every install derives one shared pinned `IDENTITY_SEED`, ticket-presence cannot distinguish installs and cross-instance tickets dedupe as duplicates — ratification pending (deferred-work 6.2(3); OPEN 2026-10-17).
 - At what node count do bootstrap + mDNS stop sufficing and Kad-DHT become warranted? (Resolve by memory-transport simulation, or adopt DHT day-one for the "always works" story.)
 - Personhood gate: dual gate at launch (biometric + social graph) is the recommended config after the attack pass (a cheap weak gate is the sybil faucet — gates are addable only by protocol upgrade, never auto-valid). Residual: which two gates, and the re-attestation cadence K.
 - τ-erosion: AI-solver throughput trend is unknown (the BPC paper's 97–100%-yet-throughput-bounded result is a snapshot, not a trend line); challenge-family rotation cadence is undecided.
 - Gate uniqueness: the #1 external trust is the personhood gate (iris fakery, colluding vouching clusters); the dual-gate config and re-attestation bound the damage, but gate-specific attack research is per-gate, not protocol-level.
+- Address rotation / privacy policy for announced multiaddrs: on-chain presence is linkable; one-identity-many-addresses dedupe exists, but the rotation cadence is undecided.
+- CAP-7 MVP tier boundary: which fallback rungs ship first (mDNS → LAN shared book file → sync chain from any artifact → read block announcements) vs later tiers (stateless UDP Hello Packet, CT-log registry, mega-DHT rendezvous under genesis-hash namespace).
