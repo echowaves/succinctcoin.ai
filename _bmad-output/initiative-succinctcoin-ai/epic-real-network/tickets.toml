@@ -25,13 +25,13 @@ covers = ["R1", "R2", "R3"]
 after = [1, "5.3", "epic-desktop-app"]
 hitl = false
 risk = "medium"
-unknown = "Whether mDNS multicast works between two Electron instances on ONE machine (same interface) or the 7.3 proof needs a second device/subnet; whether macOS firewall/sandbox blocks multicast from the packaged app (dev-launch fallback may be needed) — build-time/verification-time calls."
+unknown = "PARTIALLY ANSWERED at runtime 2026-10-17: mDNS discovery between two processes on ONE machine works with an empty bootstrap and blocks gossip both ways (mdns-smoke.mjs + evidence-two-process-smoke.md, PASS twice). STILL OPEN: whether macOS firewall/sandbox blocks multicast from the packaged Electron app (dev-launch fallback may be needed) — verification-time call."
 
 [[entry]]
 id = 3
 type = "story"
 title = "Two-instance LAN proof on a real network (closing, hitl)"
-description = "Closing story, run by the user. Start two instances of the built app on one LAN and observe: each node's peers read-API/UI shows the other instance's peer id with no manual multiaddrs (mDNS discovery), and gossip flows both ways (block/ticket events observed on both sides — chain heads advance). Record the evidence in THIS ticket file (both peer ids, slots observed, date), mark deferred-work.md item (4) RESOLVED, and move this file to done/. If discovery fails, fix and re-run until the observation holds."
+description = "Closing story, run by the user. Start two instances of the built app on one LAN and observe: each node's peers read-API/UI shows the other instance's peer id with no manual multiaddrs (mDNS discovery), and gossip flows both ways (block/ticket events observed on both sides — chain heads advance). Record the evidence in THIS ticket file (both peer ids, slots observed, date), mark deferred-work.md item (4) RESOLVED, and move this file to done/. If discovery fails, fix and re-run until the observation holds. PARTLY PRE-PROVEN: transport-level discovery + two-way block gossip already passed between two processes on one machine with zero bootstrap entries (mdns-smoke.mjs beside this epic's tickets; log in evidence-two-process-smoke.md) — the remaining scope is the packaged/Electron path across real devices."
 verify = "On a real LAN: two app instances discover each other with zero manual configuration; blocks/tickets gossip both ways; evidence recorded in this ticket file AND deferred-work.md item (4) marked RESOLVED. Root suite still green headless."
 covers = ["R2", "R4"]
 after = [1, 2]

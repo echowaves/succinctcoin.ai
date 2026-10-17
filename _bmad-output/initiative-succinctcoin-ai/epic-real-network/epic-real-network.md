@@ -120,8 +120,9 @@ privacy rules.
   duplicates. Discovery + block gossip still prove R2; ticket interplay needs
   the per-install seed (human-owned reversal of 6.2(3)). Recorded in
   deferred-work.md and in 7.3's unknown — not silently fixed here.
-- **Decision 2026-10-16 (inception):** 3 stories, genesis-first order — the
-  validation relaxation + empty-list genesis must land before the app selects
-  bootstrap-from-genesis (7.2 consumes 7.1). No refactor sweep: exactly three
-  entries; the on-device proof is its own closing hitl story so board status
-  shows the real-network capability as "awaiting user verification", not built.
+- **Evidence 2026-10-17 (pre-7.3 smoke, PASS twice):** two separate processes
+  on one machine, real `defaultNetConfig` (tcp + mDNS, empty bootstrap),
+  discovered each other and gossiped a block both ways —
+  `mdns-smoke.mjs` + `evidence-two-process-smoke.md` beside these tickets.
+  The user-reported failure is fixed at transport level; 7.3's remaining
+  scope is the packaged/Electron path across real devices.
