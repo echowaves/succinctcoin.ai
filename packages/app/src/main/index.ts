@@ -36,6 +36,7 @@ import { BrowserWindow, app, ipcMain } from 'electron'
 
 import { createCoreHost } from './core-host.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
+import { defaultNetConfig } from './net-config.js'
 
 /**
  * The fixed per-install identity seed (6.2 — AD-3: deterministic, no RNG).
@@ -70,16 +71,13 @@ async function boot(): Promise<void> {
   // the host, never surfaced.
   const identity = deriveIdentityKeypair(IDENTITY_SEED)
 
-  // The REAL ports. Net: the memory transport (the AD-10/AD-1 testnet
-  // default — zero real sockets; the real net transport is a config
-  // choice, 6.4). Store: the app's userData dir (the state, AD-9).
-  const net = createNetAdapter({
-    transport: 'memory',
-    listenAddress: '/memory/succinctcoin-app',
-    // The adapter stamps the PROTOCOL identity id into envelopes (5.2 D3) —
-    // a plain public string, never key material (AD-11).
-    protocolIdentityId: identity.identityId,
-  })
+  // The REAL ports. Net: the REAL stack via the pure seam (7.2 R1) — tcp +
+  // mDNS + the genesis bootstrap list; the ephemeral listen address lets
+  // multiple instances coexist on one machine. The isolated in-memory
+  // transport is TEST-ONLY (AD-10): tests inject their own net configs,
+  // nothing here can select it. Store: the app's userData dir (the state,
+  // AD-9).
+  const net = createNetAdapter(defaultNetConfig(genesis, identity.identityId))
   const store = new FileChainStore(join(app.getPath('userData'), 'chain'))
   const gate = createOfflineGateVerifier({ acceptedGates: genesis.gates })
 

@@ -1,0 +1,132 @@
+/**
+ * Story 7.2 matrix — the PURE net-config seam under PLAIN NODE (AD-10: no
+ * electron, no sockets; the seam has type-only core imports, so this suite
+ * runs it directly). `defaultNetConfig(genesis, identityId)` is the ONE
+ * origin of the app's boot-time net config (R1): the REAL stack — tcp,
+ * ephemeral listen, mDNS on, bootstrap from genesis — and the isolated
+ * in-memory transport is unreachable from it (test injection only).
+ *
+ *   NET_TCP_MDNS_LAN_ONLY      (AC1) a LAN-only genesis (`bootstrap: []`,
+ *                                valid post-7.1) yields EXACTLY
+ *                                `{ transport: 'tcp', listenAddress:
+ *                                '/ip4/0.0.0.0/tcp/0', mdns: true,
+ *                                bootstrap: [], protocolIdentityId }` —
+ *                                tcp is selected, the memory transport is
+ *                                NEVER returned (R1).
+ *   BOOTSTRAP_VERBATIM         (AC1) a genesis listing public peers passes
+ *                                the list through VERBATIM (same reference
+ *                                — no copy, no filter, no reorder; the
+ *                                adapter's own gate wires @libp2p/bootstrap
+ *                                only when non-empty).
+ *   IDENTITY_PASSTHROUGH       (AC1/AD-11) `protocolIdentityId` returns
+ *                                UNCHANGED and the config carries NO key
+ *                                material: its exact key set is the five
+ *                                adapter-config keys — no secret/keypair
+ *                                field can hide in it.
+ *   BOOT_PATH_NO_MEMORY        (AC2) comment-stripped `src/main/index.ts`
+ *                                + `src/main/net-config.ts` contain NO
+ *                                occurrence of the word `memory` — neither
+ *                                the `'memory'` transport literal nor a
+ *                                `/memory/...` listen address can appear
+ *                                in the boot path (comments may name the
+ *                                rule; code may not: the 4.7-style scan).
+ *                                Non-vacuity: BOTH raw sources DO mention
+ *                                it (in comments), so the scan would catch
+ *                                a regression.
+ *
+ * Imports: the PURE seam (`../src/main/net-config.js`) + a TYPE-only core
+ * import + `vitest` + node builtins. NO electron import, NO adapter boots
+ * — zero real sockets, zero LAN prerequisites (AD-10/R4).
+ */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { describe, expect, it } from 'vitest'
+
+import type { GenesisConfig } from '@succinctcoin/core'
+
+import { LAN_LISTEN_ADDRESS, defaultNetConfig } from '../src/main/net-config.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const APP_DIR = join(here, '..')
+
+/** The two boot-path sources the memory-literal scan pins (AC2). */
+const BOOT_PATH_SOURCES = [
+  join(APP_DIR, 'src', 'main', 'index.ts'),
+  join(APP_DIR, 'src', 'main', 'net-config.ts'),
+]
+
+/** Strip comments (the 4.7-style self-scan — comments may name a rule; code may not). */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+}
+
+describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + genesis bootstrap)', () => {
+  it('NET_TCP_MDNS_LAN_ONLY: empty-bootstrap genesis yields tcp + ephemeral listen + mdns + [] — never memory', () => {
+    const genesis: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+
+    const config = defaultNetConfig(genesis, 'ab'.repeat(32))
+
+    // The full config, EXACTLY (no extra keys, no missing keys).
+    expect(config).toEqual({
+      transport: 'tcp',
+      listenAddress: '/ip4/0.0.0.0/tcp/0',
+      mdns: true,
+      bootstrap: [],
+      protocolIdentityId: 'ab'.repeat(32),
+    })
+    // The exported constant IS the pinned ephemeral listen address (the
+    // epic Notes' Decision 2026-10-16: all interfaces, port 0).
+    expect(LAN_LISTEN_ADDRESS).toBe('/ip4/0.0.0.0/tcp/0')
+    // R1: the isolated transport is NEVER returned from the seam.
+    expect(config.transport).not.toBe('memory')
+  })
+
+  it('BOOTSTRAP_VERBATIM: a public-peer list passes through verbatim (same reference)', () => {
+    const peers = [
+      '/ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleA',
+      '/dns4/bootstrap.example.com/tcp/443/wss/p2p/12D3KooWExampleB',
+    ]
+    const genesis: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: peers }
+
+    const config = defaultNetConfig(genesis, 'cd'.repeat(32))
+
+    // Verbatim: no copy, no filter, no reorder (the adapter validates +
+    // gates on length itself — 5.3).
+    expect(config.bootstrap).toBe(peers)
+    expect(config.bootstrap).toEqual(peers)
+    expect(config.transport).toBe('tcp')
+  })
+
+  it('IDENTITY_PASSTHROUGH: the identity id returns unchanged; no key material in the config (AD-11)', () => {
+    const identityId = 'ef'.repeat(32)
+
+    const config = defaultNetConfig({ bootstrap: [] }, identityId)
+
+    expect(config.protocolIdentityId).toBe(identityId)
+    // The EXACT key set of the adapter config — a secret/keypair field
+    // cannot hide in the result (AD-11: only the plain public id crosses).
+    expect(Object.keys(config).sort()).toEqual([
+      'bootstrap',
+      'listenAddress',
+      'mdns',
+      'protocolIdentityId',
+      'transport',
+    ])
+  })
+
+  it('BOOT_PATH_NO_MEMORY: comment-stripped boot-path sources contain no memory literal (AC2)', () => {
+    for (const srcPath of BOOT_PATH_SOURCES) {
+      const raw = readFileSync(srcPath, 'utf8')
+      // Non-vacuity: the RAW source mentions it (in comments — the rule is
+      // named); if the scan passed on an always-clean file this row would
+      // prove nothing.
+      expect(raw, `${srcPath}: raw source names it in comments`).toMatch(/\bmemory\b/)
+      // The code (comments stripped): NO 'memory' transport literal and no
+      // /memory/... listen address anywhere in the boot path (R1).
+      const stripped = stripComments(raw)
+      expect(stripped, `${srcPath}: no memory literal in code`).not.toMatch(/\bmemory\b/)
+    }
+  })
+})
