@@ -23,11 +23,11 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (273 tests / 42 files)
+corepack pnpm test        # the full workspace test suite (275 tests / 42 files)
 corepack pnpm typecheck   # core typecheck
 ```
 
-The root `test` runs every package's suite: the core's 256-test suite (38 files) plus the app's 17-test suite (4 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
+The root `test` runs every package's suite: the core's 258-test suite (38 files) plus the app's 17-test suite (4 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
 
 ## Run the desktop app
 
@@ -38,6 +38,19 @@ corepack pnpm exec electron .
 ```
 
 On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory; the network transport is the in-memory testnet default.
+
+## Joining a network
+
+Discovery is configured by data, not code: `config/genesis.json` carries the `bootstrap` list of known peers.
+
+- **Empty list (the repo default):** LAN-only. Nodes on the same local network find each other automatically via mDNS — start two instances and they should see each other's peers with no configuration.
+- **Joining a wider network:** set the `bootstrap` array in `config/genesis.json` to the public peers you know, then start the app:
+
+```json
+"bootstrap": ["/ip4/203.0.113.7/tcp/4001/p2p/12D3KooW…your-peer-id…"]
+```
+
+Each entry is a full multiaddr and must include a `/p2p/<peerId>` component — entries without one are silently dropped by the bootstrap service (visible in the node's logs). Configure the genesis **before packaging**: a packaged app reads it from inside its archive.
 
 ## Package for distribution
 
@@ -75,6 +88,6 @@ Key design boundaries worth knowing before reading the code:
 
 ## Notes
 
-- The testnet's default network transport is `@libp2p/memory` (single-node testnet). Choosing a real network transport (tcp + noise + yamux) is recorded deferred work.
+- Network transports: tests always run on `@libp2p/memory` (zero real sockets, AD-10). The app is moving to the real transport (tcp + noise + yamux, mDNS LAN discovery, bootstrap from genesis) under epic `epic-real-network` — see "Joining a network" above.
 - The node identity is currently a pinned seed; a per-install random seed is recorded deferred work.
 - `electron-forge package` needs the Electron binary; a plain `corepack pnpm install` fetches it. (In this repository's CI/dev environment the download is skipped via `ELECTRON_SKIP_BINARY_DOWNLOAD`, so the package step is a local operation.)

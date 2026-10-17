@@ -1,8 +1,9 @@
 /**
  * `core/config` — the genesis config seam (spine Operational Envelope).
  *
- * `config/genesis.json` is the static boot parameters: bootstrap list,
- * emission, K (re-attestation cadence), L (uptime lookback), the
+ * `config/genesis.json` is the static boot parameters: bootstrap list (may be
+ * empty — no hardwired peers, LAN-only), emission, K (re-attestation
+ * cadence), L (uptime lookback), the
  * accepted-gate registry, and the protocol version. This module is the single
  * owner of that shape: `validateGenesis` type-checks a raw object (pure, no
  * I/O) and `loadGenesis` is the only I/O path (read + parse + validate).
@@ -74,8 +75,11 @@ export function validateGenesis(raw: unknown): GenesisConfig {
   if (!isInt(raw.protocolVersion) || raw.protocolVersion < 1)
     fail('protocolVersion', 'must be an integer >= 1')
 
-  if (!Array.isArray(raw.bootstrap) || raw.bootstrap.length === 0)
-    fail('bootstrap', 'must be a non-empty array of multiaddr strings')
+  // An EMPTY list is valid (7.1): no hardwired peers — a LAN-only testnet
+  // (mDNS discovery). Matches the adapter's gate: the @libp2p/bootstrap
+  // service is only wired when the list is non-empty.
+  if (!Array.isArray(raw.bootstrap))
+    fail('bootstrap', 'must be an array of multiaddr strings (empty = LAN-only)')
   for (const [i, entry] of raw.bootstrap.entries()) {
     if (typeof entry !== 'string' || !entry.startsWith('/'))
       fail(`bootstrap[${i}]`, 'must be a multiaddr string starting with "/"')

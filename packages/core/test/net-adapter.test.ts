@@ -40,8 +40,9 @@
  *   PROTO_ADDITIVE                (5.2) the four EXISTING messages' wire
  *                                 encodings are unchanged (golden pins)
  *   BOOTSTRAP_WIRED_TO_GENESIS    (5.3) the real @libp2p/bootstrap service is
- *                                 wired against the real validated
- *                                 genesis.bootstrap list; the node starts
+ *                                 wired against a production-shaped bootstrap
+ *                                 list (7.1: the repo genesis is LAN-only, so
+ *                                 the fixture stands in); the node starts
  *                                 cleanly over memory; peers() stays empty
  *                                 headless (the AD-10-correct outcome)
  *   MDNS_DISCOVERS                (5.3) the memory PeerDiscovery double
@@ -63,7 +64,6 @@ import {
   Ticket,
   Tx,
   createNetAdapter,
-  loadGenesis,
   TOPICS,
 } from '../src/index.js'
 import type {
@@ -558,23 +558,25 @@ describe('PROTO_ADDITIVE — the existing four messages are wire-identical (AD-1
 
 describe('BOOTSTRAP_WIRED_TO_GENESIS — the real @libp2p/bootstrap service is wired against the real genesis list (AC-1, R1)', () => {
   it('a node configured with the REAL validated genesis.bootstrap list starts cleanly over memory; peers() stays empty headless (the AD-10-correct outcome)', { timeout: CONNECT_TIMEOUT_MS }, async () => {
-    // The REAL validated genesis bootstrap list (1.3) — read + validated
-    // through the root barrel's loader (the same `loadGenesis` +
-    // `defaultGenesisPath` convention `buildCore` uses at boot). Production
-    // `/ip4/…/tcp/…/p2p/<id>` shape — the one the real service's `P2P`
-    // multiaddr matcher ACCEPTS (so the entries are genuinely wired, not
-    // filtered to empty by the service's constructor).
-    const genesis = await loadGenesis(GENESIS_PATH)
-    expect(genesis.bootstrap.length).toBeGreaterThan(0)
+    // 7.1: the repo genesis is LAN-only (`bootstrap: []`), so this positive
+    // wiring assertion runs against a PRODUCTION-SHAPED provided list — the
+    // former genesis entries, kept here as a fixture: real `/ip4/…/tcp/…/p2p/<id>`
+    // multiaddrs the real service's `P2P` matcher ACCEPTS (so the entries are
+    // genuinely wired, not filtered to empty by the service's constructor).
+    // The empty repo list itself is validated in genesis.test.ts and shape-
+    // checked by BOOTSTRAP_FROM_GENESIS_SHAPE.
+    const productionShapedList = [
+      '/ip4/103.192.173.112/tcp/4001/p2p/12D3KooWNKvzczEMvDFqog1qcZrxdTtmsiNktZ7af3sNsBUGHg7E',
+    ]
 
-    // A single node configured with that real list. The REAL
+    // A single node configured with that real-shape list. The REAL
     // `@libp2p/bootstrap` service (D2) is registered in `peerDiscovery`
     // against exactly this list.
     const node = createNetAdapter({
       transport: 'memory',
       listenAddress: '/memory/b',
       protocolIdentityId: ID_B,
-      bootstrap: genesis.bootstrap,
+      bootstrap: productionShapedList,
     })
     try {
       // The node must come up CLEANLY (no throw) with the real bootstrap
@@ -673,9 +675,10 @@ describe('BOOTSTRAP_FROM_GENESIS_SHAPE — the bootstrap list is the validated g
     // Read the PRODUCTION bootstrap list (1.3's validated GenesisConfig.
     // bootstrap) — the CI memory list is its headless analog, same shape.
     const genesis = JSON.parse(readFileSync(GENESIS_PATH, 'utf8')) as { bootstrap: string[] }
-    // (a) The production genesis list: every entry bootstrap-shaped.
+    // (a) The production genesis list: an array, every entry bootstrap-shaped.
+    // 7.1: it may be EMPTY — the repo genesis is LAN-only (no hardwired
+    // peers); emptiness validates in genesis.test.ts (EMPTY_BOOTSTRAP_OK).
     expect(Array.isArray(genesis.bootstrap)).toBe(true)
-    expect(genesis.bootstrap.length).toBeGreaterThan(0)
     for (const entry of genesis.bootstrap) {
       expect(isBootstrapShaped(entry)).toBe(true)
     }

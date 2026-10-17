@@ -31,7 +31,8 @@ describe('genesis config — boot validation (matrix)', () => {
   it('VALID_LOAD: loadGenesis reads the real config/genesis.json and types it', async () => {
     const cfg: GenesisConfig = await loadGenesis(GENESIS_PATH)
     expect(cfg.protocolVersion).toBeGreaterThanOrEqual(1)
-    expect(cfg.bootstrap.length).toBeGreaterThan(0)
+    // 7.1: the repo genesis is LAN-only (empty bootstrap = no hardwired peers).
+    expect(Array.isArray(cfg.bootstrap)).toBe(true)
     expect(cfg.bootstrap.every((a) => a.startsWith('/'))).toBe(true)
     expect(typeof cfg.emission.blockReward).toBe('string')
     expect(typeof cfg.emission.maxSupply).toBe('string')
@@ -43,6 +44,25 @@ describe('genesis config — boot validation (matrix)', () => {
   it('VALID_PARSE: a well-formed object passes and comes back typed', () => {
     const cfg = validateGenesis(wellFormed)
     expect(cfg).toMatchObject(wellFormed)
+  })
+
+  it('EMPTY_BOOTSTRAP_OK (7.1): an empty bootstrap list validates — LAN-only, no hardwired peers', () => {
+    const cfg = validateGenesis({ ...wellFormed, bootstrap: [] })
+    expect(cfg.bootstrap).toEqual([])
+  })
+
+  it('BOOTSTRAP_SHAPE: a non-array or entry-without-"/" still fails SC-CONFIG-1 (7.1 relaxation keeps the shape rules)', () => {
+    expect(() => validateGenesis({ ...wellFormed, bootstrap: 'nope' })).toThrowError(
+      /bootstrap/,
+    )
+    const badEntry = { ...wellFormed, bootstrap: ['/ip4/1.2.3.4/tcp/1/p2p/x', 'nope'] }
+    try {
+      validateGenesis(badEntry)
+      expect.unreachable()
+    } catch (e) {
+      expect((e as Error).message).toMatch(/bootstrap\[1\]/)
+      expect((e as { code?: string }).code).toBe('SC-CONFIG-1')
+    }
   })
 
   it('MALFORMED_TYPE: a wrong-typed field throws SC-CONFIG-1 naming the field', () => {
