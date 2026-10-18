@@ -1,5 +1,5 @@
 /**
- * `core/net` — the four stable gossipsub topics (5.2, AD-8).
+ * `core/net` — the stable gossipsub topics (5.2, AD-8; 8.3/8.4 extended).
  *
  * One topic per message class (AD-8 "one stable topic per message class"):
  * blocks, tickets, tx, peer info. Each class travels on its OWN topic — a
@@ -18,8 +18,10 @@
  */
 
 /**
- * The four stable gossipsub topics, one per message class (AD-8).
- * `as const` keeps the literals and makes `TopicClass` the four keys.
+ * The stable gossipsub topics, one per message class (AD-8): the original
+ * four (5.2) plus the CAP-7 discovery classes — announcements (8.3) and
+ * introductions (8.4). `as const` keeps the literals and makes `TopicClass`
+ * the keys.
  */
 export const TOPICS = {
   /** Blocks: `BlockEnvelope { block, sourcePeerId }` (proto, AD-12). */
@@ -32,7 +34,9 @@ export const TOPICS = {
   peers: '/succinctcoin/peers/1',
   /** Announcements (CAP-7, ticket 8.3): `AnnouncementEnvelope { announcement, sourcePeerId }`. */
   announcements: '/succinctcoin/announcements/1',
+  /** Introductions (CAP-7, ticket 8.4): `IntroductionEnvelope { introduction, sourcePeerId }`. */
+  introductions: '/succinctcoin/introductions/1',
 } as const
 
-/** The five message classes: `keyof TOPICS` (blocks/tickets/tx/peers/announcements). */
+/** The six message classes: `keyof TOPICS` (blocks/tickets/tx/peers/announcements/introductions). */
 export type TopicClass = keyof typeof TOPICS

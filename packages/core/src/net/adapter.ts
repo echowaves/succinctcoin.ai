@@ -7,10 +7,12 @@
  * (17.1.2). Each message class publishes a PROTO ENVELOPE on its OWN stable
  * topic (5.2, AD-8 "one stable topic per message class"):
  *
- *   sendBlock(block)    → BlockEnvelope    on TOPICS.blocks
- *   sendTicket(ticket)  → TicketEnvelope   on TOPICS.tickets
- *   sendTx(tx)          → TxEnvelope       on TOPICS.tx
- *   sendPeerInfo(info)  → PeerInfoEnvelope on TOPICS.peers  (helper, not on NetPort)
+ *   sendBlock(block)         → BlockEnvelope         on TOPICS.blocks
+ *   sendTicket(ticket)       → TicketEnvelope        on TOPICS.tickets
+ *   sendTx(tx)               → TxEnvelope            on TOPICS.tx
+ *   sendPeerInfo(info)       → PeerInfoEnvelope      on TOPICS.peers  (helper, not on NetPort)
+ *   sendAnnouncement(a)      → AnnouncementEnvelope  on TOPICS.announcements  (8.3, helper)
+ *   sendIntroduction(i)      → IntroductionEnvelope  on TOPICS.introductions  (8.4, helper)
  *
  * The 5.1 scratch topic (`/succinctcoin/scratch`) and its raw
  * `receivedMessages` collector are REMOVED: the `message` handler now
@@ -111,6 +113,7 @@ import {
   Tx,
   PeerInfo,
   AnnouncementEnvelope,
+  IntroductionEnvelope,
   BlockEnvelope,
   TicketEnvelope,
   TxEnvelope,
@@ -118,7 +121,7 @@ import {
   SyncRequest,
   SyncBlock,
 } from '../proto/index.js'
-import type { PeerAnnouncement } from '../proto/index.js'
+import type { Introduction, PeerAnnouncement } from '../proto/index.js'
 import { TOPICS } from './topics.js'
 import type { TopicClass } from './topics.js'
 import { SYNC_PROTOCOL, makeSyncHandler, syncFrom } from './sync.js'
@@ -216,8 +219,15 @@ export interface NetAdapter extends NetPort {
    */
   sendAnnouncement(announcement: PeerAnnouncement): Promise<void>
   /**
-   * Decoded envelopes received on the class topics (5.2 D5; five classes
-   * since 8.3), keyed by topic class. Test observability for now; 5.5
+   * Publish an `IntroductionEnvelope` on `TOPICS.introductions` (CAP-7,
+   * ticket 8.4). NOT on the `NetPort` — same discovery surface as
+   * `sendAnnouncement`; the node loop only publishes introductions it has
+   * signed itself or VALIDATED (verify-before-relay, the 8.3 rule).
+   */
+  sendIntroduction(introduction: Introduction): Promise<void>
+  /**
+   * Decoded envelopes received on the class topics (5.2 D5; six classes
+   * since 8.4), keyed by topic class. Test observability for now; 5.5
    * routes the receive path into the core (acceptance path / accepted-set
    * construction).
    */
@@ -491,6 +501,13 @@ function decodeReceived(
         env: { sourcePeerId: env.sourcePeerId, payload: env.announcement },
       }
     }
+    case TOPICS.introductions: {
+      const env = IntroductionEnvelope.decode(data)
+      return {
+        class: 'introductions',
+        env: { sourcePeerId: env.sourcePeerId, payload: env.introduction },
+      }
+    }
     default:
       return null
   }
@@ -600,12 +617,13 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       node = await buildNode(config, received, getSyncSource)
       await node.start()
       // 5.2 D4 — subscribe to ALL class topics (the 5.1 scratch topic is
-      // gone; five since 8.3's announcements class).
+      // gone; six since 8.3's announcements + 8.4's introductions classes).
       await node.services.gossip.subscribe(TOPICS.blocks)
       await node.services.gossip.subscribe(TOPICS.tickets)
       await node.services.gossip.subscribe(TOPICS.tx)
       await node.services.gossip.subscribe(TOPICS.peers)
       await node.services.gossip.subscribe(TOPICS.announcements)
+      await node.services.gossip.subscribe(TOPICS.introductions)
     },
     async stop() {
       // Idempotent (5.1 test row 1: stop() is called twice, must not throw).
@@ -647,6 +665,14 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       return publish(
         TOPICS.announcements,
         AnnouncementEnvelope.encode({ announcement, sourcePeerId: config.protocolIdentityId }),
+      )
+    },
+    sendIntroduction(introduction: Introduction) {
+      // NOT on the `NetPort` — CAP-7 discovery surface (8.4). The loop
+      // publishes ONLY its own signed or validated introductions.
+      return publish(
+        TOPICS.introductions,
+        IntroductionEnvelope.encode({ introduction, sourcePeerId: config.protocolIdentityId }),
       )
     },
     async peers() {

@@ -62,11 +62,18 @@
  */
 import { createHash } from 'node:crypto'
 
-import { Ticket, PeerAnnouncement } from '../proto/index.js'
+import { Ticket, PeerAnnouncement, Introduction } from '../proto/index.js'
 import type { Ticket as ProtoTicket } from '../proto/index.js'
 import type { PeerAnnouncement as PeerAnnouncementMsg } from '../proto/index.js'
+import type { Introduction as IntroductionMsg } from '../proto/index.js'
 import type { NetPort, StorePort } from '../ports.js'
-import { MAX_MULTIADDRS, signPeerAnnouncement, validatePeerAnnouncement } from '../discovery/index.js'
+import {
+  MAX_MULTIADDRS,
+  signIntroduction,
+  signPeerAnnouncement,
+  validateIntroduction,
+  validatePeerAnnouncement,
+} from '../discovery/index.js'
 import type { SignedPeerAnnouncement } from '../discovery/index.js'
 import type { BalanceMap } from '../ledger/index.js'
 import { fromDisplay, fromJson } from '../ledger/index.js'
@@ -109,6 +116,7 @@ export interface NodeLoopOptions {
   net: NetPort & {
     readonly received?: ReadonlyMap<TopicClass, ReceivedEnvelope[]>
     sendAnnouncement?(announcement: PeerAnnouncementMsg): Promise<void>
+    sendIntroduction?(introduction: IntroductionMsg): Promise<void>
   }
   /**
    * The node's 4.2 PROTOCOL identity (D2). When present, the loop signs its
@@ -162,6 +170,29 @@ export interface NodeLoopOptions {
     records: SignedPeerAnnouncement[],
     ctx: { blockHashHex: string; slot: bigint },
   ) => void
+  /**
+   * CAP-7 (8.4): enable the introduction leg — per-window vouches for the
+   * OTHER identities whose announcements this loop has verified, plus
+   * verify-before-relay of gossiped introductions (the 8.3 rule). Requires
+   * `chainId` (and an `identity` to produce — without one it only relays).
+   * ABSENT/false ⇒ zero introduction traffic: every pre-8.4 loop is
+   * byte-for-byte unchanged.
+   */
+  introduce?: boolean
+  /**
+   * CAP-7 (8.4): fires per GOSSIPED announcement record that verified AND
+   * was accepted into the known set (a replace happened) — the hint-grade
+   * ingest seam 8.5's boot ladder wires into an address book. Own
+   * announcements and stale duplicates never fire it. A throwing listener
+   * is swallowed (the emission-never-unwinds rule of 8.3).
+   */
+  onGossipedAnnouncement?: (record: PeerAnnouncementMsg, slot: bigint) => void
+  /**
+   * CAP-7 (8.4): same seam for gossiped introductions that verified and
+   * were accepted (relay-once key replaced) — the corroboration ingest 8.5
+   * wires into the book.
+   */
+  onGossipedIntroduction?: (introduction: IntroductionMsg, slot: bigint) => void
 }
 
 /**
@@ -174,6 +205,19 @@ const TRACER_COMMIT_DOMAIN = new TextEncoder().encode('SC-TRACER-COMMIT/1')
 
 /** Default own-announcement validity window, slots (8.3). */
 const DEFAULT_ANNOUNCE_VALIDITY_SLOTS = 32
+
+/** CAP-7 (8.4): per-window cap on fresh vouches this loop signs (the
+ * gossip-budget sibling of the block announcement budget; with the once-
+ * per-subject rule it bounds total introduction traffic). */
+const MAX_INTRODUCED_PER_WINDOW = 4
+/** Memory bound for the relay-dedup set (one signer flooding subjects
+ * cannot grow it without limit): oldest-observed vouches evict first, ties
+ * by lexicographically-greatest key — deterministic. */
+const MAX_KNOWN_INTROS = 256
+
+/** 32-byte hex identity id shape (the pre-dedup gate; the validators own
+ * the full shape rules — this only needs enough to build a safe key). */
+const HEX64 = /^[0-9a-f]{64}$/
 
 /**
  * The tracer ticket (D2 fallback — the 3.2/3.5 single-node default):
@@ -251,6 +295,14 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
   // gate credential's single reader, AD-4 scan).
   const known = new Map<string, { record: PeerAnnouncementMsg; wire: Uint8Array }>()
 
+  // CAP-7 (8.4): the known introductions — ONE entry per `(signer,
+  // subject)` pair (the newest `slotObserved` wins; the replace IS the
+  // relay dedup, exactly like the announcements set above) + the subjects
+  // this loop has already vouched for (producer: once per subject per loop
+  // lifetime — a vouch is a point-in-time observation, not a heartbeat).
+  const knownIntros = new Map<string, { intro: IntroductionMsg }>()
+  const introduced = new Set<string>()
+
   /**
    * CAP-7 (8.3): one announcement pass per window — publish own (fresh,
    * every window), validate + relay gossiped (once per `(identityId,
@@ -315,6 +367,14 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
         } catch {
           /* best-effort */
         }
+        // 8.4 hint-ingest seam (the boot ladder's book feed): fires only
+        // for verified, ACCEPTED gossiped records. A throwing listener
+        // never unwinds the loop (the 8.3 emission rule).
+        try {
+          opts.onGossipedAnnouncement?.(rec, slot)
+        } catch {
+          /* listener errors are the listener's own */
+        }
       }
     }
 
@@ -334,6 +394,126 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
     }
     fresh.sort((a, b) => (bytesToHex(a.wire) < bytesToHex(b.wire) ? -1 : 1))
     return fresh.slice(0, MAX_BLOCK_ANNOUNCEMENTS).map((entry) => entry.wire)
+  }
+
+  /**
+   * CAP-7 (8.4): the introduction leg — runs right AFTER the announcement
+   * pass so this window's accepted observations are vouchable.
+   *
+   * Producer: for every OTHER identity whose announcement sits verified in
+   * the known set (and which this loop has not vouched for yet), sign an
+   * Introduction("saw them online at this slot"), capped per window and in
+   * deterministic subject-id order. Gossiped intros are relayed exactly
+   * once per `(signer, subject)` with verify-before-relay — the 8.3 rule
+   * verbatim; forged/expired/wrong-chain vouches never leave this node.
+   */
+  async function processIntroductions(slot: bigint): Promise<void> {
+    if (opts.chainId === undefined || opts.introduce !== true) return // pre-8.4 loop
+
+    // producer — needs an identity to sign with; known-minus-self, only
+    // CURRENTLY-valid observations, once per subject, capped + sorted.
+    if (opts.identity !== undefined) {
+      const subjects: string[] = []
+      for (const [id, entry] of known) {
+        if (id === opts.identity.identityId || introduced.has(id)) continue
+        const verdict = validatePeerAnnouncement(entry.record, {
+          currentSlot: slot,
+          expectedChainId: opts.chainId,
+        })
+        if (!verdict.ok) continue
+        subjects.push(id)
+      }
+      subjects.sort()
+      for (const subject of subjects.slice(0, MAX_INTRODUCED_PER_WINDOW)) {
+        // Untyped literal + `as const` so `reachability` keeps its literal
+        // type for signIntroduction while staying assignable to the proto
+        // message (whose field is a plain string).
+        const intro = {
+          signerIdentityId: opts.identity.identityId,
+          subjectIdentityId: subject,
+          slotObserved: slot,
+          reachability: 'direct' as const,
+          chainId: opts.chainId,
+          signature: new Uint8Array(0),
+        }
+        intro.signature = new Uint8Array(signIntroduction(opts.identity, intro))
+        knownIntros.set(`${intro.signerIdentityId}|${intro.subjectIdentityId}`, { intro })
+        introduced.add(subject)
+        try {
+          await opts.net.sendIntroduction?.(intro)
+        } catch {
+          /* best-effort gossip — the vouch is re-offered by every peer that saw them */
+        }
+      }
+    }
+
+    // gossiped introductions: verify-before-relay, newest-slotObserved
+    // replace per (signer, subject) — the replace IS the relay dedup.
+    const received = opts.net.received
+    if (received === undefined) return
+    for (const env of received.get('introductions') ?? []) {
+      const rec = env.payload as IntroductionMsg
+      // Cheap pre-dedup BEFORE Ed25519 (the DoS floor): a pair already held
+      // at least as fresh can never improve the set, and skipping never
+      // relays — verify-before-relay survives, since only VERIFIED records
+      // were ever stored. Junk shapes read as junk here and fall through
+      // to the validator untouched.
+      const raw = env.payload as { signerIdentityId?: unknown; subjectIdentityId?: unknown; slotObserved?: unknown }
+      if (
+        typeof raw.signerIdentityId === 'string' &&
+        typeof raw.subjectIdentityId === 'string' &&
+        HEX64.test(raw.signerIdentityId) &&
+        HEX64.test(raw.subjectIdentityId)
+      ) {
+        const heldKey = `${raw.signerIdentityId}|${raw.subjectIdentityId}`
+        const held = knownIntros.get(heldKey)
+        const observed = raw.slotObserved
+        if (
+          held !== undefined &&
+          (typeof observed === 'bigint' ||
+            (typeof observed === 'number' && Number.isSafeInteger(observed) && observed >= 0)) &&
+          BigInt(held.intro.slotObserved) >= BigInt(observed)
+        ) {
+          continue // stale or duplicate — no verify, no replace, no relay
+        }
+      }
+      const verdict = validateIntroduction(rec, {
+        currentSlot: slot,
+        expectedChainId: opts.chainId,
+      })
+      if (!verdict.ok) continue
+      const key = `${rec.signerIdentityId}|${rec.subjectIdentityId}`
+      knownIntros.set(key, { intro: rec })
+      try {
+        await opts.net.sendIntroduction?.(rec)
+      } catch {
+        /* best-effort */
+      }
+      try {
+        opts.onGossipedIntroduction?.(rec, slot)
+      } catch {
+        /* listener errors are the listener's own */
+      }
+    }
+
+    // Memory bound: evict oldest-observed (ties: greatest key) past the cap.
+    while (knownIntros.size > MAX_KNOWN_INTROS) {
+      let worstKey: string | undefined
+      let worstSlot: bigint | undefined
+      for (const [key, entry] of knownIntros) {
+        const observed = BigInt(entry.intro.slotObserved)
+        if (
+          worstSlot === undefined ||
+          observed < worstSlot ||
+          (observed === worstSlot && key > (worstKey ?? ''))
+        ) {
+          worstKey = key
+          worstSlot = observed
+        }
+      }
+      if (worstKey === undefined) break
+      knownIntros.delete(worstKey)
+    }
   }
 
   /** Schedule the next tick (a no-op once stopped). */
@@ -449,6 +629,11 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
     //      validate + relay-once, block candidates). Runs every window —
     //      announcing is not gated on winning. Empty without `chainId`.
     const announcements = await processAnnouncements(slot)
+
+    // 8¾ — CAP-7 (8.4): the introduction leg (vouch production + relay-
+    //      once), after the announcement pass so this window's accepted
+    //      observations are vouchable. No-op without `introduce: true`.
+    await processIntroductions(slot)
 
     // 9 — mine one block for the draw winner (R3 hot path), with the
     //     winner's proto `Ticket` ENCODED (AD-12 wire form) as

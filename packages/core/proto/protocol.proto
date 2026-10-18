@@ -202,10 +202,10 @@ message SyncBlock {
 // Bootstrap-free discovery (epic 8, CAP-7 — ticket-seeded discovery).
 //
 // A signed self-announcement: the record whose Ed25519 signature IS the
-// liveness proof (the sybil cost of presence is the cost of mining). NOT
-// yet enveloped or gossiped here — ticket 8.3 owns carrying it in Block
-// metadata (field 8) and any relay topic. PURELY ADDITIVE: every existing
-// message is UNCHANGED.
+// liveness proof (the sybil cost of presence is the cost of mining). Carried
+// in Block metadata (field 8, 8.3) AND gossiped on its own class topic via
+// `AnnouncementEnvelope`; ticket 8.4 adds the third-party `Introduction`
+// vouch + its envelope. PURELY ADDITIVE: every existing message is UNCHANGED.
 // ---------------------------------------------------------------------------
 
 // A peer's signed address announcement (CAP-7 / discovery-design.md).
@@ -230,4 +230,43 @@ message PeerAnnouncement {
   // Ed25519 signature over the AD-12 canonical digest of the fields above
   // (pinned layout in core/src/discovery/announcements.ts).
   bytes signature = 7;
+}
+
+// A signed third-party vouch (CAP-7, ticket 8.4 — "saw identity X online at
+// slot s"). Signed by the SIGNER only; the digest binds signer AND subject
+// (a third party vouches unilaterally — the three-introductions rule needs
+// introducers, not co-signers). A hint-grade address book entry becomes
+// dial-eligible only after >= 3 introductions from DISTINCT signers. The
+// signature domain is separate from PeerAnnouncement's (neither verifies
+// as the other); pinned layout in core/src/discovery/introductions.ts.
+message Introduction {
+  // 32-byte hex identity id of the introducing peer (the signer —
+  // `subjectIdentityId` can never be forged into a vouch by someone else).
+  string signerIdentityId = 1;
+  // 32-byte hex identity id of the introduced peer.
+  string subjectIdentityId = 2;
+  // Chain-time slot the signer observed the subject live at (AD-3 — never a
+  // wall clock). A value greater than the validator's current slot rejects
+  // (nobody can claim to have seen the future).
+  int64 slotObserved = 3;
+  // Reachability class the signer observed ('direct' | 'via-relay' | 'lan',
+  // discovery-design.md) so NATed targets get usable addresses. Carried for
+  // dial-time use (8.5+); no eligibility rule consumes it in MVP.
+  string reachability = 4;
+  // Network scope (genesis `chainId`) — same contamination guard as the
+  // announcement's.
+  string chainId = 5;
+  // Ed25519 signature over the AD-12 canonical digest of the fields above.
+  bytes signature = 6;
+}
+
+// Envelope for the introductions topic (CAP-7, ticket 8.4 —
+// `/succinctcoin/introductions/1`): a gossiped signed introduction + its
+// publisher. Verify-before-relay is the NODE LOOP's rule (validate before
+// republish), exactly like the announcements class.
+message IntroductionEnvelope {
+  // The gossiped introduction (signed, AD-12 digest of 8.4).
+  Introduction introduction = 1;
+  // 32-byte hex protocol identity id of the publishing node (4.2).
+  string sourcePeerId = 2;
 }

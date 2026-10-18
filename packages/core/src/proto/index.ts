@@ -5,9 +5,10 @@
  * `proto/protocol.proto` (AD-8/AD-12) — **do not edit by hand**; regenerate
  * with `pnpm generate:proto`. This file is the stable re-export layer the
  * rest of the package imports: it exposes the four payload messages
- * (`Block`/`Ticket`/`Tx`/`PeerInfo`) AND the four gossipsub envelope
+ * (`Block`/`Ticket`/`Tx`/`PeerInfo`) AND the six gossipsub envelope
  * messages (`BlockEnvelope`/`TicketEnvelope`/`TxEnvelope`/
- * `PeerInfoEnvelope`, 5.2) each as BOTH
+ * `PeerInfoEnvelope`, 5.2; `AnnouncementEnvelope`, 8.3; and
+ * `IntroductionEnvelope`, 8.4) each as BOTH
  *
  *   - a message *type* (the field set, e.g. `const b: Block = { ... }`), and
  *   - a *value* namespace carrying its codecs (`Block.encode`, `Block.decode`,
@@ -30,6 +31,7 @@ export type TicketEnvelope = succinctcoin.TicketEnvelope
 export type TxEnvelope = succinctcoin.TxEnvelope
 export type PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
 export type AnnouncementEnvelope = succinctcoin.AnnouncementEnvelope
+export type IntroductionEnvelope = succinctcoin.IntroductionEnvelope
 
 // Chain sync field-set types (5.4 — request/response over a dedicated
 // stream, AD-12: `SyncRequest { fromSlot }` + `SyncBlock { block,
@@ -38,8 +40,10 @@ export type SyncRequest = succinctcoin.SyncRequest
 export type SyncBlock = succinctcoin.SyncBlock
 
 // Discovery field-set types (epic 8, CAP-7 — ticket 8.2: the signed peer
-// announcement; NOT yet enveloped — 8.3 owns block-carriage/relay).
+// announcement, carried in blocks (8.3) and gossiped; ticket 8.4: the
+// third-party `Introduction` vouch).
 export type PeerAnnouncement = succinctcoin.PeerAnnouncement
+export type Introduction = succinctcoin.Introduction
 
 // Codec namespaces (value space): `codec` / `encode` / `decode` / `stream`.
 export const Block = succinctcoin.Block
@@ -53,13 +57,15 @@ export const TicketEnvelope = succinctcoin.TicketEnvelope
 export const TxEnvelope = succinctcoin.TxEnvelope
 export const PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
 export const AnnouncementEnvelope = succinctcoin.AnnouncementEnvelope
+export const IntroductionEnvelope = succinctcoin.IntroductionEnvelope
 
 // Chain sync codec namespaces (5.4 — AD-12 proto codecs).
 export const SyncRequest = succinctcoin.SyncRequest
 export const SyncBlock = succinctcoin.SyncBlock
 
-// Discovery codec namespace (epic 8, CAP-7 — ticket 8.2).
+// Discovery codec namespaces (epic 8, CAP-7 — tickets 8.2/8.4).
 export const PeerAnnouncement = succinctcoin.PeerAnnouncement
+export const Introduction = succinctcoin.Introduction
 
 // Full generated namespace (type + value) and the wire input types, for
 // `succinctcoin.Block`-style access and `*Input` partial field sets.

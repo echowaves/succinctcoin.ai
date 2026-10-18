@@ -2434,6 +2434,404 @@ export namespace succinctcoin {
     }
   }
 
+  export interface Introduction {
+    signerIdentityId: string
+    subjectIdentityId: string
+    slotObserved: bigint
+    reachability: string
+    chainId: string
+    signature: Uint8Array<ArrayBuffer>
+  }
+
+  export interface IntroductionInput {
+    signerIdentityId?: string
+    subjectIdentityId?: string
+    slotObserved?: bigint
+    reachability?: string
+    chainId?: string
+    signature?: Uint8Array
+  }
+
+  export namespace Introduction {
+    let _codec: Codec<Introduction, IntroductionInput>
+
+    export const codec = (): Codec<Introduction, IntroductionInput> => {
+      if (_codec == null) {
+        _codec = message<Introduction, IntroductionInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if ((obj.signerIdentityId != null && obj.signerIdentityId !== '')) {
+            w.uint32(10)
+            w.string(obj.signerIdentityId)
+          }
+
+          if ((obj.subjectIdentityId != null && obj.subjectIdentityId !== '')) {
+            w.uint32(18)
+            w.string(obj.subjectIdentityId)
+          }
+
+          if ((obj.slotObserved != null && obj.slotObserved !== 0n)) {
+            w.uint32(24)
+            w.int64(obj.slotObserved)
+          }
+
+          if ((obj.reachability != null && obj.reachability !== '')) {
+            w.uint32(34)
+            w.string(obj.reachability)
+          }
+
+          if ((obj.chainId != null && obj.chainId !== '')) {
+            w.uint32(42)
+            w.string(obj.chainId)
+          }
+
+          if ((obj.signature != null && obj.signature.byteLength > 0)) {
+            w.uint32(50)
+            w.bytes(obj.signature)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length) => {
+          const obj: any = {
+            signerIdentityId: '',
+            subjectIdentityId: '',
+            slotObserved: 0n,
+            reachability: '',
+            chainId: '',
+            signature: uint8ArrayAlloc(0)
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.signerIdentityId = r.string()
+                break
+              }
+              case 2: {
+                obj.subjectIdentityId = r.string()
+                break
+              }
+              case 3: {
+                obj.slotObserved = r.int64()
+                break
+              }
+              case 4: {
+                obj.reachability = r.string()
+                break
+              }
+              case 5: {
+                obj.chainId = r.string()
+                break
+              }
+              case 6: {
+                obj.signature = r.bytes()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.Introduction'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield {
+                  field: `${prefix}signerIdentityId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}subjectIdentityId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 3: {
+                yield {
+                  field: `${prefix}slotObserved`,
+                  value: r.int64()
+                }
+                break
+              }
+              case 4: {
+                yield {
+                  field: `${prefix}reachability`,
+                  value: r.string()
+                }
+                break
+              }
+              case 5: {
+                yield {
+                  field: `${prefix}chainId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 6: {
+                yield {
+                  field: `${prefix}signature`,
+                  value: r.bytes()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.Introduction'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface IntroductionSignerIdentityIdFieldEvent {
+      field: '.signerIdentityId'
+      value: string
+    }
+
+    export interface IntroductionSubjectIdentityIdFieldEvent {
+      field: '.subjectIdentityId'
+      value: string
+    }
+
+    export interface IntroductionSlotObservedFieldEvent {
+      field: '.slotObserved'
+      value: bigint
+    }
+
+    export interface IntroductionReachabilityFieldEvent {
+      field: '.reachability'
+      value: string
+    }
+
+    export interface IntroductionChainIdFieldEvent {
+      field: '.chainId'
+      value: string
+    }
+
+    export interface IntroductionSignatureFieldEvent {
+      field: '.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export function encode (obj: IntroductionInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, Introduction.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<Introduction>): Introduction {
+      return decodeMessage(buf, Introduction.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<Introduction>): Generator<IntroductionSignerIdentityIdFieldEvent | IntroductionSubjectIdentityIdFieldEvent | IntroductionSlotObservedFieldEvent | IntroductionReachabilityFieldEvent | IntroductionChainIdFieldEvent | IntroductionSignatureFieldEvent> {
+      return streamMessage(buf, Introduction.codec(), opts)
+    }
+  }
+
+  export interface IntroductionEnvelope {
+    introduction?: succinctcoin.Introduction
+    sourcePeerId: string
+  }
+
+  export interface IntroductionEnvelopeInput {
+    introduction?: succinctcoin.IntroductionInput
+    sourcePeerId?: string
+  }
+
+  export namespace IntroductionEnvelope {
+    let _codec: Codec<IntroductionEnvelope, IntroductionEnvelopeInput>
+
+    export const codec = (): Codec<IntroductionEnvelope, IntroductionEnvelopeInput> => {
+      if (_codec == null) {
+        _codec = message<IntroductionEnvelope, IntroductionEnvelopeInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.introduction != null) {
+            w.uint32(10)
+            succinctcoin.Introduction.codec().encode(obj.introduction, w)
+          }
+
+          if ((obj.sourcePeerId != null && obj.sourcePeerId !== '')) {
+            w.uint32(18)
+            w.string(obj.sourcePeerId)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            sourcePeerId: ''
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.introduction = succinctcoin.Introduction.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.introduction
+                })
+                break
+              }
+              case 2: {
+                obj.sourcePeerId = r.string()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.IntroductionEnvelope'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.Introduction.codec().stream(r, r.uint32(), `${prefix}introduction.`, {
+                  limits: opts.limits?.introduction
+                })
+
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}sourcePeerId`,
+                  value: r.string()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.IntroductionEnvelope'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface IntroductionEnvelopeIntroductionMessageStart {
+      field: '.introduction'
+      type: 'start'
+    }
+
+    export interface IntroductionEnvelopeIntroductionMessageEnd {
+      field: '.introduction'
+      type: 'end'
+    }
+
+    export interface IntroductionEnvelopeIntroductionSignerIdentityIdFieldEvent {
+      field: '.introduction.signerIdentityId'
+      value: string
+    }
+
+    export interface IntroductionEnvelopeIntroductionSubjectIdentityIdFieldEvent {
+      field: '.introduction.subjectIdentityId'
+      value: string
+    }
+
+    export interface IntroductionEnvelopeIntroductionSlotObservedFieldEvent {
+      field: '.introduction.slotObserved'
+      value: bigint
+    }
+
+    export interface IntroductionEnvelopeIntroductionReachabilityFieldEvent {
+      field: '.introduction.reachability'
+      value: string
+    }
+
+    export interface IntroductionEnvelopeIntroductionChainIdFieldEvent {
+      field: '.introduction.chainId'
+      value: string
+    }
+
+    export interface IntroductionEnvelopeIntroductionSignatureFieldEvent {
+      field: '.introduction.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface IntroductionEnvelopeSourcePeerIdFieldEvent {
+      field: '.sourcePeerId'
+      value: string
+    }
+
+    export function encode (obj: IntroductionEnvelopeInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, IntroductionEnvelope.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<IntroductionEnvelope>): IntroductionEnvelope {
+      return decodeMessage(buf, IntroductionEnvelope.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<IntroductionEnvelope>): Generator<IntroductionEnvelopeIntroductionMessageStart | IntroductionEnvelopeIntroductionMessageEnd | IntroductionEnvelopeIntroductionSignerIdentityIdFieldEvent | IntroductionEnvelopeIntroductionSubjectIdentityIdFieldEvent | IntroductionEnvelopeIntroductionSlotObservedFieldEvent | IntroductionEnvelopeIntroductionReachabilityFieldEvent | IntroductionEnvelopeIntroductionChainIdFieldEvent | IntroductionEnvelopeIntroductionSignatureFieldEvent | IntroductionEnvelopeSourcePeerIdFieldEvent> {
+      return streamMessage(buf, IntroductionEnvelope.codec(), opts)
+    }
+  }
+
   let _codec: Codec<succinctcoin, succinctcoinInput>
 
   export const codec = (): Codec<succinctcoin, succinctcoinInput> => {

@@ -475,13 +475,15 @@ export type {
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
 // namespace: `Block.encode`/`decode`/`codec`/`stream`) — see src/proto/index.ts.
-// Plus the gossipsub envelope messages (5.2, AD-8/AD-12; five classes since
-// 8.3's `AnnouncementEnvelope`): each wraps a payload class + `sourcePeerId`
-// and travels on its own class topic.
+// Plus the gossipsub envelope messages (5.2, AD-8/AD-12; six classes since
+// 8.3's `AnnouncementEnvelope` + 8.4's `IntroductionEnvelope`): each wraps a
+// payload class + `sourcePeerId` and travels on its own class topic.
 export {
   AnnouncementEnvelope,
   Block,
   BlockEnvelope,
+  Introduction,
+  IntroductionEnvelope,
   PeerAnnouncement,
   PeerInfo,
   PeerInfoEnvelope,
@@ -573,4 +575,43 @@ export type {
   AnnouncementValidation,
   PeerAnnouncementFields,
   SignedPeerAnnouncement,
+} from './discovery/index.js'
+
+// Bootstrap-free discovery (epic 8, CAP-7 — ticket 8.4): the Introduction
+// vouch contract ("saw identity X online at slot s", signed by the signer,
+// digest binding signer AND subject, domain-separated from announcements)
+// and the PURE address book (source classes block > log > dns > hint,
+// three-introductions promotion, slot-parameterized expiry + quarantine,
+// reorg retraction keyed by originating block). Verify-before-connect is
+// structural: the ONLY ingest paths run the validators internally.
+export {
+  ADDRESS_SOURCE_CLASSES,
+  createAddressBook,
+  DEFAULT_QUARANTINE_SLOTS,
+  DIAL_FAILURES_TO_QUARANTINE,
+  INTRODUCTION_DOMAIN,
+  introductionDigest,
+  MAX_BOOK_ENTRIES,
+  MAX_VOUCHES_PER_SUBJECT,
+  REACHABILITY_CLASSES,
+  signIntroduction,
+  validateIntroduction,
+  verifyIntroductionSignature,
+} from './discovery/index.js'
+export type {
+  AddressBook,
+  AddressBookEntry,
+  AddressBookOptions,
+  AddressSourceClass,
+  BlockRef,
+  BookIngestContext,
+  BookIngestResult,
+  BookIntroResult,
+  DialTarget,
+  IntroductionContext,
+  IntroductionFields,
+  IntroductionReachability,
+  IntroductionRejectReason,
+  IntroductionValidation,
+  SignedIntroduction,
 } from './discovery/index.js'
