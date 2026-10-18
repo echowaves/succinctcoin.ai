@@ -51,6 +51,25 @@ describe('genesis config — boot validation (matrix)', () => {
     expect(cfg.bootstrap).toEqual([])
   })
 
+  it('CHAIN_ID_DEFAULT (8.2): absent chainId defaults deterministically to "succinctcoin-v<protocolVersion>"', () => {
+    expect(validateGenesis(wellFormed).chainId).toBe('succinctcoin-v1')
+    expect(validateGenesis({ ...wellFormed, protocolVersion: 2 }).chainId).toBe(
+      'succinctcoin-v2',
+    )
+  })
+
+  it('CHAIN_ID_EXPLICIT (8.2): a printable-ASCII chainId passes through verbatim', () => {
+    expect(validateGenesis({ ...wellFormed, chainId: 'succinctcoin-mainnet-1' }).chainId).toBe(
+      'succinctcoin-mainnet-1',
+    )
+  })
+
+  it('CHAIN_ID_SHAPE (8.2): empty / non-string / >64 chars / non-printable fail SC-CONFIG-1', () => {
+    for (const bad of ['', 42, 'x'.repeat(65), 'tab\there']) {
+      expect(() => validateGenesis({ ...wellFormed, chainId: bad })).toThrowError(/chainId/)
+    }
+  })
+
   it('BOOTSTRAP_SHAPE: a non-array or entry-without-"/" still fails SC-CONFIG-1 (7.1 relaxation keeps the shape rules)', () => {
     expect(() => validateGenesis({ ...wellFormed, bootstrap: 'nope' })).toThrowError(
       /bootstrap/,

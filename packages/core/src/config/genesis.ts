@@ -35,6 +35,13 @@ export interface GenesisConfig {
   uptimeLookbackL: number
   /** Accepted-gate registry ids (AD-4). */
   gates: string[]
+  /**
+   * Network scope for signed discovery records (CAP-7, ticket 8.2): a
+   * testnet presence can never contaminate mainnet books. OPTIONAL in the
+   * JSON — absent means `"succinctcoin-v" + protocolVersion` (every fixture
+   * stays green); announcements are validated against THIS value.
+   */
+  chainId: string
 }
 
 /** Boot-time genesis-config error. Carries `{ code: 'SC-CONFIG-1', message }`. */
@@ -104,6 +111,18 @@ export function validateGenesis(raw: unknown): GenesisConfig {
       fail(`gates[${i}]`, 'must be a non-empty gate id string')
   }
 
+  // OPTIONAL network scope (8.2): printable ASCII, 1–64 chars. Absent → the
+  // deterministic default below (never a random or wall-clock value, AD-3).
+  if (raw.chainId !== undefined) {
+    if (
+      typeof raw.chainId !== 'string' ||
+      raw.chainId.length === 0 ||
+      raw.chainId.length > 64 ||
+      !/^[\x20-\x7e]+$/.test(raw.chainId)
+    )
+      fail('chainId', 'must be a printable ASCII string of 1–64 chars')
+  }
+
   return {
     protocolVersion: raw.protocolVersion,
     bootstrap: raw.bootstrap as string[],
@@ -114,6 +133,8 @@ export function validateGenesis(raw: unknown): GenesisConfig {
     reattestationK: raw.reattestationK,
     uptimeLookbackL: raw.uptimeLookbackL,
     gates: raw.gates as string[],
+    chainId:
+      (raw.chainId as string | undefined) ?? `succinctcoin-v${raw.protocolVersion}`,
   }
 }
 

@@ -177,3 +177,37 @@ message SyncBlock {
   // entry, in the SAME order.
   repeated int64 weights = 3;
 }
+
+// ---------------------------------------------------------------------------
+// Bootstrap-free discovery (epic 8, CAP-7 — ticket-seeded discovery).
+//
+// A signed self-announcement: the record whose Ed25519 signature IS the
+// liveness proof (the sybil cost of presence is the cost of mining). NOT
+// yet enveloped or gossiped here — ticket 8.3 owns carrying it in Block
+// metadata (field 8) and any relay topic. PURELY ADDITIVE: every existing
+// message is UNCHANGED.
+// ---------------------------------------------------------------------------
+
+// A peer's signed address announcement (CAP-7 / discovery-design.md).
+message PeerAnnouncement {
+  // 32-byte hex identity id of the announcing peer (4.2 Ed25519 identity).
+  string identityId = 1;
+  // The addresses to be reached at, multiaddr strings (1–8 entries — shape
+  // limits pinned by the core validator, block-size budget defense).
+  repeated string multiaddrs = 2;
+  // The address this peer observed itself at, when known (NAT-visible
+  // external address; absent for LAN-only peers).
+  optional string observedExternalAddr = 3;
+  // First chain-time slot the announcement claims validity for (AD-3 —
+  // chain time, never a wall clock).
+  int64 slotStart = 4;
+  // Last chain-time slot the announcement claims validity for (>= start;
+  // expiry is slot-parameterized so no peer ever needs a clock).
+  int64 slotEnd = 5;
+  // Network scope (from genesis `chainId`): testnet presence can never
+  // contaminate mainnet books.
+  string chainId = 6;
+  // Ed25519 signature over the AD-12 canonical digest of the fields above
+  // (pinned layout in core/src/discovery/announcements.ts).
+  bytes signature = 7;
+}

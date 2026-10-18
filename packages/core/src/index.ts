@@ -470,6 +470,7 @@ export type {
 export {
   Block,
   BlockEnvelope,
+  PeerAnnouncement,
   PeerInfo,
   PeerInfoEnvelope,
   SyncBlock,
@@ -502,6 +503,10 @@ export type { IssueGateCredentialParams } from './identity/index.js'
 // `sha256(identityId ‖ u64be(windowIndex) ‖ challenge ‖
 // nonceCommitment)` — verification reconstructs the public key from
 // `identityId` alone (public data), and a reject is a normal `false`.
+// `signDigest` (the ONE key-material reader's generic face, 8.2) is
+// deliberately NOT on the package surface — core-internal use only (e.g.
+// discovery's signPeerAnnouncement); external callers get purpose-built
+// signers so no arbitrary-digest signing oracle ships.
 export {
   IdentityError,
   deriveIdentityKeypair,
@@ -537,3 +542,23 @@ export type { ReattestationResult } from './identity/index.js'
 // the relay transport.
 export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
 export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'
+
+// Bootstrap-free discovery (epic 8, CAP-7 — ticket 8.2): the signed peer
+// announcement contract (digest / sign / verify / PURE validator). The
+// signature IS the liveness proof; freshness is judged against a CALLER-
+// SUPPLIED slot (AD-3 — no wall clocks), and network scope is the genesis
+// `chainId`. 8.3 carries these in blocks; 8.4 keeps the address book.
+export {
+  PEER_ANNOUNCEMENT_DOMAIN,
+  peerAnnouncementDigest,
+  signPeerAnnouncement,
+  validatePeerAnnouncement,
+  verifyPeerAnnouncementSignature,
+} from './discovery/index.js'
+export type {
+  AnnouncementContext,
+  AnnouncementRejectReason,
+  AnnouncementValidation,
+  PeerAnnouncementFields,
+  SignedPeerAnnouncement,
+} from './discovery/index.js'

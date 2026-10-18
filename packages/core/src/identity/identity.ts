@@ -292,6 +292,25 @@ export function signTicket(
 }
 
 /**
+ * Sign an ARBITRARY pre-computed digest with the keypair (8.2): the ONE
+ * sanctioned way for code OUTSIDE this module to obtain a signature from
+ * the AD-11 secret — the 4.7 single-reader invariant (`only identity.ts
+ * reads .secret`) stays intact because consumers hand THIS module their
+ * bytes instead of touching the key material (e.g. discovery's
+ * `signPeerAnnouncement` signs its own pinned digest through here).
+ * Ed25519 is pure-HASH=none, so `digest` is signed verbatim; deterministic
+ * per RFC 8032 like `signTicket`.
+ */
+export function signDigest(keypair: IdentityKeypair, digest: Uint8Array): Uint8Array {
+  const privateKey = createPrivateKey({
+    key: Buffer.from(keypair.secret),
+    format: 'der',
+    type: 'pkcs8',
+  })
+  return new Uint8Array(sign(null, Buffer.from(digest), privateKey))
+}
+
+/**
  * Verify a ticket signature from PUBLIC data alone (D2/D5): the public
  * key is reconstructed from `identityId` (SPKI DER = the 12-byte
  * Ed25519 prefix ‖ the 32 raw bytes), the AD-12 digest is recomputed,

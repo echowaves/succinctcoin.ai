@@ -23,6 +23,7 @@ export type { IssueGateCredentialParams } from './gate-verifier.js'
 export {
   IdentityError,
   deriveIdentityKeypair,
+  signDigest,
   signTicket,
   verifyTicketSignature,
 } from './identity.js'

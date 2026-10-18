@@ -1933,6 +1933,277 @@ export namespace succinctcoin {
     }
   }
 
+  export interface PeerAnnouncement {
+    identityId: string
+    multiaddrs: string[]
+    observedExternalAddr?: string
+    slotStart: bigint
+    slotEnd: bigint
+    chainId: string
+    signature: Uint8Array<ArrayBuffer>
+  }
+
+  export interface PeerAnnouncementInput {
+    identityId?: string
+    multiaddrs?: string[]
+    observedExternalAddr?: string
+    slotStart?: bigint
+    slotEnd?: bigint
+    chainId?: string
+    signature?: Uint8Array
+  }
+
+  export namespace PeerAnnouncement {
+    let _codec: Codec<PeerAnnouncement, PeerAnnouncementInput>
+
+    export const codec = (): Codec<PeerAnnouncement, PeerAnnouncementInput> => {
+      if (_codec == null) {
+        _codec = message<PeerAnnouncement, PeerAnnouncementInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if ((obj.identityId != null && obj.identityId !== '')) {
+            w.uint32(10)
+            w.string(obj.identityId)
+          }
+
+          if (obj.multiaddrs != null && obj.multiaddrs.length > 0) {
+            for (const value of obj.multiaddrs) {
+              w.uint32(18)
+              w.string(value)
+            }
+          }
+
+          if (obj.observedExternalAddr != null) {
+            w.uint32(26)
+            w.string(obj.observedExternalAddr)
+          }
+
+          if ((obj.slotStart != null && obj.slotStart !== 0n)) {
+            w.uint32(32)
+            w.int64(obj.slotStart)
+          }
+
+          if ((obj.slotEnd != null && obj.slotEnd !== 0n)) {
+            w.uint32(40)
+            w.int64(obj.slotEnd)
+          }
+
+          if ((obj.chainId != null && obj.chainId !== '')) {
+            w.uint32(50)
+            w.string(obj.chainId)
+          }
+
+          if ((obj.signature != null && obj.signature.byteLength > 0)) {
+            w.uint32(58)
+            w.bytes(obj.signature)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            identityId: '',
+            multiaddrs: [],
+            slotStart: 0n,
+            slotEnd: 0n,
+            chainId: '',
+            signature: uint8ArrayAlloc(0)
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.identityId = r.string()
+                break
+              }
+              case 2: {
+                if (opts.limits?.multiaddrs != null && obj.multiaddrs.length === opts.limits.multiaddrs) {
+                  throw new MaxLengthError('Decode error - repeated field "multiaddrs" had too many elements')
+                }
+
+                obj.multiaddrs.push(r.string())
+                break
+              }
+              case 3: {
+                obj.observedExternalAddr = r.string()
+                break
+              }
+              case 4: {
+                obj.slotStart = r.int64()
+                break
+              }
+              case 5: {
+                obj.slotEnd = r.int64()
+                break
+              }
+              case 6: {
+                obj.chainId = r.string()
+                break
+              }
+              case 7: {
+                obj.signature = r.bytes()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const obj = {
+            multiaddrs: 0
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.PeerAnnouncement'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield {
+                  field: `${prefix}identityId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 2: {
+                if (opts.limits?.multiaddrs != null && obj.multiaddrs === opts.limits.multiaddrs) {
+                  throw new MaxLengthError('Streaming decode error - repeated field "multiaddrs" had too many elements')
+                }
+
+                yield {
+                  field: `${prefix}multiaddrs[]`,
+                  index: obj.multiaddrs,
+                  value: r.string()
+                }
+
+                obj.multiaddrs++
+
+                break
+              }
+              case 3: {
+                yield {
+                  field: `${prefix}observedExternalAddr`,
+                  value: r.string()
+                }
+                break
+              }
+              case 4: {
+                yield {
+                  field: `${prefix}slotStart`,
+                  value: r.int64()
+                }
+                break
+              }
+              case 5: {
+                yield {
+                  field: `${prefix}slotEnd`,
+                  value: r.int64()
+                }
+                break
+              }
+              case 6: {
+                yield {
+                  field: `${prefix}chainId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 7: {
+                yield {
+                  field: `${prefix}signature`,
+                  value: r.bytes()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.PeerAnnouncement'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface PeerAnnouncementIdentityIdFieldEvent {
+      field: '.identityId'
+      value: string
+    }
+
+    export interface PeerAnnouncementMultiaddrsFieldEvent {
+      field: '.multiaddrs[]'
+      index: number
+      value: string
+    }
+
+    export interface PeerAnnouncementObservedExternalAddrFieldEvent {
+      field: '.observedExternalAddr'
+      value: string
+    }
+
+    export interface PeerAnnouncementSlotStartFieldEvent {
+      field: '.slotStart'
+      value: bigint
+    }
+
+    export interface PeerAnnouncementSlotEndFieldEvent {
+      field: '.slotEnd'
+      value: bigint
+    }
+
+    export interface PeerAnnouncementChainIdFieldEvent {
+      field: '.chainId'
+      value: string
+    }
+
+    export interface PeerAnnouncementSignatureFieldEvent {
+      field: '.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export function encode (obj: PeerAnnouncementInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, PeerAnnouncement.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerAnnouncement>): PeerAnnouncement {
+      return decodeMessage(buf, PeerAnnouncement.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerAnnouncement>): Generator<PeerAnnouncementIdentityIdFieldEvent | PeerAnnouncementMultiaddrsFieldEvent | PeerAnnouncementObservedExternalAddrFieldEvent | PeerAnnouncementSlotStartFieldEvent | PeerAnnouncementSlotEndFieldEvent | PeerAnnouncementChainIdFieldEvent | PeerAnnouncementSignatureFieldEvent> {
+      return streamMessage(buf, PeerAnnouncement.codec(), opts)
+    }
+  }
+
   let _codec: Codec<succinctcoin, succinctcoinInput>
 
   export const codec = (): Codec<succinctcoin, succinctcoinInput> => {

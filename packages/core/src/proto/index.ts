@@ -36,6 +36,10 @@ export type PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
 export type SyncRequest = succinctcoin.SyncRequest
 export type SyncBlock = succinctcoin.SyncBlock
 
+// Discovery field-set types (epic 8, CAP-7 — ticket 8.2: the signed peer
+// announcement; NOT yet enveloped — 8.3 owns block-carriage/relay).
+export type PeerAnnouncement = succinctcoin.PeerAnnouncement
+
 // Codec namespaces (value space): `codec` / `encode` / `decode` / `stream`.
 export const Block = succinctcoin.Block
 export const Ticket = succinctcoin.Ticket
@@ -51,6 +55,9 @@ export const PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
 // Chain sync codec namespaces (5.4 — AD-12 proto codecs).
 export const SyncRequest = succinctcoin.SyncRequest
 export const SyncBlock = succinctcoin.SyncBlock
+
+// Discovery codec namespace (epic 8, CAP-7 — ticket 8.2).
+export const PeerAnnouncement = succinctcoin.PeerAnnouncement
 
 // Full generated namespace (type + value) and the wire input types, for
 // `succinctcoin.Block`-style access and `*Input` partial field sets.
