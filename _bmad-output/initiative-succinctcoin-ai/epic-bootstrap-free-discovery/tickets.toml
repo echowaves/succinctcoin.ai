@@ -1,0 +1,76 @@
+# tickets.toml — epic-bootstrap-free-discovery's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Per-install identity seed (CAP-7 prerequisite; reverses deferred-work 6.2(3))"
+description = "Replace the pinned `IDENTITY_SEED` in `packages/app/src/main/index.ts` with a random 32-byte seed generated on first boot and persisted under Electron's userData directory (file mode 0600, atomic write); the derived identity is then unique per install and stable across restarts. This is the user-ratified reversal (go-ahead 2026-10-17) of deferred-work 6.2(3) and the recorded prerequisite of spec CAP-7: while every install derives one shared identity, ticket-presence cannot distinguish installs and the node-loop keep-first dedupe drops cross-instance tickets. The build resolves the OPEN 2026-10-17 deferred-work entry (mark RESOLVED) and the spec's CAP-7-prerequisite open question. Update any pin that assumed a shared seed; core is untouched (`deriveIdentityKeypair` stays as-is)."
+verify = "Headless rows (injected fs/tmp dir in place of userData — no electron spawn, AD-10): two boots into separate dirs derive DISTINCT identity ids; the same dir rebooted derives the SAME id; the seed file lands 0600. The full root suite green; a scan pins no `(0x5c + i)`-style constant seed remains in app main."
+covers = ["R4", "E2"]
+after = []
+hitl = false
+risk = "medium"
+unknown = "Pre-existing testnet data mined under the pinned seed keeps old winner ids — accepted pre-launch (no migration). The exact userData filename/location is a build decision; it must not collide with the chain store path."
+
+[[entry]]
+id = 2
+type = "story"
+title = "PeerAnnouncement proto + pure validator"
+description = "Add `PeerAnnouncement { identityId, multiaddrs[], observedExternalAddr?, slotStart, slotEnd, chainId, signature }` to `packages/core/proto/protocol.proto`; regenerate the types (committed; PROTO_OK). Add a PURE validator in core: shape checks, identity signature over the AD-12 canonical digest (same domain-separation convention as Ticket's signed digest — pin at build), slot-range freshness against a CALLER-SUPPLIED current slot (never `Date`), and chainId match. No consensus or gossip wiring yet — this is the contract slice 8.3 and 8.4 both consume."
+verify = "Wire round-trip row for the new message; validator rows: valid, bad signature, expired range (end < current slot), not-yet-valid (start > current slot), wrong chainId, malformed multiaddr entries; PROTO_OK green after regeneration; the validator imports no clock/net (pure — property-testable); full core suite green."
+covers = ["R2", "E1"]
+after = []
+hitl = false
+risk = "medium"
+unknown = "The canonical digest byte layout for the new message follows the established ticket-digest convention (BE fixed-width ints, AD-12) — pinned by golden vector at build."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Tracer: announcements anchored in blocks + gossiped, end-to-end over memory transport"
+description = "The thinnest path proving proto → consensus → loop connect. Add a repeated `announcements` field to `Block` (field 8) INCLUDED IN the canonical block digest — golden vectors re-pin, and `config/genesis.json` `protocolVersion` bumps unconditionally (digest change = protocol change, AD-12). `applyBlock` validates every announcement with 8.2's validator under a per-block budget cap N (drop policy pinned); the node loop includes its own fresh announcement when mining, COLLECTS gossiped ones, and GOSSIPS announcements it holds on a gossip path that verifies before relaying (unsigned/expired never forwarded; whether this rides the existing peers class or a new AD-8 topic+envelope is pinned at build). `applyBlock` ALSO emits the block's validated announcements for the address-book consumer (8.4 owns the book — handoff: 8.4 subscribes to this emission, keyed by originating block). Tracer test: two nodes with ZERO configured addresses on the memory transport each see the other's presence in an applied block."
+verify = "Block-with-announcements validates; forged/expired/over-budget announcements reject the block per the pinned policy; digest golden vectors re-pinned + `protocolVersion` bumped; relay rows: a validly-signed announcement is forwarded once, a forged one never; the two-node zero-address memory-transport test asserts each identity's announcement appears in the other's applied block with empty bootstrap; full suite green headless (AD-10)."
+covers = ["R2", "R1", "E1", "E2", "E3"]
+after = [2]
+hitl = false
+risk = "high"
+unknown = "Budget cap N and the drop policy for over-budget blocks; whether announcement gossip reuses the peers topic class or a new one (AD-8 envelope shape); signing stays in the core where keys live (E3) — the app passes no key material."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Address book: source classes, introductions, expiry, reorg retraction"
+description = "New core module — the address book: keyed by `identityId` (one identity, many addresses), every record tagged `(source class block > log > DNS > hint, first-seen slot)`. Ingest 8.3's emission as block-grade, KEYED BY ORIGINATING BLOCK so a reorg/retract removes records that came off the canonical chain (or equivalently replays the book from the canonical head — pick one, pin it). Slot-range expiry and quarantine-after-3-failed-dials take the current slot as a PARAMETER (no clocks). Hint-grade records become dial-eligible only after ≥3 independent signed introductions: own the producer too — an `Introduction` ('saw identity X online at slot s', signer + subject signed, AD-12 domain-separated) that nodes sign in the core (E3) and gossip alongside announcements (verify-before-relay as 8.3). Verify-before-connect is THE rule: the dial-eligible set never contains unsigned, expired, or under-introduced records."
+verify = "Property rows (fast-check): forged/expired/hint-without-3-introductions NEVER appear in the dial-eligible set; exactly-3-introductions promotes, 2 does not, revocation via expiry demotes; a simulated reorg retracting block B removes B-sourced records and only those; expiry monotone in slots (parameterized clock); introduction signatures verify with domain separation from announcements; module pure or memory-transport-only (AD-10)."
+covers = ["R3", "E1", "E2", "E3"]
+after = [3]
+hitl = false
+risk = "medium"
+unknown = "Introduction-signature domain separation vs announcement signatures — pin at build; book size caps + eviction order under pressure (prefer freshest/highest-class); whether 'log/DNS' classes are enum-only stubs in MVP (likely yes — no producer ships this epic)."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Fallback-ladder boot + Amnesiac Boot Proof + discovery lint"
+description = "Wire the app's boot ladder on the 7.2 seam (`defaultNetConfig`/boot path in `packages/app/src/main/index.ts`, after 8.1's seed change): (1) mDNS (shipped); (2) LAN shared address-book file — OS-appropriate location, atomic writes, records enter as hint-grade; (3) block-grade artifact FILE: one or more signed announcement records read from a local path (the MVP artifact decision in epic Notes — full `.scsnap` chain import stays parked); (4) announcements from applied blocks via 8.3/8.4 into the book. Announcement/introduction signing stays in core/main — a static scan pins no key material in preload/renderer paths it doesn't already occupy (E3). Add the Amnesiac Boot Proof simulated test on memory transport: wiped node + ONE block-grade record reaches ≥ k peers across distinct /24s within a bounded slot budget, using fake `/ip4/…` multiaddrs + simulated dial outcomes per discovery-design's simulated-book pattern. Add the discovery-lint CI row: a repo scan (outside test fixtures + this epic's docs) FAILS on hardwired multiaddrs or seed endpoints."
+verify = "Per-rung unit rows incl. poisoned-hint fail-soft (hint from the LAN file without introductions is stored but never dialed); Amnesiac Boot Proof sim green — bounded, event-driven, no wall clock (AD-3), distinct-/24 assertion via the simulated book; lint row passes on the repo and fails on an embedded fixture violation; app + root suites green headless."
+covers = ["R1", "R4", "E2", "E3"]
+after = [1, 4, "7.2"]
+hitl = false
+risk = "medium"
+unknown = "LAN book-file format/location (OS-appropriate, atomic); how the ladder reports what worked (event/read-API surface for the UI's peers view — AD-9); k and the slot budget for the boot proof (test constants)."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Two-device proof of bootstrap-free join (closing, hitl)"
+description = "Closing story, run by the user. Two fresh installs with WIPED config: (a) two machines on one LAN — each must find the other with zero configuration; (b) one LAN pair plus one internet pair (home + another network or hotspot) — the joining node starts ONLY from a single block-grade artifact file and reaches its peers within 30 s of wall time (the SLA is human-observable here; CI holds the slot-budget version). Observe peer counts and block gossip both ways. Record evidence in THIS ticket file (peer ids, timings, environments, what rung of the ladder served each join), update the spec's 'MVP tier boundary' open question with what was observed, and note that this partially supersedes pending 7.3 (which stays open for its own evidence)."
+verify = "Evidence recorded in this file: distinct per-install identities observed (8.1), zero-config LAN join, artifact-only internet join within the bound, hint fail-soft not required to be exercised by hand if CI covers it; deferred-work/spec pointers updated."
+covers = ["R1", "R3"]
+after = [5]
+hitl = true
+risk = "low"
+unknown = "The user's networks (AP isolation may force the artifact path on LAN too — record it, don't fight it); whether macOS firewall prompts differ now that announcements ride established gossip ports only."

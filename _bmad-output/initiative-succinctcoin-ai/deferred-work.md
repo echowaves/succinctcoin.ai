@@ -111,4 +111,8 @@
      seed lands (reversing 6.2(3) is a human-owned call: it touches the
      pinned AD-11 seed decision + its test pins). Evidence: consensus/
      node-loop.ts step 6 (`raw = [localTicket, ...gossiped]` dedupe) vs the
-     constant seed in app/main/index.ts. -->
+     constant seed in app/main/index.ts.
+     UPDATE 2026-10-17: RATIFIED + SCHEDULED — the user's go-ahead authorized
+     reversing 6.2(3); implemented as ticket 8.1 of epic-bootstrap-free-discovery
+     (per-install random seed persisted in userData). This entry goes RESOLVED
+     when 8.1 builds. -->

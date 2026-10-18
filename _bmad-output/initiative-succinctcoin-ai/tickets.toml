@@ -64,3 +64,12 @@ after = [
   { epic = 5, needs = "the core net adapter's tcp transport + bootstrap + mdns code paths (built headless in epic 5)" },
   { epic = 6, needs = "a bootable desktop app hosting the core node" },
 ]
+
+[[epic]]
+id = 8
+slug = "epic-bootstrap-free-discovery"
+title = "Ticket-seeded bootstrap-free discovery"
+covers = ["CAP-7", "CAP-3"]
+after = [
+  { epic = 7, needs = "the app booting the real transport (tcp+mDNS, optional-bootstrap genesis) that this epic's ladder wires onto" },
+]
