@@ -11,6 +11,33 @@
  * imports `electron`.
  */
 import type { IdentityKeypair } from './identity/identity.js'
+import type { LadderReport } from './discovery/boot-files.js'
+
+/**
+ * CAP-7 (ticket 8.5): the host-supplied discovery wiring, injected like any
+ * other port and read by `start()`/`startMining()` after the genesis (the
+ * chainId) is known. Everything optional: an absent `discovery` leaves the
+ * node exactly as it was pre-8.5.
+ */
+export interface DiscoveryPorts {
+  /** Rung 2: the LAN shared address-book file (hint-grade ingest). The host
+   * resolves the OS-appropriate path (`defaultLanBookPath`) — the core reads
+   * no ambient platform state. Absent ⇒ rung skipped. */
+  hintsFilePath?: string
+  /** Rung 3: the block-grade artifact file (validated + dialed at boot).
+   * Absent ⇒ rung skipped. */
+  artifactFilePath?: string
+  /** The local listen addresses to advertise (8.5: wired from the net
+   * adapter's `listenAddresses()`). Absent/empty ⇒ nothing announced —
+   * gossip/sync still flow (the 8.3 rule). */
+  announceAddresses?: () => string[]
+  /** Rung 1 truth for the report (the host's NetConfig.mdns; default true —
+   * mDNS rides `createLibp2p` today). Report-only: it changes no behaviour. */
+  mdnsEnabled?: boolean
+  /** What-worked report sink (AD-9: counts only — never key material). The
+   * host logs it / surfaces it in the UI. A throwing sink is swallowed. */
+  onLadderReport?: (report: LadderReport) => void
+}
 
 /**
  * The only representable gate-credential shape (AD-4). The `blob` is
@@ -136,4 +163,11 @@ export interface CorePorts {
    * Electron main process, where the keys live — AD-11).
    */
   identity?: IdentityKeypair
+  /**
+   * CAP-7 (8.5): the fallback-ladder boot wiring (LAN hints file, artifact
+   * file, announce addresses, report sink). OPTIONAL — absent keeps the
+   * node byte-for-byte pre-8.5 except the loop's block-announcement rung,
+   * which is genesis-scoped (`chainId`) since 8.3.
+   */
+  discovery?: DiscoveryPorts
 }

@@ -726,3 +726,23 @@ describe('DISCOVERY_OFF_BY_DEFAULT — discovery is opt-in and additive (AC-4)',
     }
   })
 })
+
+describe('LISTEN_ADDRESSES — listenAddresses() reads back bound addrs (8.5)', () => {
+  it('memory adapter reports its /memory listen addr after start', { timeout: CONNECT_TIMEOUT_MS }, async () => {
+    const a = createNetAdapter({
+      transport: 'memory',
+      listenAddress: '/memory/listen-readback',
+      protocolIdentityId: ID_A,
+    })
+    try {
+      await a.start()
+      // The announce-address source for CAP-7 (8.5): the started node's
+      // own listen addresses, readable as strings.
+      const addrs = a.listenAddresses()
+      expect(addrs.length).toBeGreaterThan(0)
+      expect(addrs.some((addr) => addr.includes('/memory/listen-readback'))).toBe(true)
+    } finally {
+      await a.stop()
+    }
+  })
+})

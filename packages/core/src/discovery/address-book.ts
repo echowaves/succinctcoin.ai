@@ -129,6 +129,11 @@ export interface AddressBookOptions {
   maxEntries?: number
   /** Quarantine window in slots (default {@link DEFAULT_QUARANTINE_SLOTS}). */
   quarantineSlots?: bigint
+  /** CAP-7 (8.5): this node's own identity id. When set, records that
+   * describe THIS node are accepted-but-ignored — the book is the dial
+   * surface, and a node never dials itself, so self-observations must not
+   * occupy capacity or appear in {@link AddressBook.dialEligible}. */
+  selfIdentityId?: string | undefined
 }
 
 export interface AddressBook {
@@ -248,6 +253,15 @@ function isEligible(e: MutableEntry, currentSlot: bigint): boolean {
 export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
   const maxEntries = opts.maxEntries ?? MAX_BOOK_ENTRIES
   const quarantineSlots = opts.quarantineSlots ?? DEFAULT_QUARANTINE_SLOTS
+  const selfIdentityId = opts.selfIdentityId
+  // Safe read of one string field from an untrusted record (pre-validation
+  // the shape is unknown; a non-object or non-string field is simply "not
+  // self" — validation still judges it afterwards).
+  const describesSelf = (record: unknown, field: string): boolean =>
+    selfIdentityId !== undefined &&
+    typeof record === 'object' &&
+    record !== null &&
+    (record as Record<string, unknown>)[field] === selfIdentityId
 
   const entriesById = new Map<string, MutableEntry>()
   /** blockHashHex -> identity ids whose CURRENT provenance is that block. */
@@ -328,6 +342,9 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       if (ctx.blockRef !== undefined && !HEX_ID_64.test(ctx.blockRef.blockHashHex)) {
         throw new Error('address-book: blockRef.blockHashHex is not 32-byte hex')
       }
+      // Self-exclusion (8.5): a node's own announcements are valid observa-
+      // tions but never dial targets — accepted-and-ignored, like a stale one.
+      if (describesSelf(record, 'identityId')) return { ok: true }
 
       const verdict = validatePeerAnnouncement(record, {
         currentSlot,
@@ -403,6 +420,9 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       ctx: { currentSlot: number | bigint; expectedChainId: string },
     ): BookIntroResult {
       const currentSlot = coerce(ctx.currentSlot)
+      // Self-exclusion, same rule as announcements: an introduction whose
+      // SUBJECT is this node never enters the book (nor the pending map).
+      if (describesSelf(record, 'subjectIdentityId')) return { ok: true }
       const verdict = validateIntroduction(record, {
         currentSlot,
         expectedChainId: ctx.expectedChainId,

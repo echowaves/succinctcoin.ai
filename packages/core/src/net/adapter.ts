@@ -207,6 +207,15 @@ export interface NetAdapter extends NetPort {
   dial(address: string): Promise<void>
   /** The libp2p peer ID string of this node (transport identity — D1). */
   peerId(): string
+  /**
+   * This node's LISTEN addresses as multiaddr strings (8.5) — what an
+   * announcement should carry so peers can dial back. With
+   * `listenAddress: .../tcp/0` these are the ACTUAL bound addresses (the
+   * ephemeral port resolved); the memory transport reports its own
+   * `/memory/<name>` id. Requires a started node (throws pre-`start()` /
+   * post-`stop()` like every other node method). NOT on the `NetPort`.
+   */
+  listenAddresses(): string[]
   /** Publish a `PeerInfoEnvelope` on `TOPICS.peers`. NOT on the `NetPort` —
    *  peer info is the gossip/discovery surface (5.3 drives it); exposed
    *  here so the peers class round-trips in 5.2. */
@@ -701,6 +710,11 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
     },
     peerId() {
       return requireNode().peerId.toString()
+    },
+    listenAddresses() {
+      // 8.5 — the announce-address source for CAP-7 announcements: the
+      // node's REAL bound listen addresses (ephemeral `tcp/0` resolved).
+      return requireNode().getMultiaddrs().map((ma) => ma.toString())
     },
     // 5.4 — chain sync (D7/D8 — NOT on the 1.2 `NetPort`).
     setSyncSource(source: SyncSource | null) {

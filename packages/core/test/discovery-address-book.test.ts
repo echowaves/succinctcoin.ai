@@ -25,6 +25,8 @@
  *   CAP_EVICT              size cap evicts the (class, slotEnd)-worst entry.
  *   ORDER_DETERMINISTIC    dialEligible is sorted by identityId hex.
  *   CONTRACT_THROWS        provenance misuse throws (programming error).
+ *   SELF_EXCLUDE           with selfIdentityId set, records describing this
+ *                          node are accepted-but-ignored (never dial targets).
  *   POISON_NEVER_ENTERS    fast-check junk: nothing unverified reaches the
  *                          book, whatever the sequence (property).
  *   REPLACE_MONOTONIC      fast-check: entry.slotEnd is the max ingested.
@@ -106,6 +108,21 @@ describe('8.4 — address book: classes, introductions, expiry, retraction', () 
     expect(entry?.firstSeenSlot).toBe(5n)
     expect(entry?.sourceClass).toBe('block')
     expect(book.dialEligible(101).length).toBe(0) // expired at slotEnd+1
+  })
+
+  it('SELF_EXCLUDE: records describing this node never enter a self-aware book', () => {
+    const book = createAddressBook({ selfIdentityId: A.identityId })
+    // Own announcement (e.g. anchored in a block this node itself applied):
+    // valid, but accepted-and-ignored — the book is the dial surface.
+    expect(book.ingestAnnouncement(annFor(A), blockCtx(HASH_1))).toEqual({ ok: true })
+    expect(book.ingestIntroduction(introFor(B, A.identityId, 4), { currentSlot: 5, expectedChainId: TEST_CHAIN })).toEqual({ ok: true }) // subject = self → ignored
+    expect(book.ingestAnnouncement(annFor(B), blockCtx(HASH_2))).toEqual({ ok: true })
+    expect(book.size()).toBe(1)
+    expect(book.dialEligible(5).map((t) => t.identityId)).toEqual([B.identityId])
+    // Without selfIdentityId the default behaviour is unchanged (8.4 rows).
+    const plain = createAddressBook()
+    expect(plain.ingestAnnouncement(annFor(A), blockCtx(HASH_1))).toEqual({ ok: true })
+    expect(plain.size()).toBe(1)
   })
 
   it('PROMOTION_TABLE: log needs 1 vouch, dns/hint need 3 DISTINCT signers', () => {

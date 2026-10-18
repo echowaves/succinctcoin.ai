@@ -15,6 +15,7 @@
  * stay a separate module and the read-API projects to/from them (AD-12).
  * Types only — `createCore` lives in the package entry.
  */
+import type { AddressBook } from '../discovery/address-book.js'
 
 /** A lightweight UI projection of a connected peer. NOT the wire type. */
 export interface ReadPeer {
@@ -131,5 +132,22 @@ export interface CoreReadApi {
   getBalances(): Promise<ReadBalances>
 }
 
-/** The complete core instance: events + commands + read-API. */
-export interface CoreInstance extends CoreEventsEmitter, CoreCommands, CoreReadApi {}
+/**
+ * CAP-7 (8.5): the core-owned address book, present once `start()` has run
+ * with a genesis that carries a `chainId` (the same scope 8.3/8.4 pin).
+ * Fed by the loop's discovery seams: block-grade via the post-commit
+ * `onAnnouncements` handoff (real `blockRef`s), hint-grade via the gossiped
+ * record callbacks, LAN-file hints via the boot ladder — verify-before-
+ * connect stays structural (every ingest path validates). Hosts read it
+ * for dial decisions; NOTHING here crosses IPC (public data only, AD-9).
+ */
+export interface CoreDiscoveryAccess {
+  readonly addressBook?: AddressBook | undefined
+}
+
+/** The complete core instance: events + commands + read-API (+ 8.5 book). */
+export interface CoreInstance
+  extends CoreEventsEmitter,
+    CoreCommands,
+    CoreReadApi,
+    CoreDiscoveryAccess {}

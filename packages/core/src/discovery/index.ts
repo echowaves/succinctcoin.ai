@@ -46,6 +46,22 @@ export {
   MAX_BOOK_ENTRIES,
   MAX_VOUCHES_PER_SUBJECT,
 } from './address-book.js'
+
+export {
+  defaultArtifactPath,
+  defaultLanBookPath,
+  MAX_ARTIFACT_RECORDS,
+  readAnnouncementFile,
+  runBootLadder,
+  writeAnnouncementFile,
+  writeAnnouncementsFromMessages,
+} from './boot-files.js'
+export type {
+  AnnouncementFileRead,
+  BootLadderOptions,
+  LadderReport,
+  LadderRungReport,
+} from './boot-files.js'
 export type {
   AddressBook,
   AddressBookEntry,

@@ -23,6 +23,8 @@ import { fileURLToPath } from 'node:url'
 
 import { loadGenesis } from './config/index.js'
 import { MINT_ID, createNodeLoop, mineAndApply } from './consensus/index.js'
+import { createAddressBook, runBootLadder } from './discovery/index.js'
+import type { AddressBook } from './discovery/index.js'
 import { Block } from './proto/index.js'
 import { fromDisplay, fromJson, toJson, toDisplay, totalSupply } from './ledger/index.js'
 
@@ -116,6 +118,12 @@ export function createCore(ports: CorePorts): CoreInstance {
   // accepted-set size from the loop's tracked window (`1` when only the
   // winner ticket is known — a documented projection).
   let lastWindow: { slot: number; ticketCount: number } | null = null
+  // CAP-7 (8.5): the core-owned address book, created in `start()` once the
+  // genesis (chainId) is known and fed by EVERY ingest path — block-grade
+  // from the loop's post-commit handoff (real blockRefs), hint-grade from
+  // gossiped records/introductions, LAN-file hints from the boot ladder.
+  // Verify-before-connect stays structural: each path validates internally.
+  let addressBook: AddressBook | null = null
 
   return {
     on<K extends keyof CoreEvents>(event: K, listener: (payload: CoreEvents[K]) => void) {
@@ -157,6 +165,45 @@ export function createCore(ports: CorePorts): CoreInstance {
         // CAP-7 (8.3): the announcement scope — derived default in 8.2.
         chainId: cfg.chainId,
       }
+      // Self-exclusion (8.5): the node's own announcements/introductions are
+      // valid observations but never dial targets — the book ignores them.
+      addressBook = createAddressBook({ selfIdentityId: ports.identity?.identityId })
+      // CAP-7 (8.5): the fallback-ladder boot — rungs 2 + 3 (LAN hints file,
+      // artifact file) over the just-created book. FIRE-AND-FORGET: dial
+      // timeouts must never stall boot (fail-soft, R4); the report lands at
+      // the host sink when the run finishes. Rungs 1 + 4 are reported from
+      // the config truths (mDNS flag / chainId wiring).
+      if (ports.discovery !== undefined) {
+        const netExt = ports.net as unknown as {
+          dial?: (address: string) => Promise<void>
+        }
+        const bootSlot = await ports.store.headSlot()
+        void runBootLadder({
+          chainId: genesis.chainId,
+          currentSlot: bootSlot,
+          hintsFilePath: ports.discovery.hintsFilePath,
+          book: addressBook,
+          artifactFilePath: ports.discovery.artifactFilePath,
+          selfIdentityId: ports.identity?.identityId,
+          mdnsEnabled: ports.discovery.mdnsEnabled ?? true,
+          // Rung 4 truth: chain-grade discovery IS wired (chainId below + the
+          // onAnnouncements handoff). Rung 1 truth comes from the host port.
+          blocksEnabled: true,
+          dial:
+            netExt.dial === undefined
+              ? undefined
+              : async (address) => {
+                  try {
+                    await netExt.dial!(address)
+                    return true
+                  } catch {
+                    return false
+                  }
+                },
+        })
+          .then((report) => ports.discovery?.onLadderReport?.(report))
+          .catch(() => undefined) // the ladder never unwinds boot (R4)
+      }
       this.emit('CoreStarted', { slot: ports.clock.slotIndex() })
     },
     async stop() {
@@ -189,6 +236,9 @@ export function createCore(ports: CorePorts): CoreInstance {
         ;(err as { code?: string }).code = 'SC-CORE-1'
         throw err
       }
+      // Narrowed ONCE for the discovery closures below (the mutable
+      // `genesis` cache does not narrow inside callbacks).
+      const discChainId = genesis.chainId
       loop = createNodeLoop({
         store: ports.store,
         net: ports.net,
@@ -202,11 +252,43 @@ export function createCore(ports: CorePorts): CoreInstance {
           this.emit('BlockApplied', p)
         },
         tickMs: NODE_LOOP_TICK_MS,
-        // CAP-7 (8.3): the discovery scope. `announceAddresses` stays unset
-        // at this layer — the address source (listen addrs / relay assignee)
-        // is an epic-8.5 host concern; gossiped announcements still validate
-        // + relay, and blocks carry whatever the loop's known set holds.
+        // CAP-7 (8.3/8.5): the discovery scope. 8.5 resolves the earlier
+        // "announceAddresses stays unset" note: the host supplies the real
+        // listen addresses via `ports.discovery.announceAddresses` (wired
+        // from the adapter's `listenAddresses()`), and the introduction leg
+        // is ON — verify-before-relay + the 8.4 caps bound its traffic, and
+        // a port without `sendIntroduction` simply publishes nothing.
         chainId: genesis.chainId,
+        announceAddresses: ports.discovery?.announceAddresses,
+        introduce: true,
+        // CAP-7 (8.5): every ingest path feeds the core-owned book —
+        // block-grade with REAL blockRefs (post-commit handoff, 8.3's
+        // emission), hint-grade for gossiped records (the 8.4 seam), and
+        // verified introductions as corroboration vouchs.
+        onAnnouncements: (records, ctx) => {
+          if (addressBook === null) return
+          for (const record of records) {
+            addressBook.ingestAnnouncement(record, {
+              currentSlot: ctx.slot,
+              expectedChainId: discChainId,
+              sourceClass: 'block',
+              blockRef: { blockHashHex: ctx.blockHashHex, slot: ctx.slot },
+            })
+          }
+        },
+        onGossipedAnnouncement: (record, slot) => {
+          addressBook?.ingestAnnouncement(record, {
+            currentSlot: slot,
+            expectedChainId: discChainId,
+            sourceClass: 'hint',
+          })
+        },
+        onGossipedIntroduction: (introduction, slot) => {
+          addressBook?.ingestIntroduction(introduction, {
+            currentSlot: slot,
+            expectedChainId: discChainId,
+          })
+        },
       })
     },
     async getPeers() {
@@ -215,6 +297,11 @@ export function createCore(ports: CorePorts): CoreInstance {
       // limitation, not a defect — D4).
       const ids = await ports.net.peers()
       return ids.map((peerId) => ({ peerId, multiaddrs: [] as string[] }))
+    },
+    get addressBook() {
+      // CAP-7 (8.5): the core-owned book (created in `start()`; undefined
+      // before boot). Public data only — dial decisions belong to the host.
+      return addressBook ?? undefined
     },
     async getBlock(slot) {
       // The block read-model for `slot` (D4): a missing slot is a NORMAL
@@ -283,6 +370,7 @@ export function createCore(ports: CorePorts): CoreInstance {
 // package entry (AD-1/AD-9: one owner, `core/events/`).
 export type {
   CoreCommands,
+  CoreDiscoveryAccess,
   CoreEvents,
   CoreEventsEmitter,
   CoreInstance,
@@ -295,6 +383,7 @@ export type {
 export type {
   ClockPort,
   CorePorts,
+  DiscoveryPorts,
   GateCredential,
   GateVerification,
   GateVerifier,
@@ -614,4 +703,26 @@ export type {
   IntroductionRejectReason,
   IntroductionValidation,
   SignedIntroduction,
+} from './discovery/index.js'
+
+// Bootstrap-free discovery (epic 8, CAP-7 — ticket 8.5): the fallback-ladder
+// boot FILE rungs — the LAN hints file (hint-grade ingest, poisoned-hint
+// inert by construction) and the block-grade artifact file (validated at a
+// caller-supplied slot, dialed directly). Bootstrap I/O boundary by design
+// (genesis-loader precedent): this is the ONE discovery module allowed fs,
+// never purity-scanned; everything downstream stays pure.
+export {
+  defaultArtifactPath,
+  defaultLanBookPath,
+  MAX_ARTIFACT_RECORDS,
+  readAnnouncementFile,
+  runBootLadder,
+  writeAnnouncementFile,
+  writeAnnouncementsFromMessages,
+} from './discovery/index.js'
+export type {
+  AnnouncementFileRead,
+  BootLadderOptions,
+  LadderReport,
+  LadderRungReport,
 } from './discovery/index.js'

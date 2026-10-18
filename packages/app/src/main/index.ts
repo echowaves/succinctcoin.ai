@@ -34,6 +34,7 @@ import {
 
 import { BrowserWindow, app, ipcMain } from 'electron'
 
+import { buildDiscoveryPorts } from './discovery-ladder.js'
 import { createCoreHost } from './core-host.js'
 import { loadOrCreateIdentitySeed } from './identity-seed.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
@@ -84,6 +85,18 @@ async function boot(): Promise<void> {
     store,
     gate,
     identity,
+    // CAP-7 (8.5): the fallback-ladder wiring — OS-appropriate LAN hints
+    // file, per-install artifact file, and the REAL listen addresses read
+    // back from the started adapter (the seam is pure; the electron/env
+    // reads happen HERE). The report logs counts only (AD-9).
+    discovery: buildDiscoveryPorts(
+      {
+        platform: process.platform,
+        env: process.env,
+        userDataDir: app.getPath('userData'),
+      },
+      () => net.listenAddresses(),
+    ),
     // The AD-11 IPC seam: the core's key-free event payloads → the
     // renderer (the preload's `on()` delivers them on the channel in
     // `IPC_EVENTS`).

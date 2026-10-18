@@ -26,6 +26,7 @@ import { createCore } from '@succinctcoin/core'
 import type {
   ClockPort,
   CoreEvents,
+  DiscoveryPorts,
   GateVerifier,
   IdentityKeypair,
   NetPort,
@@ -64,6 +65,12 @@ export interface CoreHostOptions {
    * held here, passed to `createCore`, NEVER surfaced.
    */
   identity?: IdentityKeypair
+  /**
+   * CAP-7 (8.5): the fallback-ladder discovery ports (built by the glue
+   * via `buildDiscoveryPorts`). Passed through untouched — the host has no
+   * opinion about WHERE the ladder reads, only that it may.
+   */
+  discovery?: DiscoveryPorts
 }
 
 /**
@@ -120,6 +127,7 @@ export function createCoreHost(opts: CoreHostOptions): CoreHost {
     gate: opts.gate,
     uiSink,
     identity: opts.identity,
+    discovery: opts.discovery,
   })
 
   return {
