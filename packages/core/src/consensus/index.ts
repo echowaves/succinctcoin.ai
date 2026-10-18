@@ -35,8 +35,10 @@ export type { BlockAppliedPayload, NodeLoopOptions } from './node-loop.js'
 // genesis field is a protocol change inception deferred) + the reserved
 // receive-only burn identity. A protocol version bump to change (AD-7/AD-12).
 export { BURN_ID, FEE_RATE } from './economics.js'
-export { applyBlock } from './apply-block.js'
-export type { ApplyBlockParams, BlockTx } from './apply-block.js'
+// CAP-7 (8.3): the block-announcement budget + reject error (SC-ANNOUNCE-1,
+// all-or-nothing block rejection) + the optional discovery context.
+export { AnnouncementBlockError, MAX_BLOCK_ANNOUNCEMENTS, applyBlock } from './apply-block.js'
+export type { ApplyBlockDiscovery, ApplyBlockParams, BlockTx } from './apply-block.js'
 export { mineAndApply, nextSlotAndParent } from './slot-loop.js'
 export type { OtherTicket } from './slot-loop.js'
 // Draw verification (3.4, R2): the thin seam over the pinned `drawWindow`

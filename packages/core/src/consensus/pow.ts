@@ -62,12 +62,26 @@ function u64be(v: bigint): Uint8Array {
   return buf
 }
 
+/** Encode one `unsigned` int32 value as 4-byte big-endian (count/length prefixes). */
+function u32be(v: number): Uint8Array {
+  if (!Number.isSafeInteger(v) || v < 0 || v > 0xffffffff) {
+    throw new PowError(`SC-POW-1: count field ${v} is outside the u32be range`)
+  }
+  const buf = new Uint8Array(4)
+  new DataView(buf.buffer).setUint32(0, v, false)
+  return buf
+}
+
 /**
  * The AD-12 digest canonical encoding of a `Block` — the exact byte set the
  * block hash (3.2) and the PoW check both hash:
  *
  *   `u64be(slot) ‖ parentHash(32) ‖ utf8(winnerIdentityId) ‖ winnerTicket ‖
- *    u64be(nonce) ‖ u64be(txCount)`
+ *    u64be(nonce) ‖ u64be(txCount) ‖ u32be(annCount) ‖ (u32be(len) ‖ blob)…`
+ *
+ * The announcements part (8.3, CAP-7) is ALWAYS present — an empty list
+ * contributes `u32be(0)` (four zero bytes); that tail changed every block
+ * hash and is the reason genesis `protocolVersion` went 1 → 2.
  *
  * proto field order (AD-12: `protocol.proto` owns field order); integers are
  * big-endian fixed-width; `winnerIdentityId` is the utf8 of its 32-byte hex
@@ -108,6 +122,20 @@ export function canonicalBlockBytes(block: Block): Uint8Array {
   }
   parts.push(u64be(beBytesToBig(nonce)))
   parts.push(u64be(block.txCount))
+
+  // CAP-7 (ticket 8.3): the announcements part — ALWAYS present (empty ⇒
+  // just `u32be(0)`, which changed every block hash and forced the genesis
+  // protocolVersion 1→2 bump). Entries are the proto-encoded
+  // `PeerAnnouncement` blobs VERBATIM (the winnerTicket precedent: raw
+  // bytes in, no decode/re-encode), each length-prefixed so boundaries are
+  // unambiguous. PoW covers them through these bytes — an announcement can
+  // never be swapped after mining.
+  const announcements = block.announcements ?? []
+  parts.push(u32be(announcements.length))
+  for (const a of announcements) {
+    parts.push(u32be(a.length))
+    parts.push(a)
+  }
 
   const out = new Uint8Array(
     parts.reduce((n, p) => n + p.length, 0),

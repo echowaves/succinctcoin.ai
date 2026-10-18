@@ -55,6 +55,13 @@ export interface BlockTemplate {
   winnerIdentityId: string
   winnerTicket: Uint8Array<ArrayBuffer>
   txCount: bigint
+  /**
+   * CAP-7 (8.3): proto-encoded `PeerAnnouncement` blobs to anchor in the
+   * block. Part of every attempt's canonical bytes ⇒ covered by PoW; the
+   * default `[]` keeps every pre-8.3 caller byte-identical modulo the
+   * pinned empty tail.
+   */
+  announcements?: Uint8Array[]
 }
 
 /** One plain-integer counter in the `nonce` field's u64be (AD-12 digest) form. */
@@ -99,6 +106,9 @@ export function mineBlock(template: BlockTemplate): Block {
       // field (AD-6 — a hash cannot include itself); it is set below.
       hash: new Uint8Array(32),
       txCount: template.txCount,
+      // The TS 5.9 typed-array generic noise again (see `hash` below): the
+      // blobs are plain byte arrays; the cast asserts the ArrayBuffer form.
+      announcements: (template.announcements ?? []) as Uint8Array<ArrayBuffer>[],
     }
     if (powCheck(block)) {
       // `blockDigest` declares a bare `Uint8Array` (i.e.

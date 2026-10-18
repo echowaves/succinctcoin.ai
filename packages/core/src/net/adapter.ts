@@ -110,6 +110,7 @@ import {
   Ticket,
   Tx,
   PeerInfo,
+  AnnouncementEnvelope,
   BlockEnvelope,
   TicketEnvelope,
   TxEnvelope,
@@ -117,6 +118,7 @@ import {
   SyncRequest,
   SyncBlock,
 } from '../proto/index.js'
+import type { PeerAnnouncement } from '../proto/index.js'
 import { TOPICS } from './topics.js'
 import type { TopicClass } from './topics.js'
 import { SYNC_PROTOCOL, makeSyncHandler, syncFrom } from './sync.js'
@@ -207,9 +209,17 @@ export interface NetAdapter extends NetPort {
    *  here so the peers class round-trips in 5.2. */
   sendPeerInfo(peerInfo: unknown): Promise<void>
   /**
-   * Decoded envelopes received on the four class topics (5.2 D5), keyed by
-   * topic class. Test observability for now; 5.5 routes the receive path
-   * into the core (acceptance path / accepted-set construction).
+   * Publish an `AnnouncementEnvelope` on `TOPICS.announcements` (CAP-7,
+   * ticket 8.3). NOT on the `NetPort` — same discovery surface as
+   * `sendPeerInfo`; the node loop only publishes announcements it has
+   * VALIDATED (verify-before-relay is the loop's rule).
+   */
+  sendAnnouncement(announcement: PeerAnnouncement): Promise<void>
+  /**
+   * Decoded envelopes received on the class topics (5.2 D5; five classes
+   * since 8.3), keyed by topic class. Test observability for now; 5.5
+   * routes the receive path into the core (acceptance path / accepted-set
+   * construction).
    */
   readonly received: ReadonlyMap<TopicClass, ReceivedEnvelope[]>
 
@@ -474,6 +484,13 @@ function decodeReceived(
         env: { sourcePeerId: env.sourcePeerId, payload: env.peerInfo },
       }
     }
+    case TOPICS.announcements: {
+      const env = AnnouncementEnvelope.decode(data)
+      return {
+        class: 'announcements',
+        env: { sourcePeerId: env.sourcePeerId, payload: env.announcement },
+      }
+    }
     default:
       return null
   }
@@ -582,12 +599,13 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       if (node !== null) return
       node = await buildNode(config, received, getSyncSource)
       await node.start()
-      // 5.2 D4 — subscribe to ALL FOUR class topics (the 5.1 scratch
-      // topic is gone).
+      // 5.2 D4 — subscribe to ALL class topics (the 5.1 scratch topic is
+      // gone; five since 8.3's announcements class).
       await node.services.gossip.subscribe(TOPICS.blocks)
       await node.services.gossip.subscribe(TOPICS.tickets)
       await node.services.gossip.subscribe(TOPICS.tx)
       await node.services.gossip.subscribe(TOPICS.peers)
+      await node.services.gossip.subscribe(TOPICS.announcements)
     },
     async stop() {
       // Idempotent (5.1 test row 1: stop() is called twice, must not throw).
@@ -621,6 +639,14 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       return publish(
         TOPICS.peers,
         PeerInfoEnvelope.encode({ peerInfo: peerInfo as PeerInfo, sourcePeerId: config.protocolIdentityId }),
+      )
+    },
+    sendAnnouncement(announcement: PeerAnnouncement) {
+      // NOT on the `NetPort` — CAP-7 discovery surface (8.3). The loop
+      // publishes ONLY validated announcements (verify-before-relay).
+      return publish(
+        TOPICS.announcements,
+        AnnouncementEnvelope.encode({ announcement, sourcePeerId: config.protocolIdentityId }),
       )
     },
     async peers() {

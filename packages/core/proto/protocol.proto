@@ -39,6 +39,15 @@ message Block {
   bytes hash = 6;
   // Number of transactions in the block.
   int64 txCount = 7;
+  // CAP-7 (ticket 8.3): proto-encoded `PeerAnnouncement` blobs anchored
+  // IN THIS BLOCK — on-chain presence, the block-grade trust root of the
+  // discovery ladder. Raw encoded bytes verbatim in the canonical digest
+  // (the `winnerTicket` precedent: no re-encode canonicity hazard; the
+  // receiving side DECODES + validates each via the core announcement
+  // validator at THIS block's slot). Max 8 entries (budget cap).
+  // Adding this field changed every block hash => protocol change
+  // (genesis protocolVersion 1 -> 2, AD-12).
+  repeated bytes announcements = 8;
 }
 
 // A per-window proof-of-attestation (AD-4). The signature (epic 4 verifies
@@ -130,6 +139,17 @@ message TxEnvelope {
 message PeerInfoEnvelope {
   // The published peer info (AD-8 gossip surface).
   PeerInfo peerInfo = 1;
+  // 32-byte hex protocol identity id of the publishing node (4.2).
+  string sourcePeerId = 2;
+}
+
+// Envelope for the announcements topic (CAP-7, ticket 8.3 —
+// `/succinctcoin/announcements/1`): a gossiped signed announcement + its
+// publisher. Verify-before-relay is the NODE LOOP's rule (validate before
+// republish); every consumer re-validates regardless.
+message AnnouncementEnvelope {
+  // The gossiped announcement (signed, AD-12 digest of 8.2).
+  PeerAnnouncement announcement = 1;
   // 32-byte hex protocol identity id of the publishing node (4.2).
   string sourcePeerId = 2;
 }

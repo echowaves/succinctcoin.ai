@@ -100,6 +100,7 @@ const FIX_BLOCK: Block = {
   nonce: new Uint8Array(32).fill(0x02),
   hash: new Uint8Array(32).fill(0x99),
   txCount: 3n,
+  announcements: [],
 }
 
 const FIX_TICKET: Ticket = {

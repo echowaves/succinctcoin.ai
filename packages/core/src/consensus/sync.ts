@@ -52,6 +52,7 @@ import type { BalanceMap } from '../ledger/index.js'
 import { fromDisplay, fromJson } from '../ledger/index.js'
 import { MINT_ID } from './miner.js'
 import { applyBlock } from './apply-block.js'
+import type { ApplyBlockDiscovery } from './apply-block.js'
 import { deriveWindowChallenge } from './draw.js'
 import { acceptBlockWinner } from './accept-winner.js'
 
@@ -112,6 +113,16 @@ export interface SyncChainParams {
   rewardDisplay: string
   /** The max supply (display units, AD-5) — seeds an empty store's treasury. */
   maxSupplyDisplay: string
+  /**
+   * CAP-7 (8.3): the discovery scope forwarded verbatim to every
+   * `applyBlock`. REQUIRED in practice on any chain whose loops run with a
+   * `chainId` (their blocks anchor announcements, and applyBlock rejects a
+   * non-empty field 8 without scope — a syncer missing it would stall at
+   * the first announcement-carrying block). Absent ⇒ pre-8.3 behavior:
+   * announcement-free blocks apply unchanged, announcement-bearing ones
+   * reject `SC-ANNOUNCE-1`.
+   */
+  discovery?: ApplyBlockDiscovery
 }
 
 /** `syncChain`'s outcome: how many blocks were applied + the new head slot. */
@@ -198,6 +209,9 @@ export async function syncChain(params: SyncChainParams): Promise<SyncChainResul
       balances,
       rewardBaseUnits,
       mintId: MINT_ID,
+      // CAP-7 (8.3): the chain's discovery scope (when the caller has one)
+      // — announcement-carrying blocks need it to apply at all.
+      discovery: params.discovery,
     })
     applied++
   }

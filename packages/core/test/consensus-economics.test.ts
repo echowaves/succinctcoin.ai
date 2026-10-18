@@ -131,6 +131,7 @@ function makeBlock(slot: bigint, parentHash: Uint8Array<ArrayBuffer>, winner: st
     nonce: new Uint8Array(8),
     hash: new Uint8Array(32),
     txCount: 0n,
+    announcements: [],
   }
 }
 

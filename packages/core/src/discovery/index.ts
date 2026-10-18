@@ -5,6 +5,7 @@
  * fallback-ladder boot — all consume THIS module's pinned bytes.
  */
 export {
+  MAX_MULTIADDRS,
   PEER_ANNOUNCEMENT_DOMAIN,
   peerAnnouncementDigest,
   signPeerAnnouncement,

@@ -16,6 +16,7 @@ export namespace succinctcoin {
     nonce: Uint8Array<ArrayBuffer>
     hash: Uint8Array<ArrayBuffer>
     txCount: bigint
+    announcements: Uint8Array<ArrayBuffer>[]
   }
 
   export interface BlockInput {
@@ -26,6 +27,7 @@ export namespace succinctcoin {
     nonce?: Uint8Array
     hash?: Uint8Array
     txCount?: bigint
+    announcements?: Uint8Array[]
   }
 
   export namespace Block {
@@ -73,10 +75,17 @@ export namespace succinctcoin {
             w.int64(obj.txCount)
           }
 
+          if (obj.announcements != null && obj.announcements.length > 0) {
+            for (const value of obj.announcements) {
+              w.uint32(66)
+              w.bytes(value)
+            }
+          }
+
           if (opts.lengthDelimited !== false) {
             w.ldelim()
           }
-        }, (r, length) => {
+        }, (r, length, opts = {}) => {
           const obj: any = {
             slot: 0n,
             parentHash: uint8ArrayAlloc(0),
@@ -84,7 +93,8 @@ export namespace succinctcoin {
             winnerTicket: uint8ArrayAlloc(0),
             nonce: uint8ArrayAlloc(0),
             hash: uint8ArrayAlloc(0),
-            txCount: 0n
+            txCount: 0n,
+            announcements: []
           }
 
           const end = length == null ? r.len : r.pos + length
@@ -121,6 +131,14 @@ export namespace succinctcoin {
                 obj.txCount = r.int64()
                 break
               }
+              case 8: {
+                if (opts.limits?.announcements != null && obj.announcements.length === opts.limits.announcements) {
+                  throw new MaxLengthError('Decode error - repeated field "announcements" had too many elements')
+                }
+
+                obj.announcements.push(r.bytes())
+                break
+              }
               default: {
                 r.skipType(tag & 7)
                 break
@@ -129,7 +147,11 @@ export namespace succinctcoin {
           }
 
           return obj
-        }, function * (r, length, prefix) {
+        }, function * (r, length, prefix, opts = {}) {
+          const obj = {
+            announcements: 0
+          }
+
           const end = length == null ? r.len : r.pos + length
 
           if (prefix !== '.') {
@@ -193,6 +215,21 @@ export namespace succinctcoin {
                 }
                 break
               }
+              case 8: {
+                if (opts.limits?.announcements != null && obj.announcements === opts.limits.announcements) {
+                  throw new MaxLengthError('Streaming decode error - repeated field "announcements" had too many elements')
+                }
+
+                yield {
+                  field: `${prefix}announcements[]`,
+                  index: obj.announcements,
+                  value: r.bytes()
+                }
+
+                obj.announcements++
+
+                break
+              }
               default: {
                 r.skipType(tag & 7)
                 break
@@ -248,6 +285,12 @@ export namespace succinctcoin {
       value: bigint
     }
 
+    export interface BlockAnnouncementsFieldEvent {
+      field: '.announcements[]'
+      index: number
+      value: Uint8Array<ArrayBuffer>
+    }
+
     export function encode (obj: BlockInput): Uint8Array<ArrayBuffer> {
       return encodeMessage(obj, Block.codec())
     }
@@ -256,7 +299,7 @@ export namespace succinctcoin {
       return decodeMessage(buf, Block.codec(), opts)
     }
 
-    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<Block>): Generator<BlockSlotFieldEvent | BlockParentHashFieldEvent | BlockWinnerIdentityIdFieldEvent | BlockWinnerTicketFieldEvent | BlockNonceFieldEvent | BlockHashFieldEvent | BlockTxCountFieldEvent> {
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<Block>): Generator<BlockSlotFieldEvent | BlockParentHashFieldEvent | BlockWinnerIdentityIdFieldEvent | BlockWinnerTicketFieldEvent | BlockNonceFieldEvent | BlockHashFieldEvent | BlockTxCountFieldEvent | BlockAnnouncementsFieldEvent> {
       return streamMessage(buf, Block.codec(), opts)
     }
   }
@@ -1027,6 +1070,12 @@ export namespace succinctcoin {
       value: bigint
     }
 
+    export interface BlockEnvelopeBlockAnnouncementsFieldEvent {
+      field: '.block.announcements[]'
+      index: number
+      value: Uint8Array<ArrayBuffer>
+    }
+
     export interface BlockEnvelopeSourcePeerIdFieldEvent {
       field: '.sourcePeerId'
       value: string
@@ -1040,7 +1089,7 @@ export namespace succinctcoin {
       return decodeMessage(buf, BlockEnvelope.codec(), opts)
     }
 
-    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<BlockEnvelope>): Generator<BlockEnvelopeBlockMessageStart | BlockEnvelopeBlockMessageEnd | BlockEnvelopeBlockSlotFieldEvent | BlockEnvelopeBlockParentHashFieldEvent | BlockEnvelopeBlockWinnerIdentityIdFieldEvent | BlockEnvelopeBlockWinnerTicketFieldEvent | BlockEnvelopeBlockNonceFieldEvent | BlockEnvelopeBlockHashFieldEvent | BlockEnvelopeBlockTxCountFieldEvent | BlockEnvelopeSourcePeerIdFieldEvent> {
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<BlockEnvelope>): Generator<BlockEnvelopeBlockMessageStart | BlockEnvelopeBlockMessageEnd | BlockEnvelopeBlockSlotFieldEvent | BlockEnvelopeBlockParentHashFieldEvent | BlockEnvelopeBlockWinnerIdentityIdFieldEvent | BlockEnvelopeBlockWinnerTicketFieldEvent | BlockEnvelopeBlockNonceFieldEvent | BlockEnvelopeBlockHashFieldEvent | BlockEnvelopeBlockTxCountFieldEvent | BlockEnvelopeBlockAnnouncementsFieldEvent | BlockEnvelopeSourcePeerIdFieldEvent> {
       return streamMessage(buf, BlockEnvelope.codec(), opts)
     }
   }
@@ -1533,6 +1582,181 @@ export namespace succinctcoin {
     }
   }
 
+  export interface AnnouncementEnvelope {
+    announcement?: succinctcoin.PeerAnnouncement
+    sourcePeerId: string
+  }
+
+  export interface AnnouncementEnvelopeInput {
+    announcement?: succinctcoin.PeerAnnouncementInput
+    sourcePeerId?: string
+  }
+
+  export namespace AnnouncementEnvelope {
+    let _codec: Codec<AnnouncementEnvelope, AnnouncementEnvelopeInput>
+
+    export const codec = (): Codec<AnnouncementEnvelope, AnnouncementEnvelopeInput> => {
+      if (_codec == null) {
+        _codec = message<AnnouncementEnvelope, AnnouncementEnvelopeInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.announcement != null) {
+            w.uint32(10)
+            succinctcoin.PeerAnnouncement.codec().encode(obj.announcement, w)
+          }
+
+          if ((obj.sourcePeerId != null && obj.sourcePeerId !== '')) {
+            w.uint32(18)
+            w.string(obj.sourcePeerId)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            sourcePeerId: ''
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.announcement = succinctcoin.PeerAnnouncement.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.announcement
+                })
+                break
+              }
+              case 2: {
+                obj.sourcePeerId = r.string()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.AnnouncementEnvelope'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.PeerAnnouncement.codec().stream(r, r.uint32(), `${prefix}announcement.`, {
+                  limits: opts.limits?.announcement
+                })
+
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}sourcePeerId`,
+                  value: r.string()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.AnnouncementEnvelope'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementMessageStart {
+      field: '.announcement'
+      type: 'start'
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementMessageEnd {
+      field: '.announcement'
+      type: 'end'
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementIdentityIdFieldEvent {
+      field: '.announcement.identityId'
+      value: string
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementMultiaddrsFieldEvent {
+      field: '.announcement.multiaddrs[]'
+      index: number
+      value: string
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementObservedExternalAddrFieldEvent {
+      field: '.announcement.observedExternalAddr'
+      value: string
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementSlotStartFieldEvent {
+      field: '.announcement.slotStart'
+      value: bigint
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementSlotEndFieldEvent {
+      field: '.announcement.slotEnd'
+      value: bigint
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementChainIdFieldEvent {
+      field: '.announcement.chainId'
+      value: string
+    }
+
+    export interface AnnouncementEnvelopeAnnouncementSignatureFieldEvent {
+      field: '.announcement.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface AnnouncementEnvelopeSourcePeerIdFieldEvent {
+      field: '.sourcePeerId'
+      value: string
+    }
+
+    export function encode (obj: AnnouncementEnvelopeInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, AnnouncementEnvelope.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<AnnouncementEnvelope>): AnnouncementEnvelope {
+      return decodeMessage(buf, AnnouncementEnvelope.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<AnnouncementEnvelope>): Generator<AnnouncementEnvelopeAnnouncementMessageStart | AnnouncementEnvelopeAnnouncementMessageEnd | AnnouncementEnvelopeAnnouncementIdentityIdFieldEvent | AnnouncementEnvelopeAnnouncementMultiaddrsFieldEvent | AnnouncementEnvelopeAnnouncementObservedExternalAddrFieldEvent | AnnouncementEnvelopeAnnouncementSlotStartFieldEvent | AnnouncementEnvelopeAnnouncementSlotEndFieldEvent | AnnouncementEnvelopeAnnouncementChainIdFieldEvent | AnnouncementEnvelopeAnnouncementSignatureFieldEvent | AnnouncementEnvelopeSourcePeerIdFieldEvent> {
+      return streamMessage(buf, AnnouncementEnvelope.codec(), opts)
+    }
+  }
+
   export interface SyncRequest {
     fromSlot: bigint
   }
@@ -1870,6 +2094,12 @@ export namespace succinctcoin {
       value: bigint
     }
 
+    export interface SyncBlockBlockAnnouncementsFieldEvent {
+      field: '.block.announcements[]'
+      index: number
+      value: Uint8Array<ArrayBuffer>
+    }
+
     export interface SyncBlockAcceptedTicketsIdentityIdFieldEvent {
       field: '.acceptedTickets[].identityId'
       value: string
@@ -1928,7 +2158,7 @@ export namespace succinctcoin {
       return decodeMessage(buf, SyncBlock.codec(), opts)
     }
 
-    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<SyncBlock>): Generator<SyncBlockBlockMessageStart | SyncBlockBlockMessageEnd | SyncBlockBlockSlotFieldEvent | SyncBlockBlockParentHashFieldEvent | SyncBlockBlockWinnerIdentityIdFieldEvent | SyncBlockBlockWinnerTicketFieldEvent | SyncBlockBlockNonceFieldEvent | SyncBlockBlockHashFieldEvent | SyncBlockBlockTxCountFieldEvent | SyncBlockAcceptedTicketsIdentityIdFieldEvent | SyncBlockAcceptedTicketsWindowIndexFieldEvent | SyncBlockAcceptedTicketsChallengeFieldEvent | SyncBlockAcceptedTicketsNonceCommitmentFieldEvent | SyncBlockAcceptedTicketsSignatureFieldEvent | SyncBlockAcceptedTicketsMessageStartEvent | SyncBlockAcceptedTicketsMessageEndEvent | SyncBlockWeightsFieldEvent> {
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<SyncBlock>): Generator<SyncBlockBlockMessageStart | SyncBlockBlockMessageEnd | SyncBlockBlockSlotFieldEvent | SyncBlockBlockParentHashFieldEvent | SyncBlockBlockWinnerIdentityIdFieldEvent | SyncBlockBlockWinnerTicketFieldEvent | SyncBlockBlockNonceFieldEvent | SyncBlockBlockHashFieldEvent | SyncBlockBlockTxCountFieldEvent | SyncBlockBlockAnnouncementsFieldEvent | SyncBlockAcceptedTicketsIdentityIdFieldEvent | SyncBlockAcceptedTicketsWindowIndexFieldEvent | SyncBlockAcceptedTicketsChallengeFieldEvent | SyncBlockAcceptedTicketsNonceCommitmentFieldEvent | SyncBlockAcceptedTicketsSignatureFieldEvent | SyncBlockAcceptedTicketsMessageStartEvent | SyncBlockAcceptedTicketsMessageEndEvent | SyncBlockWeightsFieldEvent> {
       return streamMessage(buf, SyncBlock.codec(), opts)
     }
   }

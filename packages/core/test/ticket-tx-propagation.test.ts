@@ -735,6 +735,7 @@ describe('TOPIC_ISOLATION (AC-3) — each class travels ONLY on its own topic ov
         nonce: new Uint8Array(32).fill(0x02),
         hash: new Uint8Array(32).fill(0x99),
         txCount: 0n,
+        announcements: [],
       }
       const ticket = signedTicket(a.identity.keypair, SLOT, GENESIS_PARENT, WINDOW_CHALLENGE)
       await publishUntilAccepted(() => a.adapter.sendBlock(block))

@@ -38,7 +38,8 @@ import type { Block } from '../src/index.js'
 // the GOLDEN VECTOR's (test/golden-vector.test.ts) deterministic values so the
 // digest pin and the wire pin derive from the same fixed block. The ticket is
 // built from its proto PARTS (not a long hex literal) so the canonical size
-// stays exactly 322B — a hand-typed ticket hex is easy to get wrong.
+// stays exactly 326B (8.3: + the always-present u32be announcements count)
+// — a hand-typed ticket hex is easy to get wrong.
 const IDENTITY_ID =
   '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
 // Golden Ticket field values: identityId (32B hex), windowIndex=7,
@@ -65,23 +66,24 @@ const PARENT_HEX =
 // form in the `nonce` field. 7 = 0x7 → 8-byte u64be 0000000000000007.
 const FIXED_NONCE = 7
 
-// Pinned digest canonical hex for the fixed block (322 bytes). BE fixed-width,
+// Pinned digest canonical hex for the fixed block (326 bytes). BE fixed-width,
 // proto field order, `hash` excluded — the exact byte set powCheck/blockDigest
 // hash. Layout: u64be(42) ‖ parent(32) ‖ utf8(id, 64) ‖ ticket(202) ‖
-//   u64be(7) ‖ u64be(3).
+//   u64be(7) ‖ u64be(3) ‖ u32be(0) — the trailing 4 bytes are the 8.3
+//   announcements count (ALWAYS present; this block carries none).
 const CANONICAL_HEX =
-  '000000000000002a0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20303031313232333334343535363637373838393961616262636364646565666630303131323233333434353536363737383839396161626263636464656566660a403030313132323333343435353636373738383939616162626363646465656666303031313232333334343535363637373838393961616262636364646565666610071a20000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f22205a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a2a407e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e00000000000000070000000000000003'
+  '000000000000002a0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20303031313232333334343535363637373838393961616262636364646565666630303131323233333434353536363737383839396161626263636464656566660a403030313132323333343435353636373738383939616162626363646465656666303031313232333334343535363637373838393961616262636364646565666610071a20000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f22205a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a2a407e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e0000000000000007000000000000000300000000'
 // sha256 of the pinned canonical bytes — the fixed block's digest (lzb=0,
 // so the fixed block is a natural POW_REJECT).
 const FIXED_DIGEST_HEX =
-  'e69bd9a4d161e4d59d533d5892baddd5ebab960a3f732afe0eec53d28775d679'
+  'c59550d6f235ba014874b6290a1b514da2fe15605abcd0cef6b5560b12bae6f4'
 
 // A mined nonce for the SAME block whose digest has ≥ N leading zero bits
 // (lzb=16). Discovered by a bounded mine loop (see TRIVIALLY_REACHABLE);
 // pinned so the POW_PASS assertion is deterministic.
-const PASS_NONCE = 76735
+const PASS_NONCE = 90322
 const PASS_DIGEST_HEX =
-  '0000f2b6053f35d3d1562fe3245d63a0e3e47e3e7c6c9e17939dce6f3bffda57'
+  '0000dda8b831e45eb2c065a227d7badf98c34bc10ecb7deacf6fbf4a7c525acc'
 
 // --- helpers ---
 const hex = (buf: Uint8Array): string => Buffer.from(buf).toString('hex')
@@ -116,6 +118,7 @@ function fixedBlock(nonceCounter: number): Block {
     nonce: beCounter(nonceCounter),
     hash: new Uint8Array(32).fill(0x99),
     txCount: 3n,
+    announcements: [],
   }
 }
 
@@ -124,8 +127,9 @@ describe('CONSENSUS POW — canonical encoding + PoW seam (E1, AD-6/12)', () => 
     const block = fixedBlock(FIXED_NONCE)
     const bytes = canonicalBlockBytes(block)
     expect(hex(bytes)).toBe(CANONICAL_HEX)
-    // BE fixed-width layout: 8 + 32 + 64 + 202 + 8 + 8 = 322 bytes.
-    expect(bytes.byteLength).toBe(322)
+    // BE fixed-width layout: 8 + 32 + 64 + 202 + 8 + 8 + 4 = 326 bytes
+    // (the trailing 4 = the 8.3 always-present announcements count).
+    expect(bytes.byteLength).toBe(326)
   })
 
   it('POW_PASS: a block whose digest has ≥ N leading zero bits → powCheck true', () => {
@@ -151,7 +155,8 @@ describe('CONSENSUS POW — canonical encoding + PoW seam (E1, AD-6/12)', () => 
     // Re-encoding the same counter reproduces the pinned canonical bytes.
     const block = fixedBlock(FIXED_NONCE)
     expect(eqBytes(canonicalBlockBytes(block), fromHex(CANONICAL_HEX))).toBe(true)
-    // The u64be(nonce) field sits at offset 8+32+64+202 = 306, length 8.
+    // The u64be(nonce) field sits at offset 8+32+64+202 = 306, length 8
+    // (unchanged by the 8.3 tail — it is appended after txCount).
     const nonceField = canonicalBlockBytes(block).subarray(306, 314)
     expect(hex(nonceField)).toBe('0000000000000007')
     // A different counter changes the canonical bytes (per-attempt input).
@@ -191,6 +196,7 @@ describe('CONSENSUS POW — canonical encoding + PoW seam (E1, AD-6/12)', () => 
         nonce: beCounter(Number(counter)),
         hash: base.hash,
         txCount,
+        announcements: [],
       }
       if (powCheck(b)) {
         found = Number(counter)

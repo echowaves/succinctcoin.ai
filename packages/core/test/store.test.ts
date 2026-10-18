@@ -62,6 +62,7 @@ function goldenBlock(): BlockType {
     nonce: Uint8Array.from(Array.from({ length: 32 }, (_, i) => i)),
     hash: new Uint8Array(32).fill(0x99),
     txCount: 3n,
+    announcements: [],
   }
 }
 

@@ -62,13 +62,16 @@
  */
 import { createHash } from 'node:crypto'
 
-import { Ticket } from '../proto/index.js'
+import { Ticket, PeerAnnouncement } from '../proto/index.js'
 import type { Ticket as ProtoTicket } from '../proto/index.js'
+import type { PeerAnnouncement as PeerAnnouncementMsg } from '../proto/index.js'
 import type { NetPort, StorePort } from '../ports.js'
+import { MAX_MULTIADDRS, signPeerAnnouncement, validatePeerAnnouncement } from '../discovery/index.js'
+import type { SignedPeerAnnouncement } from '../discovery/index.js'
 import type { BalanceMap } from '../ledger/index.js'
 import { fromDisplay, fromJson } from '../ledger/index.js'
 import { TRACER_WINNER_ID, mineBlock } from './miner.js'
-import { applyBlock } from './apply-block.js'
+import { applyBlock, MAX_BLOCK_ANNOUNCEMENTS } from './apply-block.js'
 import { deriveWindowChallenge, drawWindow } from './draw.js'
 import { nextSlotAndParent } from './slot-loop.js'
 import { signedTicket } from './multi-sim.js'
@@ -98,9 +101,15 @@ export interface NodeLoopOptions {
    * The net port. When it carries the adapter's accumulated `received` map
    * (a `NetAdapter`), the window's accepted set includes the gossiped
    * tickets for the slot (D3); a bare `NetPort` (no `received`) → no
-   * gossiped tickets → single-node.
+   * gossiped tickets → single-node. CAP-7 (8.3): `sendAnnouncement` is the
+   * same shape of OPTIONAL adapter extension as `received` — a port without
+   * it simply publishes nothing (validation + relay bookkeeping still run
+   * over whatever arrives).
    */
-  net: NetPort & { readonly received?: ReadonlyMap<TopicClass, ReceivedEnvelope[]> }
+  net: NetPort & {
+    readonly received?: ReadonlyMap<TopicClass, ReceivedEnvelope[]>
+    sendAnnouncement?(announcement: PeerAnnouncementMsg): Promise<void>
+  }
   /**
    * The node's 4.2 PROTOCOL identity (D2). When present, the loop signs its
    * ticket with `signTicket` (a real signed ticket, AD-12); when absent,
@@ -124,6 +133,35 @@ export interface NodeLoopOptions {
   emitBlockApplied: (p: BlockAppliedPayload) => void
   /** The `setTimeout` tick cadence in ms (host/test constant, D1). */
   tickMs: number
+  /**
+   * CAP-7 (8.3): this network's genesis chainId — the scope every
+   * announcement is validated against. ABSENT ⇒ the loop announces nothing,
+   * relays nothing, and includes no announcements in blocks (every pre-8.3
+   * caller is byte-for-byte unchanged).
+   */
+  chainId?: string
+  /**
+   * CAP-7 (8.3): how many slots an own announcement stays valid for
+   * (`slotEnd = slotStart + N`). Default 32 — a few minutes of chain time,
+   * long enough to survive into a block, short enough that stale addresses
+   * expire without cleanup.
+   */
+  announceValiditySlots?: number
+  /**
+   * CAP-7 (8.3): the local listen/relay multiaddrs to advertise. Empty (or
+   * absent) ⇒ nothing to advertise YET (a NATed node pre-relay has no
+   * public address — A6) and the own announcement is skipped this window.
+   */
+  announceAddresses?: () => string[]
+  /**
+   * CAP-7 (8.3): pass-through of `applyBlock`'s post-commit emission — the
+   * validated announcements of each committed block + its origin key
+   * (8.4's address-book handoff).
+   */
+  onAnnouncements?: (
+    records: SignedPeerAnnouncement[],
+    ctx: { blockHashHex: string; slot: bigint },
+  ) => void
 }
 
 /**
@@ -133,6 +171,9 @@ export interface NodeLoopOptions {
  * same `(slot, parentHash)`).
  */
 const TRACER_COMMIT_DOMAIN = new TextEncoder().encode('SC-TRACER-COMMIT/1')
+
+/** Default own-announcement validity window, slots (8.3). */
+const DEFAULT_ANNOUNCE_VALIDITY_SLOTS = 32
 
 /**
  * The tracer ticket (D2 fallback — the 3.2/3.5 single-node default):
@@ -166,6 +207,15 @@ function tracerTicket(slot: bigint, parentHash: Uint8Array, challenge: Uint8Arra
   }
 }
 
+/**
+ * CAP-7 (8.3): the canonical wire blob of an announcement — what goes in
+ * block field 8 VERBATIM (winnerTicket precedent: store-and-forward, no
+ * re-encode hazard) and what the deterministic hex ordering sorts by.
+ */
+function encodeAnnouncementBlob(record: PeerAnnouncementMsg): Uint8Array {
+  return PeerAnnouncement.encode(record)
+}
+
 /** Bytes → lowercase hex (the module-local byte-helper pattern, AD-5). */
 function bytesToHex(buf: Uint8Array): string {
   let out = ''
@@ -192,6 +242,99 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
   // participant WON the draw — its 4.5 uptime-weight input (the count of
   // these in `[slot−L, slot−1]`, via the pure `computeUptimeWeight`).
   const minedSlots = new Set<bigint>()
+
+  // CAP-7 (8.3): the known announcements — ONE entry per identityId (the
+  // newest `slotStart` wins), each carrying the canonical wire blob used
+  // for block inclusion + hex ordering. Entries expire out of the set when
+  // they fail validation at the current slot.
+  // (the field is `wire`, never `blob` — that member name belongs to the
+  // gate credential's single reader, AD-4 scan).
+  const known = new Map<string, { record: PeerAnnouncementMsg; wire: Uint8Array }>()
+
+  /**
+   * CAP-7 (8.3): one announcement pass per window — publish own (fresh,
+   * every window), validate + relay gossiped (once per `(identityId,
+   * slotStart)`: the newest-wins replace below IS the dedup — a record
+   * enters `known` at most once per key, and only entry-entries relay),
+   * then produce the block candidates: fresh entries sorted by blob hex,
+   * capped at the block budget. All validation is at THIS window's chain-
+   * time slot (AD-3); forged/expired/stale records simply never enter
+   // the set, so they can never reach a block.
+   */
+  async function processAnnouncements(slot: bigint): Promise<Uint8Array[]> {
+    if (opts.chainId === undefined) return [] // discovery not configured — pre-8.3 loop
+    const validity = BigInt(opts.announceValiditySlots ?? DEFAULT_ANNOUNCE_VALIDITY_SLOTS)
+
+    // own fresh announcement — replaces our entry, published every window.
+    if (opts.identity !== undefined) {
+      // At most the per-RECORD multiaddr ceiling travels (a longer record
+      // would be invalid everywhere); slicing keeps presence alive where
+      // skipping the announce entirely would kill it silently.
+      const addrs = (opts.announceAddresses?.() ?? []).slice(0, MAX_MULTIADDRS)
+      if (addrs.length >= 1) {
+        const record: PeerAnnouncementMsg = {
+          identityId: opts.identity.identityId,
+          multiaddrs: [...addrs],
+          slotStart: slot,
+          slotEnd: slot + validity,
+          chainId: opts.chainId,
+          signature: new Uint8Array(0),
+        }
+        // `new Uint8Array` copies the 64-byte signature into the
+        // ArrayBuffer-backed form the generated message declares (TS 5.9
+        // generic typed arrays — same bytes).
+        record.signature = new Uint8Array(signPeerAnnouncement(opts.identity, record))
+        known.set(record.identityId, { record, wire: encodeAnnouncementBlob(record) })
+        try {
+          await opts.net.sendAnnouncement?.(record)
+        } catch {
+          /* best-effort gossip — the block is the durable anchor */
+        }
+      }
+    }
+
+    // gossiped announcements: validate at this slot, newest-wins per identity,
+    // relay each NEW entry exactly once (mesh forwarding is untrusted noise —
+    // only loop-validated records relay).
+    const received = opts.net.received
+    if (received !== undefined) {
+      for (const env of received.get('announcements') ?? []) {
+        const rec = env.payload as PeerAnnouncementMsg
+        const verdict = validatePeerAnnouncement(rec, {
+          currentSlot: slot,
+          expectedChainId: opts.chainId,
+        })
+        if (!verdict.ok) continue
+        const prev = known.get(rec.identityId)
+        if (prev !== undefined && BigInt(prev.record.slotStart) >= BigInt(rec.slotStart)) {
+          continue // stale or duplicate — no replace, no relay
+        }
+        known.set(rec.identityId, { record: rec, wire: encodeAnnouncementBlob(rec) })
+        try {
+          await opts.net.sendAnnouncement?.(rec)
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+
+    // block candidates: fresh entries only (expired drop out of the set),
+    // deterministic order by blob hex, capped at the budget.
+    const fresh: { record: PeerAnnouncementMsg; wire: Uint8Array }[] = []
+    for (const [id, entry] of known) {
+      const verdict = validatePeerAnnouncement(entry.record, {
+        currentSlot: slot,
+        expectedChainId: opts.chainId,
+      })
+      if (!verdict.ok) {
+        known.delete(id)
+        continue
+      }
+      fresh.push(entry)
+    }
+    fresh.sort((a, b) => (bytesToHex(a.wire) < bytesToHex(b.wire) ? -1 : 1))
+    return fresh.slice(0, MAX_BLOCK_ANNOUNCEMENTS).map((entry) => entry.wire)
+  }
 
   /** Schedule the next tick (a no-op once stopped). */
   function schedule(): void {
@@ -302,16 +445,23 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
     )
     const winnerProtoTicket = capped.tickets[draw.index]
 
+    // 8½ — CAP-7 (8.3): the announcement pass (own publish, gossiped
+    //      validate + relay-once, block candidates). Runs every window —
+    //      announcing is not gated on winning. Empty without `chainId`.
+    const announcements = await processAnnouncements(slot)
+
     // 9 — mine one block for the draw winner (R3 hot path), with the
     //     winner's proto `Ticket` ENCODED (AD-12 wire form) as
     //     `winnerTicket` — so the block carries a verifiable (signed, when
-    //     an identity is injected) ticket.
+    //     an identity is injected) ticket. CAP-7: the window's announcement
+    //     candidates ride in field 8 (proto blobs, verbatim).
     const block = mineBlock({
       slot,
       parentHash,
       winnerIdentityId: draw.winnerIdentityId,
       winnerTicket: Ticket.encode(winnerProtoTicket),
       txCount: 0n,
+      announcements,
     })
 
     // 10 — apply: credit the reward, commit the block, save the snapshot
@@ -323,6 +473,12 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
       balances,
       rewardBaseUnits: opts.rewardBaseUnits,
       mintId: opts.mintId,
+      // CAP-7 (8.3): the discovery scope — chainId + the post-commit
+      // emission pass-through. Absent chainId ⇒ undefined (pre-8.3 path).
+      discovery:
+        opts.chainId !== undefined
+          ? { expectedChainId: opts.chainId, onAnnouncements: opts.onAnnouncements }
+          : undefined,
     })
 
     // 11 — the local identity's mined-slot history (D1): the slot is

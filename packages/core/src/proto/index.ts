@@ -29,6 +29,7 @@ export type BlockEnvelope = succinctcoin.BlockEnvelope
 export type TicketEnvelope = succinctcoin.TicketEnvelope
 export type TxEnvelope = succinctcoin.TxEnvelope
 export type PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
+export type AnnouncementEnvelope = succinctcoin.AnnouncementEnvelope
 
 // Chain sync field-set types (5.4 — request/response over a dedicated
 // stream, AD-12: `SyncRequest { fromSlot }` + `SyncBlock { block,
@@ -51,6 +52,7 @@ export const BlockEnvelope = succinctcoin.BlockEnvelope
 export const TicketEnvelope = succinctcoin.TicketEnvelope
 export const TxEnvelope = succinctcoin.TxEnvelope
 export const PeerInfoEnvelope = succinctcoin.PeerInfoEnvelope
+export const AnnouncementEnvelope = succinctcoin.AnnouncementEnvelope
 
 // Chain sync codec namespaces (5.4 — AD-12 proto codecs).
 export const SyncRequest = succinctcoin.SyncRequest

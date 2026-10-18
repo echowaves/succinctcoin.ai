@@ -30,7 +30,9 @@ export const TOPICS = {
   tx: '/succinctcoin/tx/1',
   /** Peer info: `PeerInfoEnvelope { peerInfo, sourcePeerId }` (proto, AD-12). */
   peers: '/succinctcoin/peers/1',
+  /** Announcements (CAP-7, ticket 8.3): `AnnouncementEnvelope { announcement, sourcePeerId }`. */
+  announcements: '/succinctcoin/announcements/1',
 } as const
 
-/** The four message classes: `keyof TOPICS` = `'blocks' | 'tickets' | 'tx' | 'peers'`. */
+/** The five message classes: `keyof TOPICS` (blocks/tickets/tx/peers/announcements). */
 export type TopicClass = keyof typeof TOPICS

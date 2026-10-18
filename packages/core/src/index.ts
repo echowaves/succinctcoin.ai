@@ -109,6 +109,7 @@ export function createCore(ports: CorePorts): CoreInstance {
     rewardBaseUnits: bigint
     maxSupplyDisplay: string
     lookbackL: bigint
+    chainId: string
   } | null = null
   // The loop's most recently emitted window (the D6 note): the decoded
   // `Block` proto carries NO ticket count, so the read-API projects the
@@ -153,6 +154,8 @@ export function createCore(ports: CorePorts): CoreInstance {
         rewardBaseUnits: fromDisplay(cfg.emission.blockReward),
         maxSupplyDisplay: cfg.emission.maxSupply,
         lookbackL: BigInt(cfg.uptimeLookbackL),
+        // CAP-7 (8.3): the announcement scope — derived default in 8.2.
+        chainId: cfg.chainId,
       }
       this.emit('CoreStarted', { slot: ports.clock.slotIndex() })
     },
@@ -199,6 +202,11 @@ export function createCore(ports: CorePorts): CoreInstance {
           this.emit('BlockApplied', p)
         },
         tickMs: NODE_LOOP_TICK_MS,
+        // CAP-7 (8.3): the discovery scope. `announceAddresses` stays unset
+        // at this layer — the address source (listen addrs / relay assignee)
+        // is an epic-8.5 host concern; gossiped announcements still validate
+        // + relay, and blocks carry whatever the loop's known set holds.
+        chainId: genesis.chainId,
       })
     },
     async getPeers() {
@@ -353,6 +361,8 @@ export {
   FEE_RATE,
   MINT_ID,
   TRACER_WINNER_ID,
+  AnnouncementBlockError,
+  MAX_BLOCK_ANNOUNCEMENTS,
   applyBlock,
   mineAndApply,
   mineBlock,
@@ -465,9 +475,11 @@ export type {
 // message type + a codec namespace, generated from proto/protocol.proto.
 // `export { Block }` carries BOTH the type (field set) and the value (codec
 // namespace: `Block.encode`/`decode`/`codec`/`stream`) — see src/proto/index.ts.
-// Plus the four gossipsub envelope messages (5.2, AD-8/AD-12): each wraps a
-// payload class + `sourcePeerId` and travels on its own class topic.
+// Plus the gossipsub envelope messages (5.2, AD-8/AD-12; five classes since
+// 8.3's `AnnouncementEnvelope`): each wraps a payload class + `sourcePeerId`
+// and travels on its own class topic.
 export {
+  AnnouncementEnvelope,
   Block,
   BlockEnvelope,
   PeerAnnouncement,

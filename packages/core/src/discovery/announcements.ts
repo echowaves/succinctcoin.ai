@@ -44,7 +44,8 @@ const TEXT_ENCODER = new TextEncoder()
 export const PEER_ANNOUNCEMENT_DOMAIN = 'succinctcoin/PeerAnnouncement/v1\0'
 
 /** Shape limits (block-size budget defense — discovery-design.md). */
-const MAX_MULTIADDRS = 8
+/** Per-record multiaddr ceiling (a record with more is invalid — pinned). */
+export const MAX_MULTIADDRS = 8
 const MAX_MULTIADDR_CHARS = 160
 const MAX_CHAIN_ID_CHARS = 64
 
@@ -248,12 +249,13 @@ export type AnnouncementValidation = { ok: true } | { ok: false; reason: Announc
 /** Context for validation — ALL time/network inputs are caller-supplied (AD-3). */
 export interface AnnouncementContext {
   /**
-   * The validator's current chain-time slot. A safe integer is a CALLER
-   * precondition (node-loop head slots always are) — a non-integer here is
-   * a programming error and throws loudly, unlike record-level junk, which
-   * the validator itself never lets throw.
+   * The validator's current chain-time slot (a node head slot or a block's
+   * own slot — `bigint` is the proto int64 form). A safe integer / bigint
+   * is a CALLER precondition — anything else is a programming error and
+   * throws loudly, unlike record-level junk, which the validator itself
+   * never lets throw.
    */
-  currentSlot: number
+  currentSlot: number | bigint
   /** This network's genesis `chainId` — records from other chains die here. */
   expectedChainId: string
 }

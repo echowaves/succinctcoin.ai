@@ -37,11 +37,53 @@
  * `store.saveState(toJson(newBalances))` (AD-5 decimal-string snapshot,
  * atomic under the store's exclusive lock).
  */
+import { PeerAnnouncement } from '../proto/index.js'
 import type { Block } from '../proto/index.js'
 import type { StorePort } from '../ports.js'
 import type { BalanceMap, Transfer } from '../ledger/index.js'
 import { apply, computeFee, toJson } from '../ledger/index.js'
 import { BURN_ID, FEE_RATE } from './economics.js'
+import { validatePeerAnnouncement } from '../discovery/index.js'
+import type { SignedPeerAnnouncement } from '../discovery/index.js'
+
+/**
+ * CAP-7 (8.3): the hard budget of announcement blobs per block. Over-budget
+ * blocks are REJECTED whole — a deterministic rule every node agrees on,
+ * no partial-drop ordering to negotiate.
+ */
+export const MAX_BLOCK_ANNOUNCEMENTS = 8
+
+/** Block rejected for an announcement reason (`SC-ANNOUNCE-1`). */
+export class AnnouncementBlockError extends Error {
+  readonly code = 'SC-ANNOUNCE-1' as const
+  constructor(message: string) {
+    super(`SC-ANNOUNCE-1: ${message}`)
+    this.name = 'AnnouncementBlockError'
+  }
+}
+
+/**
+ * The CAP-7 discovery context for applying a block (8.3). OPTIONAL:
+ * blocks with NO announcements apply with or without it (every pre-8.3
+ * caller is byte-for-byte unchanged). With announcements present, a context
+ * is REQUIRED — an unscopeable announcement cannot be trusted, so the block
+ * is rejected.
+ *
+ * - `expectedChainId`: this network's genesis chainId (records from other
+ *   chains die here).
+ * - Freshness is judged at `block.slot` (chain time — identical verdict on
+ *   every node whenever it syncs, AD-3).
+ * - `onAnnouncements` fires AFTER commit with the validated records + the
+ *   originating block key (8.4's address-book handoff; a throwing listener
+ *   is a listener bug — it never unwinds the committed block).
+ */
+export interface ApplyBlockDiscovery {
+  expectedChainId: string
+  onAnnouncements?: (
+    records: SignedPeerAnnouncement[],
+    ctx: { blockHashHex: string; slot: bigint },
+  ) => void
+}
 
 /**
  * One tx's in-memory view (3.6): the sender/recipient/amount the ledger
@@ -74,6 +116,8 @@ export interface ApplyBlockParams {
   rewardBaseUnits: bigint
   mintId: string
   txs?: ReadonlyArray<BlockTx>
+  /** CAP-7 (8.3): see `ApplyBlockDiscovery`. */
+  discovery?: ApplyBlockDiscovery
 }
 
 /**
@@ -102,6 +146,43 @@ export async function applyBlock(params: ApplyBlockParams): Promise<BalanceMap> 
   const txs: ReadonlyArray<BlockTx> = params.txs ?? []
   const winner = block.winnerIdentityId
 
+  // 0 — CAP-7 (8.3): validate the block's anchored announcements BEFORE any
+  //     mutation (all-or-nothing: one bad blob rejects the whole block).
+  //     Count cap first (cheapest), then decode, then the full 8.2
+  //     validator at THIS block's slot. No discovery context + non-empty
+  //     announcements ⇒ reject (an unscopeable record cannot be trusted).
+  const blobs = block.announcements ?? []
+  let validated: SignedPeerAnnouncement[] | null = null
+  if (blobs.length > 0) {
+    if (blobs.length > MAX_BLOCK_ANNOUNCEMENTS) {
+      throw new AnnouncementBlockError(
+        `block carries ${blobs.length} announcements; the budget is ${MAX_BLOCK_ANNOUNCEMENTS}`,
+      )
+    }
+    if (params.discovery === undefined) {
+      throw new AnnouncementBlockError(
+        'block carries announcements but no discovery context (chainId scope) was supplied',
+      )
+    }
+    validated = []
+    for (const [i, blob] of blobs.entries()) {
+      let record: SignedPeerAnnouncement
+      try {
+        record = PeerAnnouncement.decode(blob) as SignedPeerAnnouncement
+      } catch {
+        throw new AnnouncementBlockError(`announcement[${i}] is not a decodable PeerAnnouncement`)
+      }
+      const verdict = validatePeerAnnouncement(record, {
+        currentSlot: block.slot,
+        expectedChainId: params.discovery.expectedChainId,
+      })
+      if (!verdict.ok) {
+        throw new AnnouncementBlockError(`announcement[${i}] rejected: ${verdict.reason}`)
+      }
+      validated.push(record)
+    }
+  }
+
   // 1 — the block's full economic effect, through the ledger's single
   //    mutation seam (AD-2), as ONE atomic apply. The reward credit is
   //    first (the winner's income is the fixed block reward — fees burn to
@@ -122,5 +203,28 @@ export async function applyBlock(params: ApplyBlockParams): Promise<BalanceMap> 
   // 3 — save the balance snapshot (AD-5: decimal-string base units).
   await store.saveState(toJson(newBalances))
 
+  // 4 — CAP-7 (8.3): post-commit emission — 8.4's address-book handoff.
+  //     The block is already committed; a throwing listener never unwinds
+  //     it (a listener bug is a listener bug). The records are the CANONICAL
+  //     decode of the anchored blobs: what the chain attested is the blob,
+  //     and every node decodes it identically (deterministic), so the
+  //     address book consumes the fields the anchored bytes attest.
+  if (validated !== null && params.discovery?.onAnnouncements !== undefined) {
+    try {
+      params.discovery.onAnnouncements(validated, {
+        blockHashHex: bytesToHex(block.hash),
+        slot: block.slot,
+      })
+    } catch {
+      /* swallowed on purpose — the commit stands */
+    }
+  }
+
   return newBalances
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = ''
+  for (const byte of bytes) out += byte.toString(16).padStart(2, '0')
+  return out
 }
