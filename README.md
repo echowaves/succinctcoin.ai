@@ -23,7 +23,7 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (279 tests / 43 files)
+corepack pnpm test        # the full workspace test suite (285 tests / 44 files)
 corepack pnpm typecheck   # core typecheck
 ```
 

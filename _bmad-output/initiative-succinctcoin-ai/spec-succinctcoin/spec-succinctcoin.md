@@ -75,7 +75,6 @@ In a multi-node simulation over the in-process transport, slot odds track uptime
 
 ## Open Questions
 
-- Per-install identity seed (prerequisite for CAP-7): while every install derives one shared pinned `IDENTITY_SEED`, ticket-presence cannot distinguish installs and cross-instance tickets dedupe as duplicates — ratification pending (deferred-work 6.2(3); OPEN 2026-10-17).
 - At what node count do bootstrap + mDNS stop sufficing and Kad-DHT become warranted? (Resolve by memory-transport simulation, or adopt DHT day-one for the "always works" story.)
 - Personhood gate: dual gate at launch (biometric + social graph) is the recommended config after the attack pass (a cheap weak gate is the sybil faucet — gates are addable only by protocol upgrade, never auto-valid). Residual: which two gates, and the re-attestation cadence K.
 - τ-erosion: AI-solver throughput trend is unknown (the BPC paper's 97–100%-yet-throughput-bounded result is a snapshot, not a trend line); challenge-family rotation cadence is undecided.

@@ -99,7 +99,7 @@
      the gates prove the package's module graph is self-contained (the
      bundle scan) and the boot inputs are real (the bundled-genesis rows). -->
 
-<!-- OPEN 2026-10-17 (ticket 7.2 review): the pinned `IDENTITY_SEED`
+<!-- RESOLVED 2026-10-17 (ticket 8.1 built; opened 7.2 review): the pinned `IDENTITY_SEED`
      (6.2 — AD-11, per 6.2(3)'s deferral) makes EVERY install derive the
      SAME identity keypair. Harmless while every instance was its own
      memory network; now that ticket 7.2 puts instances on a real LAN it is
@@ -115,4 +115,12 @@
      UPDATE 2026-10-17: RATIFIED + SCHEDULED — the user's go-ahead authorized
      reversing 6.2(3); implemented as ticket 8.1 of epic-bootstrap-free-discovery
      (per-install random seed persisted in userData). This entry goes RESOLVED
-     when 8.1 builds. -->
+     when 8.1 builds.
+     BUILT 2026-10-17 (ticket 8.1): `app/main/identity-seed.ts` — per-install
+     random seed (`crypto.getRandomValues`, startup key generation only; AD-3's
+     no-RNG rule is consensus-scoped) persisted at `<userData>/identity.seed`
+     (lowercase hex, mode 0600, atomic temp+link so concurrent first boots
+     converge on one seed; corrupt file throws rather than re-roll).
+     `index.ts` boot loads it — the constant seed is gone, pinned absent by a
+     scan over every src/main source. Headless rows (injected tmp dirs, no
+     electron spawn): `packages/app/test/identity-seed.test.ts` (6). -->

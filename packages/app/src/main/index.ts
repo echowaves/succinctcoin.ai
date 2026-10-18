@@ -35,16 +35,9 @@ import {
 import { BrowserWindow, app, ipcMain } from 'electron'
 
 import { createCoreHost } from './core-host.js'
+import { loadOrCreateIdentitySeed } from './identity-seed.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
 import { defaultNetConfig } from './net-config.js'
-
-/**
- * The fixed per-install identity seed (6.2 — AD-3: deterministic, no RNG).
- * A pinned 32-byte constant: the same install always derives the same
- * identity (the AD-11 key lives in main). Moving this to a persisted
- * per-install secret is a packaging concern (6.4).
- */
-const IDENTITY_SEED = new Uint8Array(Array.from({ length: 32 }, (_, i) => (0x5c + i) % 256))
 
 /**
  * The BUNDLED `dist/config/genesis.json` — the ONE genesis source (the
@@ -68,8 +61,13 @@ async function boot(): Promise<void> {
   const genesis = await loadGenesis(genesisPath())
 
   // AD-11 — the identity keypair lives in MAIN: created here, passed to
-  // the host, never surfaced.
-  const identity = deriveIdentityKeypair(IDENTITY_SEED)
+  // the host, never surfaced. The seed is the PERSISTED per-install secret
+  // (8.1 — CAP-7 prerequisite): same userData ⇒ same identity across
+  // reboots, distinct installs ⇒ distinct identities (the shared constant
+  // seed this replaced made every install the same peer).
+  const identity = deriveIdentityKeypair(
+    await loadOrCreateIdentitySeed(app.getPath('userData')),
+  )
 
   // The REAL ports. Net: the REAL stack via the pure seam (7.2 R1) — tcp +
   // mDNS + the genesis bootstrap list; the ephemeral listen address lets
