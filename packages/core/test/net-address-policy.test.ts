@@ -72,3 +72,43 @@ describe('9.1 — address policy: global /ip6 only', () => {
     expect(() => assertDialable('/ip6/2001:db8::9/tcp/9')).not.toThrow()
   })
 })
+
+// 9.5 — the probe-only loopback allowance: DEFAULT OFF, and even when set it
+// admits EXACTLY ::1. These two rows are the "must not weaken the shipped
+// policy" pin for the two-device proof.
+describe('9.5 — SUCCINCTCOIN_ALLOW_LOOPBACK (explicit test flag)', () => {
+  const GLOBAL = '/ip6/2001:db8::9/tcp/9'
+  const LOOPBACKS = ['/ip6/::1/tcp/9', '/ip6/0:0:0:0:0:0:0:1/tcp/9', '/ip6/::0:1/tcp/9']
+
+  it('DEFAULT (flag unset): every loopback form throws SC-NET-1', () => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    try {
+      for (const addr of LOOPBACKS) expect(() => assertDialable(addr)).toThrowError(/SC-NET-1/)
+    } finally {
+      if (had !== undefined) process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+  })
+
+  it('FLAG SET: ::1 dials; EVERY other rejection still throws', () => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = '1'
+    try {
+      for (const addr of LOOPBACKS) expect(() => assertDialable(addr)).not.toThrow()
+      expect(() => assertDialable(GLOBAL)).not.toThrow() // globals unaffected
+      // The flag is EXACTLY ::1 — nothing else slips through:
+      for (const addr of [
+        '/ip4/1.2.3.4/tcp/9',
+        '/ip6/::2/tcp/9', // neighbouring loopback-ish zero address
+        '/ip6/fe80::1/tcp/9', // link-local
+        '/ip6/fd00::1/tcp/9', // ULA
+        '/ip6/::ffff:1.2.3.4/tcp/9', // v4-mapped
+        '/ip6/fe80::1/tcp/42', // link-local ending in :1 — near-miss, still rejected
+      ])
+        expect(() => assertDialable(addr)).toThrowError(/SC-NET-1/)
+    } finally {
+      if (had === undefined) delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+      else process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+  })
+})

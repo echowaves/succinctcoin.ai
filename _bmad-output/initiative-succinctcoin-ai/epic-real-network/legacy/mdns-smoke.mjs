@@ -12,7 +12,7 @@
 // PASS = both logs show DISCOVERED + RECEIVED ... from the OTHER label.
 const label = process.argv[2] ?? 'A'
 
-const root = new URL('../../../', import.meta.url) // repo root (file is 3 deep)
+const root = new URL('../../../../', import.meta.url) // repo root (file is 4 deep since the legacy/ move)
 const { defaultNetConfig, LAN_LISTEN_ADDRESS } = await import(
   new URL('packages/app/src/main/net-config.ts', root).href
 )

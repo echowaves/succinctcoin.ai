@@ -124,3 +124,27 @@
      `index.ts` boot loads it — the constant seed is gone, pinned absent by a
      scan over every src/main source. Headless rows (injected tmp dirs, no
      electron spawn): `packages/app/test/identity-seed.test.ts` (6). -->
+
+
+<!-- OPEN 2026-10-19 (ticket 9.5, epic-ipv6-invite-network closing): RELAY-TIER
+     OPEN QUESTION. Since 9.1 the policy is IPv6-only global unicast end to
+     end, which structurally excludes (a) IPv4-only peers and (b) v6 peers
+     whose router firewall drops inbound (the common consumer-NAT64 case —
+     outbound joins work, inbound never arrives). The join story absorbs (b)
+     for the JOINER (an invite rides the reachable peer's outbound side), but
+     a peer nobody can reach inbound still cannot SERVE as an entry point.
+     Undecided: whether/when a community relay tier ships (libp2p circuit
+     relay v2 is already in the dependency graph; dial-manual + assertDialable
+     messages name this parking spot). Revisit when real-network field data
+     (epic-real-network) shows inbound-blocked nodes hurting propagation. -->
+
+<!-- DECISION 2026-10-19 (ticket 9.5): IPv4 IS NOT SUPPORTED — recorded, not
+     an oversight. `isGlobalIp6Multiaddr`/`assertDialable` (SC-NET-1) reject
+     /ip4 at announce, dial, and ingest; the discovery lint test bans /ip4
+     literals in shipped src; wire-golden tests keep /ip4 fixtures only where
+     bytes never pass the validator. Rationale: global v6 removes the
+     double-stack address logic, matches the invite-first join design, and
+     keeps the diversity floor (/64) meaningful. Reversal cost is HIGH by
+     design (policy + validators + lint + epic-9 proofs), which is the point:
+     any future dual-stack support must be an explicit architecture decision
+     with its own relay/privacy analysis, not a policy tweak. -->

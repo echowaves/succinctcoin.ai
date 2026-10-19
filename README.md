@@ -23,11 +23,11 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (444 tests / 61 files)
+corepack pnpm test        # the full workspace test suite (448 tests / 62 files)
 corepack pnpm typecheck   # core typecheck
 ```
 
-The root `test` runs every package's suite: the core's 407-test suite (54 files) plus the app's 37-test suite (7 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
+The root `test` runs every package's suite: the core's 411-test suite (55 files) plus the app's 37-test suite (7 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
 
 ## Run the desktop app
 
@@ -37,20 +37,28 @@ corepack pnpm build       # clean → typecheck → renderer → main bundle →
 corepack pnpm exec electron .
 ```
 
-On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory. The node runs on the real network stack (tcp + noise + yamux) with mDNS LAN discovery; see "Joining a network" below.
+On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory. The node runs on the real network stack (tcp + noise + yamux, IPv6-only); joining rides invitations, not multicast — see "Joining a network" below.
 
 ## Joining a network
 
-Discovery is configured by data, not code: `config/genesis.json` carries the `bootstrap` list of known peers.
+**This network is IPv6-only.** Nodes announce and dial global-unicast `/ip6` addresses over TCP; `/ip4`, ULA (`fd00::/8`) and link-local (`fe80::/…`) addresses are rejected by the address policy at every boundary (announce, dial, ingest). Two practical caveats:
 
-- **Empty list (the repo default):** LAN-only. Nodes on the same local network find each other automatically via mDNS — start two instances and they should see each other's peers with no configuration.
-- **Joining a wider network:** set the `bootstrap` array in `config/genesis.json` to the public peers you know, then start the app:
+- **Inbound needs a route.** Your node listens on all interfaces, but home routers rarely advertise your global v6 address via NDP and stateful firewalls/NAT64 middleboxes (consumer routers — Norton-class ones in particular) can silently drop *inbound* v6 connections even when outbound works. Outbound joins always work; that is exactly why joining rides an **invitation**, not a public listen port.
+- **No IPv4, no relay (yet).** An IPv4-only peer cannot join directly; a community relay tier is the parked answer (see `deferred-work.md`).
 
-```json
-"bootstrap": ["/ip4/203.0.113.7/tcp/4001/p2p/12D3KooW…your-peer-id…"]
-```
+### Join with an invitation (the primary path)
 
-Each entry is a full multiaddr and must include a `/p2p/<peerId>` component — entries without one are silently dropped by the bootstrap service (visible in the node's logs). Configure the genesis **before packaging**: a packaged app reads it from inside its archive.
+1. **Generate** — the running node shows its own invite in the app (the *MY INVITE* panel; the same string lands in `<userData>/invite.txt`-compatible form). It is one line: `scinvite:v1:…`.
+2. **Send** — pass that line to the joining person any way you like (it is public data, already signed).
+3. **Paste** — on the new machine, paste it into the *JOIN* panel (or write it as one line into `<userData>/invite.txt` before first boot). The app verifies it fully — signature, chain id, and ticket liveness of the inviter against applied blocks — **before dialing anything**, then dials through it and lets the peer-book crawl fill out the rest of the network (bounded: depth ≤ 3, book ≤ 100 entries, ≥3 distinct /64s by design).
+
+A wiped machine with an empty config needs nothing else: one verified invitation is a proven complete join (the amnesiac-invite boot proof runs it headless in CI). For the manual two-machine version see `_bmad-output/initiative-succinctcoin-ai/epic-real-network/dial-manual.mjs` (`invite-new` / `invite-use`); single-machine loopback proofs set `SUCCINCTCOIN_ALLOW_LOOPBACK=1` on both commands — an explicit, default-off dial-only exemption for `::1` that changes nothing else.
+
+### Bootstrap lists (dev tool)
+
+`config/genesis.json` → `bootstrap` remains as a developer convenience: full multiaddrs (now `/ip6/…`, must include `/p2p/<peerId>`) dialed at start. Configure it **before packaging** (a packaged app reads genesis from inside its archive). Normal users never touch it — invitations and the crawl do the joining.
+
+LAN multicast (mDNS) is OFF by default since 9.1; opt in with `SUCCINCTCOIN_MDNS=1` where a trusted LAN justifies it.
 
 ## Package for distribution
 
@@ -88,6 +96,6 @@ Key design boundaries worth knowing before reading the code:
 
 ## Notes
 
-- Network transports: the app boots on the real stack (tcp + noise + yamux, mDNS LAN discovery, bootstrap from genesis — see "Joining a network" above). Tests always run on `@libp2p/memory` (zero real sockets, AD-10); the memory transport is reachable only via explicit test injection.
+- Network transports: the app boots on the real stack (tcp + noise + yamux over global IPv6; invite-first join, optional mDNS behind an env flag — see "Joining a network" above). Tests always run on `@libp2p/memory` (zero real sockets, AD-10); the memory transport is reachable only via explicit test injection.
 - The node identity is currently a pinned seed; a per-install random seed is recorded deferred work.
 - `electron-forge package` needs the Electron binary; a plain `corepack pnpm install` fetches it. (In this repository's CI/dev environment the download is skipped via `ELECTRON_SKIP_BINARY_DOWNLOAD`, so the package step is a local operation.)

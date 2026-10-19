@@ -124,9 +124,18 @@ const POLICY_ERROR_CODE = 'SC-NET-1'
  * Throw unless `addr` passes {@link isGlobalIp6Multiaddr}. Call sites are the
  * tcp boundaries only (adapter dial, bootstrap wiring) — the message names
  * the parked relay tier so an IPv4-only operator learns the actual path.
+ *
+ * The ONE documented exception (9.5, probe-only): with the environment
+ * variable {@link ALLOW_LOOPBACK_ENV} explicitly set to `1`, a pure-`::1`
+ * address becomes DIALABLE — nothing else changes. Default-off; announce
+ * policy never sees this function (loopback is still never announced); any
+ * other rejected address (v4, ULA, link-local, junk) still throws with the
+ * flag set. Shipped nodes never set the variable; two-machine and loopback
+ * PROOFS opt in on the probe command line only.
  */
 export function assertDialable(addr: string): void {
   if (!isGlobalIp6Multiaddr(addr)) {
+    if (loopbackAllowEnabled() && isLoopbackIp6Multiaddr(addr)) return
     throw Object.assign(
       new Error(
         `${POLICY_ERROR_CODE}: this network is IPv6-only (global unicast over TCP); ` +
@@ -135,6 +144,40 @@ export function assertDialable(addr: string): void {
       { code: POLICY_ERROR_CODE },
     )
   }
+}
+
+/** The explicit test-flag name (documented in README + probe headers). */
+export const ALLOW_LOOPBACK_ENV = 'SUCCINCTCOIN_ALLOW_LOOPBACK'
+
+function loopbackAllowEnabled(): boolean {
+  try {
+    return process.env[ALLOW_LOOPBACK_ENV] === '1'
+  } catch {
+    return false
+  }
+}
+
+/** True iff `addr` parses, carries no `/ip4`/`ip6zone`, and EVERY `/ip6`
+ * component is exactly `::1` (any compression: `0:0:0:0:0:0:0:1`, `::0:1`).
+ * Strictly the loopback — a global or v4-mapped component anywhere fails. */
+export function isLoopbackIp6Multiaddr(addr: string): boolean {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return false
+  }
+  let sawLoopback = false
+  for (const component of components) {
+    if (component.code === CODE_IP4 || component.code === CODE_IP6ZONE) return false
+    if (component.code === CODE_IP6) {
+      const h = typeof component.value === 'string' ? expandHextets(component.value) : null
+      if (h === null || h.length !== 8 || h[7] !== 1 || h.slice(0, 7).some((x) => x !== 0))
+        return false
+      sawLoopback = true
+    }
+  }
+  return sawLoopback
 }
 /** Expand IPv6 text to EXACTLY 8 hextets (zero-filling `::`), or null. The
  * same string math {@link ip6IsGlobalUnicast} runs, kept separate so each
@@ -145,8 +188,12 @@ function expandHextets(text: string): number[] | null {
   let tail = ''
   const dd = text.indexOf('::')
   if (dd !== -1) {
-    if (dd === 0) head = ''
-    else if (text.indexOf('::', dd + 1) !== -1) return null
+    if (dd === 0) {
+      // Leading "::" — the head is empty, but the TAIL still carries groups
+      // (`::1` → tail "1"). Dropping it here once turned `::1` into all-zero.
+      head = ''
+      tail = text.slice(dd + 2)
+    } else if (text.indexOf('::', dd + 1) !== -1) return null
     else {
       head = text.slice(0, dd)
       tail = text.slice(dd + 2)

@@ -785,7 +785,13 @@ export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
 export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'
 // 9.1 — the IPv6-only addressing policy (spec constraint 2026-10-18): the ONE
 // predicate for announce/dial/ingest eligibility on real transports.
-export { assertDialable, filterPolicyAddresses, isGlobalIp6Multiaddr } from './net/index.js'
+export {
+  ALLOW_LOOPBACK_ENV,
+  assertDialable,
+  filterPolicyAddresses,
+  isGlobalIp6Multiaddr,
+  isLoopbackIp6Multiaddr,
+} from './net/index.js'
 
 // Peer-book exchange (epic 9 — ticket 9.3): the `/succinctcoin/peerbook/1`
 // stream (pure handler/client, sync's framing) + the /64 group key used by
