@@ -67,7 +67,8 @@ const KEY_C: IdentityKeypair = deriveIdentityKeypair(seedFor(2))
 const KEY_D: IdentityKeypair = deriveIdentityKeypair(seedFor(3))
 const KEY_E: IdentityKeypair = deriveIdentityKeypair(seedFor(4))
 
-const addrFor = (name: string): string[] => [`/ip4/10.4.${name.charCodeAt(0)}.1/tcp/9001`]
+const addrFor = (name: string): string[] =>
+  [`/ip6/2001:db8:4:${name.charCodeAt(0).toString(16)}::/tcp/9001`]
 
 /** A wire-native signed introduction (encode→decode round-tripped, exactly
  * what the gossip path delivers). `zeroSig` forges while keeping the shape. */

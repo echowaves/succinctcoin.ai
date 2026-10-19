@@ -29,6 +29,7 @@ import {
   createNetAdapter,
   createOfflineGateVerifier,
   deriveIdentityKeypair,
+  isGlobalIp6Multiaddr,
   loadGenesis,
 } from '@succinctcoin/core'
 
@@ -91,6 +92,9 @@ async function boot(): Promise<void> {
     defaultNetConfig(genesis, identity.identityId, {
       listenPort: Number.isNaN(envPort) ? undefined : envPort,
       extraBootstrap,
+      // 9.1: LAN multicast is opt-in — middleboxes eat it and the network is
+      // IPv6-only; SUCCINCTCOIN_MDNS=1 re-enables it on friendly LANs.
+      mdns: process.env.SUCCINCTCOIN_MDNS === '1',
     }),
   )
   const store = new FileChainStore(join(app.getPath('userData'), 'chain'))
@@ -192,7 +196,7 @@ async function boot(): Promise<void> {
   // Copy-paste this line's address to a LAN peer's bootstrap.txt when mDNS
   // cannot cross the network (the dial path is plain unicast TCP).
   try {
-    const lan = net.listenAddresses().filter((a) => !a.includes('/ip4/127.0.0.1'))
+    const lan = net.listenAddresses().filter(isGlobalIp6Multiaddr)
     console.log(
       lan.length > 0
         ? `[boot] dial me: ${lan.join(' ')}${extraBootstrap.length > 0 ? ` (bootstrap hints: ${String(extraBootstrap.length)} from ${bootstrapFile})` : ''}`

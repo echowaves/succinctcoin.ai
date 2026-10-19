@@ -38,7 +38,7 @@ function announcementMessage(i: number, addrs?: string[]) {
   const keypair = deriveIdentityKeypair(seedFor(i))
   const fields = {
     identityId: keypair.identityId,
-    multiaddrs: addrs ?? [`/ip4/10.0.${i}.5/tcp/4001`],
+    multiaddrs: addrs ?? [`/ip6/2001:db8:${i.toString(16)}:5::/tcp/4001`],
     observedExternalAddr: undefined,
     slotStart: 0n,
     slotEnd: 100n,
@@ -100,9 +100,9 @@ describe('8.5 T3 — createCore boot ladder wiring', () => {
     const hintsPath = join(dir, 'lan.json')
     const artifactPath = join(dir, 'artifact.json')
 
-    const hintPeer = announcementMessage(2, ['/ip4/10.5.5.5/tcp/4001'])
+    const hintPeer = announcementMessage(2, ['/ip6/2001:db8:a05:505::/tcp/4001'])
     const selfRecord = announcementMessage(1) // same identity → excluded
-    const artifactPeer = announcementMessage(3, ['/ip4/10.30.30.3/tcp/4001'])
+    const artifactPeer = announcementMessage(3, ['/ip6/2001:db8:a1e:1e03::/tcp/4001'])
     await writeAnnouncementsFromMessages(hintsPath, [hintPeer])
     await writeAnnouncementsFromMessages(artifactPath, [selfRecord, artifactPeer])
 
@@ -116,7 +116,7 @@ describe('8.5 T3 — createCore boot ladder wiring', () => {
     ports.discovery = {
       hintsFilePath: hintsPath,
       artifactFilePath: artifactPath,
-      announceAddresses: () => ['/ip4/10.0.0.9/tcp/4000'],
+      announceAddresses: () => ['/ip6/2001:db8:a00:9::/tcp/4000'],
       onLadderReport: (r) => {
         report = r
       },
@@ -134,7 +134,7 @@ describe('8.5 T3 — createCore boot ladder wiring', () => {
     expect(r.hints).toEqual({ found: true, ingested: 1, skipped: 0 })
     expect(r.artifact.found).toBe(true)
     expect(r.artifact.targets).toBe(1) // self excluded
-    expect(dialed).toEqual(['/ip4/10.30.30.3/tcp/4001'])
+    expect(dialed).toEqual(['/ip6/2001:db8:a1e:1e03::/tcp/4001'])
 
     // The core-owned book holds the LAN hint — stored, NOT dial-eligible.
     const book = core.addressBook

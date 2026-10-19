@@ -1,0 +1,138 @@
+/**
+ * `core/net/address-policy` — the IPv6-only addressing policy (ticket 9.1,
+ * spec constraint 2026-10-18: "IPv6-only with no dual-stack fallback").
+ *
+ * Field rationale (`change-ipv6-invitation-join`): middleboxes in real LANs
+ * drop the IPv4 multicast mDNS is built on, and a join path that needs
+ * multicast to survive every firewall is not a join path. One address family
+ * end to end: global IPv6 unicast (2000::/3) over TCP is the ONLY shape this
+ * network announces, dials, or ingests. IPv4-only peers are not supported —
+ * the parked community-relay tier is their future path, and every rejection
+ * says so.
+ *
+ * THE RULES (pinned):
+ *  - ACCEPT: a multiaddr containing at least one `/ip6` component whose bytes
+ *    are global unicast (2000::/3 — includes the documentation range
+ *    2001:db8::/32 used by every test fixture), with any trailing components
+ *    (`/tcp/N`, `/p2p/<id>`, `/p2p-circuit/...`).
+ *  - REJECT (any hit): an `/ip4` component; a non-global `/ip6` — loopback
+ *    `::1`, unspecified `::`, link-local `fe80::/10` (and any `ip6zone`),
+ *    ULA `fc00::/7`, multicast `ff00::/8`; an unparseable string; no `/ip6`
+ *    component at all (dns/uni/etc. are not addresses this network routes).
+ *
+ * Pure — zero deps beyond the multiaddr parser, no clock/net/fs (AD-3/AD-10).
+ * The memory transport is policy-free by design: `/memory/...` fixtures are
+ * test scaffolding, not addressing (enforced at each tcp call site instead).
+ */
+import { multiaddr } from '@multiformats/multiaddr'
+
+// Multiaddr component codes (multicodec): ip4=4, ip6=41, ip6zone=42.
+const CODE_IP4 = 4
+const CODE_IP6 = 41
+const CODE_IP6ZONE = 42
+
+/**
+ * Is this IPv6 text global unicast — 2000::/3 (RFC 4291 top-3-bits rule)?
+ * Expands `::` compression and embedded IPv4: an embedded v4 inside a global
+ * address (`2001:db8::1.2.3.4`) is a legitimate global address and ACCEPTS;
+ * the deprecated v4-mapped/v4-compat forms (`::ffff:1.2.3.4`, `::1.2.3.4`)
+ * REJECT — their first hextet is zero, outside 2000::/3 (a leading `::` is
+ * caught directly below; the mapped form also dies on the WHATWG-normalized
+ * text the parser hands us). Rejects zones (`%eth0`) and any malformed text.
+ * Pure string math — the multiaddr parser already guaranteed well-formedness
+ * upstream, this only scopes it.
+ */
+function ip6IsGlobalUnicast(text: string): boolean {
+  if (text.includes('%')) return false // scoped address — link-local semantics
+  let head = text
+  let tail = ''
+  const dd = text.indexOf('::')
+  if (dd !== -1) {
+    // A LEADING "::" means the first hextet is zero — loopback, unspecified,
+    // v4-compat… none of them can be in 2000::/3. (Review finding 9.1-1:
+    // without this, the tail's first group was judged as "first".)
+    if (dd === 0) return false
+    if (text.indexOf('::', dd + 1) !== -1) return false // double "::" is junk
+    head = text.slice(0, dd)
+    tail = text.slice(dd + 2)
+  }
+  const hextets: number[] = []
+  for (const part of [...(head === '' ? [] : head.split(':')), ...(tail === '' ? [] : tail.split(':'))]) {
+    if (part === '') return false // ":x" / "x:" fragments outside "::"
+    if (part.includes('.')) {
+      // embedded IPv4 — two hextets from the octets
+      const oct = part.split('.')
+      if (oct.length !== 4 || !oct.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255))
+        return false
+      hextets.push((Number(oct[0]) << 8) | Number(oct[1]))
+      hextets.push((Number(oct[2]) << 8) | Number(oct[3]))
+    } else {
+      if (!/^[0-9a-fA-F]{1,4}$/.test(part)) return false
+      hextets.push(Number.parseInt(part, 16))
+    }
+  }
+  const total = dd === -1 ? hextets.length : hextets.length + 1
+  if (dd === -1 ? total !== 8 : total > 8) return false
+  const first = hextets[0] ?? 0 // unreachable-empty: "" and "::" died above
+  return (first & 0xe000) === 0x2000
+}
+
+/** True when the string parses as a multiaddr at all (shape, not policy). */
+export function parsesMultiaddr(addr: string): boolean {
+  try {
+    multiaddr(addr)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The policy predicate: `true` iff `addr` parses and every `/ip6` component
+ * is global unicast, no `/ip4`/`ip6zone` appears anywhere, and at least one
+ * `/ip6` component exists. Never throws — junk strings are simply `false`.
+ */
+export function isGlobalIp6Multiaddr(addr: string): boolean {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    // v13 API: getComponents() (the tuples API of older majors is gone).
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return false
+  }
+  let sawGlobalIp6 = false
+  for (const component of components) {
+    if (component.code === CODE_IP4 || component.code === CODE_IP6ZONE) return false
+    if (component.code === CODE_IP6) {
+      if (typeof component.value !== 'string' || !ip6IsGlobalUnicast(component.value))
+        return false
+      sawGlobalIp6 = true
+    }
+  }
+  return sawGlobalIp6
+}
+
+/** Filter a list down to policy-valid addresses, preserving order. */
+export function filterPolicyAddresses(addrs: readonly string[]): string[] {
+  return addrs.filter(isGlobalIp6Multiaddr)
+}
+
+/** The pinned rejection shape (conventions: `{ code: 'SC-<DOMAIN>-<n>' }`). */
+const POLICY_ERROR_CODE = 'SC-NET-1'
+
+/**
+ * Throw unless `addr` passes {@link isGlobalIp6Multiaddr}. Call sites are the
+ * tcp boundaries only (adapter dial, bootstrap wiring) — the message names
+ * the parked relay tier so an IPv4-only operator learns the actual path.
+ */
+export function assertDialable(addr: string): void {
+  if (!isGlobalIp6Multiaddr(addr)) {
+    throw Object.assign(
+      new Error(
+        `${POLICY_ERROR_CODE}: this network is IPv6-only (global unicast over TCP); ` +
+          `"${addr}" is not dialable. IPv4-only peers need the community relay tier (parked).`,
+      ),
+      { code: POLICY_ERROR_CODE },
+    )
+  }
+}

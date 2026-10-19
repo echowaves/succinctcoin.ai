@@ -73,7 +73,7 @@ function signedAt(over: Partial<IntroductionFields> = {}) {
 /** A shape-valid announcement from the SAME keypair (cross-domain rows). */
 const ANN_FIELDS = {
   identityId: SIGNER.identityId,
-  multiaddrs: ['/ip4/203.0.113.9/tcp/4001'],
+  multiaddrs: ['/ip6/2001:db8:cb00:7109::/tcp/4001'],
   slotStart: 0,
   slotEnd: 100,
   chainId: TEST_CHAIN,

@@ -9,10 +9,13 @@
  *   NET_TCP_MDNS_LAN_ONLY      (AC1) a LAN-only genesis (`bootstrap: []`,
  *                                valid post-7.1) yields EXACTLY
  *                                `{ transport: 'tcp', listenAddress:
- *                                '/ip4/0.0.0.0/tcp/0', mdns: true,
+ *                                '/ip6/::/tcp/0', mdns: false,
  *                                bootstrap: [], protocolIdentityId }` —
  *                                tcp is selected, the memory transport is
- *                                NEVER returned (R1).
+ *                                NEVER returned (R1). 9.1 IPv6-only: the
+ *                                bind is v6 (`::` dual-stack socket, policy
+ *                                at every boundary) and mDNS DEFAULTS OFF
+ *                                (opt-in row below).
  *   BOOTSTRAP_VERBATIM         (AC1) a genesis listing public peers passes
  *                                the list through VERBATIM (same reference
  *                                — no copy, no filter, no reorder; the
@@ -71,21 +74,28 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     // The full config, EXACTLY (no extra keys, no missing keys).
     expect(config).toEqual({
       transport: 'tcp',
-      listenAddress: '/ip4/0.0.0.0/tcp/0',
-      mdns: true,
+      listenAddress: '/ip6/::/tcp/0',
+      mdns: false,
       bootstrap: [],
       protocolIdentityId: 'ab'.repeat(32),
     })
-    // The exported constant IS the pinned ephemeral listen address (the
-    // epic Notes' Decision 2026-10-16: all interfaces, port 0).
-    expect(LAN_LISTEN_ADDRESS).toBe('/ip4/0.0.0.0/tcp/0')
+    // The exported constant IS the pinned ephemeral listen address (9.1:
+    // IPv6-only all-interfaces bind, port 0).
+    expect(LAN_LISTEN_ADDRESS).toBe('/ip6/::/tcp/0')
     // R1: the isolated transport is NEVER returned from the seam.
     expect(config.transport).not.toBe('memory')
   })
 
+  it('MDNS_OPT_IN: mdns is OFF by default; ONLY `mdns: true` enables it (9.1)', () => {
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    expect(defaultNetConfig(g, 'ad'.repeat(32)).mdns).toBe(false)
+    expect(defaultNetConfig(g, 'ad'.repeat(32), { mdns: false }).mdns).toBe(false)
+    expect(defaultNetConfig(g, 'ad'.repeat(32), { mdns: true }).mdns).toBe(true)
+  })
+
   it('BOOTSTRAP_VERBATIM: a public-peer list passes through verbatim (same reference)', () => {
     const peers = [
-      '/ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleA',
+      '/ip6/2001:db8:c7a1::/tcp/4001/p2p/12D3KooWExampleA',
       '/dns4/bootstrap.example.com/tcp/443/wss/p2p/12D3KooWExampleB',
     ]
     const genesis: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: peers }
@@ -132,10 +142,10 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
 })
 
 describe('LAN joins when multicast is blocked — listen-port pin + bootstrap hints', () => {
-  it('LISTEN_PORT: a valid port pins /ip4/0.0.0.0/tcp/<port>; invalid falls back to ephemeral', () => {
+  it('LISTEN_PORT: a valid port pins /ip6/::/tcp/<port>; invalid falls back to ephemeral', () => {
     const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
     expect(defaultNetConfig(g, 'aa'.repeat(32), { listenPort: 4001 }).listenAddress).toBe(
-      '/ip4/0.0.0.0/tcp/4001',
+      '/ip6/::/tcp/4001',
     )
     for (const bad of [0, -1, 70000, 2.5, Number.NaN]) {
       expect(defaultNetConfig(g, 'aa'.repeat(32), { listenPort: bad }).listenAddress).toBe(
@@ -146,15 +156,15 @@ describe('LAN joins when multicast is blocked — listen-port pin + bootstrap hi
   })
 
   it('EXTRA_BOOTSTRAP_MERGE: local hints merge AFTER genesis, deduped, as a NEW array; no hints keeps the verbatim reference', () => {
-    const peers = ['/ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleA']
+    const peers = ['/ip6/2001:db8:c7a1::/tcp/4001/p2p/12D3KooWExampleA']
     const genesis: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: peers }
 
     const merged = defaultNetConfig(genesis, 'bb'.repeat(32), {
-      extraBootstrap: ['/ip4/192.168.1.17/tcp/4001/p2p/12D3KooWLanPeer', peers[0] as string],
+      extraBootstrap: ['/ip6/2001:db8:c0a8:111::/tcp/4001/p2p/12D3KooWLanPeer', peers[0] as string],
     })
     expect(merged.bootstrap).toEqual([
-      '/ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleA',
-      '/ip4/192.168.1.17/tcp/4001/p2p/12D3KooWLanPeer',
+      '/ip6/2001:db8:c7a1::/tcp/4001/p2p/12D3KooWExampleA',
+      '/ip6/2001:db8:c0a8:111::/tcp/4001/p2p/12D3KooWLanPeer',
     ])
     expect(merged.bootstrap).not.toBe(peers) // genesis untouched
     // Empty hints ⇒ the pinned 7.2 verbatim passthrough still holds.
@@ -164,15 +174,15 @@ describe('LAN joins when multicast is blocked — listen-port pin + bootstrap hi
   it('PARSE_BOOTSTRAP_FILE: keeps multiaddr lines (trimmed, ordered); drops blanks, # comments, and non-/ lines', () => {
     const text = [
       '# LAN peers, one per line',
-      '  /ip4/192.168.1.17/tcp/4001/p2p/12D3KooWA  ',
+      '  /ip6/2001:db8:c0a8:111::/tcp/4001/p2p/12D3KooWA  ',
       '',
       'not-a-multiaddr',
-      '\t/ip4/192.168.1.99/tcp/4001/p2p/12D3KooWB',
-      '# /ip4/commented.out/tcp/1/p2p/x',
+      '\t/ip6/2001:db8:c0a8:63::/tcp/4001/p2p/12D3KooWB',
+      '# /ip6/commented.out/tcp/1/p2p/x',
     ].join('\n')
     expect(parseBootstrapFile(text)).toEqual([
-      '/ip4/192.168.1.17/tcp/4001/p2p/12D3KooWA',
-      '/ip4/192.168.1.99/tcp/4001/p2p/12D3KooWB',
+      '/ip6/2001:db8:c0a8:111::/tcp/4001/p2p/12D3KooWA',
+      '/ip6/2001:db8:c0a8:63::/tcp/4001/p2p/12D3KooWB',
     ])
   })
 })

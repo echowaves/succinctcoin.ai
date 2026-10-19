@@ -24,13 +24,14 @@
 import type { GenesisConfig, NetAdapterConfig } from '@succinctcoin/core'
 
 /**
- * The production listen address: `/ip4/0.0.0.0/tcp/0` — all interfaces,
- * EPHEMERAL port (epic Notes, Decision 2026-10-16). Ephemeral so multiple
- * instances coexist on one machine; the public multiaddr is read back from
- * the started node. Fixed ports arrive later with public-bootstrap
- * infrastructure, not here.
+ * The production listen address: `/ip6/::/tcp/0` — all interfaces, EPHEMERAL
+ * port. 9.1 IPv6-only (spec constraint 2026-10-18): the ONE family is global
+ * IPv6 unicast; Node's dual-stack `::` bind still ACCEPTS v4-mapped sockets,
+ * but every announce/dial boundary applies the address policy, so nothing
+ * non-v6 is ever used. Ephemeral so multiple instances coexist on one
+ * machine; the public multiaddr is read back from the started node.
  */
-export const LAN_LISTEN_ADDRESS = '/ip4/0.0.0.0/tcp/0'
+export const LAN_LISTEN_ADDRESS = '/ip6/::/tcp/0'
 
 /**
  * The boot-time net config (7.2 R1): tcp + mDNS + genesis bootstrap.
@@ -50,7 +51,7 @@ export function defaultNetConfig(
   const port = opts.listenPort
   const listenAddress =
     typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535
-      ? `/ip4/0.0.0.0/tcp/${port}`
+      ? `/ip6/::/tcp/${port}`
       : LAN_LISTEN_ADDRESS
   const extra = opts.extraBootstrap ?? []
   // Merge order: genesis first, then local hints; dedupe by exact string.
@@ -62,7 +63,10 @@ export function defaultNetConfig(
   return {
     transport: 'tcp',
     listenAddress,
-    mdns: true,
+    // 9.1: mDNS is OFF by default — its IPv4 multicast is middlebox-hostile
+    // (the pivot's field evidence) and off-policy for an IPv6-only network.
+    // Opt in with `mdns: true` (env SUCCINCTCOIN_MDNS=1) on friendly LANs.
+    mdns: opts.mdns === true,
     bootstrap,
     protocolIdentityId,
   }
@@ -75,8 +79,11 @@ export interface NetConfigOptions {
    * absent ⇒ ephemeral (`tcp/0`), the pinned default. */
   listenPort?: number | undefined
   /** Locally-configured bootstrap multiaddrs (e.g. a LAN peer whose address
-   * was copied from its boot log) MERGED after `genesis.bootstrap`. */
+   * was copied from its boot log) MERGED after `genesis.bootstrap`. The
+   * adapter policy-filters the list on the real transport. */
   extraBootstrap?: readonly string[] | undefined
+  /** Opt INTO LAN mDNS discovery (default OFF since 9.1). */
+  mdns?: boolean | undefined
 }
 
 /**

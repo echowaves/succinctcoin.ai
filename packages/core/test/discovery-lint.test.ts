@@ -6,9 +6,10 @@
  * The scanner is a PURE function over (path, text) pairs; one row runs it
  * over the REAL repo (must find NOTHING), one row feeds an embedded fixture
  * violation (must FIRE — non-vacuity). Excluded by design: test files and
- * fixtures (fake `/ip4` addresses are their purpose), docs/epic artifacts,
- * generated `dist/` + `src/proto/`, and the ONE sanctioned listen address
- * (`/ip4/0.0.0.0` — all-interfaces bind, not an endpoint).
+ * fixtures (fake addresses are their purpose), docs/epic artifacts, and
+ * generated `dist/` + `src/proto/`. 9.1 IPv6-only policy: NO `/ip4`
+ * address literal of ANY kind survives in shipped code — not even the old
+ * `/ip4/0.0.0.0` bind (the sanctioned bind is now `/ip6/::`).
  *
  * E3 (ticket 8.5): signing and key derivation are MAIN/CORE concerns — the
  * PRELOAD and RENDERER sources must contain zero occurrences of the key
@@ -38,10 +39,11 @@ interface ScanPattern {
 }
 
 /** The hardwired-endpoint patterns (design's "hardwired multiaddrs or seed
- * endpoints"). `/ip4/0.0.0.0` is the sanctioned all-interfaces BIND, not an
- * endpoint — allowed; any routable /ip4 literal in shipped code is a bug. */
+ * endpoints"). 9.1: the IPv6-only constraint bans EVERY /ip4 address literal
+ * in shipped code — bind, loopback, or endpoint alike (`/ip4` followed by any
+ * digit; prose mentions like "/an `/ip4` component" never match). */
 const PATTERNS: ScanPattern[] = [
-  { name: 'hardwired-ip4', re: /\/ip4\/(?!0\.0\.0\.0)(?!127\.0\.0\.1)[1-9]\d*(?:\.\d+){3}/g },
+  { name: 'hardwired-ip4', re: /\/ip4\/\d/g },
   { name: 'hardwired-dns4', re: /\/dns4?\//g },
   { name: 'ipfs-peer-id', re: /\/ipfs\/Qm/g },
   { name: 'seed-endpoint', re: /seed\.succinctcoin/g },
@@ -119,10 +121,13 @@ describe('8.5 T6 — discovery lint (repo-wide hardwired-endpoint scan)', () => 
     )
   })
 
-  it('the sanctioned all-interfaces BIND and loopback never fire; tests are excluded', () => {
+  it('9.1: EVERY /ip4 literal fires in shipped code — bind and loopback included; tests are excluded', () => {
     expect(
       scanForHardwiredEndpoints('packages/app/src/main/net-config.ts', "const A = '/ip4/0.0.0.0/tcp/0'"),
-    ).toEqual([])
+    ).toEqual([{ path: 'packages/app/src/main/net-config.ts', pattern: 'hardwired-ip4' }])
+    expect(
+      scanForHardwiredEndpoints('packages/app/src/main/net-config.ts', "const A = '/ip6/::/tcp/0'"),
+    ).toEqual([]) // the sanctioned 9.1 bind is v6
     expect(
       scanForHardwiredEndpoints('packages/core/test/fake.ts', "const A = '/ip4/10.0.0.1/tcp/1'"),
     ).toEqual([]) // test files are the sanctioned fixtures
@@ -131,10 +136,10 @@ describe('8.5 T6 — discovery lint (repo-wide hardwired-endpoint scan)', () => 
   it('the collector actually collects (scan is not vacuously empty)', () => {
     const sources = collectShippedSources()
     expect(sources.length).toBeGreaterThan(20)
-    // The ONE sanctioned listen address IS present in the shipped tree —
-    // scanned, and (row above) allowed.
+    // The sanctioned 9.1 listen address IS present in the shipped tree —
+    // scanned, and (row above) clean.
     expect(
-      sources.some((s) => s.path.endsWith('net-config.ts') && s.text.includes('/ip4/0.0.0.0/tcp/0')),
+      sources.some((s) => s.path.endsWith('net-config.ts') && s.text.includes('/ip6/::/tcp/0')),
     ).toBe(true)
   })
 })

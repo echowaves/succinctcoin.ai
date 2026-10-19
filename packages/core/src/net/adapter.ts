@@ -99,6 +99,7 @@ import { mdns } from '@libp2p/mdns'
 import { peerIdFromString } from '@libp2p/peer-id'
 import { TypedEventEmitter } from 'main-event'
 import { multiaddr, CODE_P2P } from '@multiformats/multiaddr'
+import { assertDialable, filterPolicyAddresses } from './address-policy.js'
 import { createLibp2p } from 'libp2p'
 
 import type { Libp2p, Libp2pInit } from 'libp2p'
@@ -136,7 +137,8 @@ const DIAL_TIMEOUT_MS = 10_000
 export interface NetAdapterConfig {
   /** 'memory' (CI path) or 'tcp' (production; present but not CI-exercised). */
   transport: 'memory' | 'tcp'
-  /** Listen address. Memory: '/memory/<name>'. TCP: '/ip4/0.0.0.0/tcp/<port>'. */
+  /** Listen address. Memory: '/memory/<name>'. TCP (9.1 IPv6-only):
+   * '/ip6/::/tcp/<port>' — the all-interfaces v6 bind. */
   listenAddress: string
   /**
    * The node's 4.2 PROTOCOL identity id (a 32-byte hex string) — stamped
@@ -361,8 +363,17 @@ function buildMdnsDiscovery(
  */
 function buildPeerDiscovery(config: NetAdapterConfig): Libp2pInit['peerDiscovery'] {
   const discovery = []
-  if (config.bootstrap !== undefined && config.bootstrap.length > 0) {
-    discovery.push(bootstrap({ list: config.bootstrap }))
+  // 9.1 — over tcp the bootstrap list is policy-filtered FIRST (an IPv4-only
+  // entry can never be dialed here; it must not even occupy the service).
+  // Drops are silent at this layer by design (pure adapter, no logger port);
+  // operator-visible drop diagnostics are recorded as deferred work (9.5).
+  // Memory keeps the raw list: its fixtures are not real addresses.
+  const bootstrapList =
+    config.transport === 'tcp'
+      ? filterPolicyAddresses(config.bootstrap ?? [])
+      : (config.bootstrap ?? [])
+  if (bootstrapList.length > 0) {
+    discovery.push(bootstrap({ list: bootstrapList }))
   }
   if (config.mdns === true) {
     discovery.push(
@@ -688,6 +699,13 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       return requireNode().getPeers().map((p) => p.toString())
     },
     async dial(address: string) {
+      // 9.1 IPv6-only policy: on the real transport our OWN dials pass the
+      // address policy before a socket exists (memory transport stays
+      // policy-free — /memory fixtures are scaffolding, not addressing).
+      // NOT a completeness claim: libp2p internals (identify-pushed addrs,
+      // opt-in mDNS) can dial without coming through here; a connection-
+      // gater closing those paths is recorded as deferred work (9.5).
+      if (config.transport === 'tcp') assertDialable(address)
       const ma = multiaddr(address)
       const conn = await requireNode().dial(ma, { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
       // 5.7 D8 — client role: dialing the CONFIGURED relay registers a

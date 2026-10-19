@@ -62,12 +62,12 @@ describe('8.5 T4 — buildDiscoveryPorts (passthrough wiring)', () => {
     const reports: unknown[] = []
     const ports = buildDiscoveryPorts(
       { platform: 'linux', env: {}, userDataDir: '/ud' },
-      () => ['/ip4/1.2.3.4/tcp/9'],
+      () => ['/ip6/2001:db8:102:304::/tcp/9'],
       (r) => reports.push(r),
     )
     expect(ports.hintsFilePath).toBe('/var/tmp/succinctcoin/address-book.json')
     expect(ports.artifactFilePath).toBe(join('/ud', 'discovery-artifact.json'))
-    expect(ports.announceAddresses?.()).toEqual(['/ip4/1.2.3.4/tcp/9'])
+    expect(ports.announceAddresses?.()).toEqual(['/ip6/2001:db8:102:304::/tcp/9'])
     ports.onLadderReport?.({ mdns: true, hints: { found: false, ingested: 0, skipped: 0 }, artifact: { found: false, targets: 0, skipped: 0 }, blocks: true })
     expect(reports).toHaveLength(1)
   })

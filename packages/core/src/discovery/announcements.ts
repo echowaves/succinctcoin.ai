@@ -32,6 +32,9 @@ import { createHash, createPublicKey, verify } from 'node:crypto'
 
 import { signDigest } from '../identity/index.js'
 import type { IdentityKeypair } from '../identity/index.js'
+// 9.1 IPv6-only policy — direct module import (not the net barrel): this file
+// must not drag libp2p into pure-validator consumers.
+import { isGlobalIp6Multiaddr, parsesMultiaddr } from '../net/address-policy.js'
 
 // ---------------------------------------------------------------------------
 // byte helpers (the established self-contained-module pattern of
@@ -239,6 +242,7 @@ export type AnnouncementRejectReason =
   | 'malformed-slot'
   | 'malformed-chain-id'
   | 'malformed-signature'
+  | 'unsupported-address'
   | 'chain-mismatch'
   | 'bad-signature'
   | 'not-yet-valid'
@@ -297,6 +301,25 @@ export function validatePeerAnnouncement(
 
   if (r.observedExternalAddr !== undefined && !isMultiaddrShape(r.observedExternalAddr))
     return fail('malformed-observed-addr')
+
+  // Parseability is still shape: a ≤160-char string that does not parse as a
+  // multiaddr at all is malformed, not merely off-policy. Each field keeps
+  // its own malformed reason (observed addr has a dedicated one).
+  if (!(r.multiaddrs as string[]).every(parsesMultiaddr)) return fail('malformed-multiaddr')
+  if (r.observedExternalAddr !== undefined && !parsesMultiaddr(r.observedExternalAddr as string))
+    return fail('malformed-observed-addr')
+
+  // 9.1 IPv6-only policy (spec constraint 2026-10-18): every address a record
+  // carries must be globally dialable on THIS network — an /ip4 or link-local
+  // announcement is rejected whole (deterministic for block validation; nodes
+  // only ever announce policy-valid addrs, so mixed records are junk).
+  if (!(r.multiaddrs as string[]).every(isGlobalIp6Multiaddr))
+    return fail('unsupported-address')
+  if (
+    r.observedExternalAddr !== undefined &&
+    !isGlobalIp6Multiaddr(r.observedExternalAddr as string)
+  )
+    return fail('unsupported-address')
 
   // Slots: number OR bigint (protons decodes proto int64 as bigint — wire
   // records flow in unchanged). u64-coercible, and end >= start.

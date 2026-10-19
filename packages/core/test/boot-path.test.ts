@@ -153,7 +153,7 @@ describe('START_MALFORMED — a malformed genesis rejects before any block', () 
       malformedPath,
       JSON.stringify({
         protocolVersion: 1,
-        bootstrap: ['/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPlaceholder'],
+        bootstrap: ['/ip6/2001:db8:7f00:1::/tcp/4001/p2p/12D3KooWPlaceholder'],
         reattestationK: 100,
         uptimeLookbackL: 50,
         gates: ['biometric'],

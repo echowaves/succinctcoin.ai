@@ -67,6 +67,8 @@ import type { Ticket as ProtoTicket } from '../proto/index.js'
 import type { PeerAnnouncement as PeerAnnouncementMsg } from '../proto/index.js'
 import type { Introduction as IntroductionMsg } from '../proto/index.js'
 import type { NetPort, StorePort } from '../ports.js'
+// 9.1 — announce only policy-valid (global /ip6) addresses.
+import { filterPolicyAddresses } from '../net/address-policy.js'
 import {
   MAX_MULTIADDRS,
   signIntroduction,
@@ -321,8 +323,13 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
     if (opts.identity !== undefined) {
       // At most the per-RECORD multiaddr ceiling travels (a longer record
       // would be invalid everywhere); slicing keeps presence alive where
-      // skipping the announce entirely would kill it silently.
-      const addrs = (opts.announceAddresses?.() ?? []).slice(0, MAX_MULTIADDRS)
+      // skipping the announce entirely would kill it silently. 9.1: only
+      // policy-valid (global /ip6) addresses are ever announced — a node on
+      // a host with no global v6 face simply announces nothing (yet).
+      const addrs = filterPolicyAddresses(opts.announceAddresses?.() ?? []).slice(
+        0,
+        MAX_MULTIADDRS,
+      )
       if (addrs.length >= 1) {
         const record: PeerAnnouncementMsg = {
           identityId: opts.identity.identityId,

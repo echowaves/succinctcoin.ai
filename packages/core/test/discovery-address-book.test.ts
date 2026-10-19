@@ -67,7 +67,7 @@ function annFor(
 ) {
   const fields = {
     identityId: kp.identityId,
-    multiaddrs: [`/ip4/10.9.${Math.floor(addrSeq / 250)}.${addrSeq++}/tcp/4001`],
+    multiaddrs: [`/ip6/2001:db8:${Math.floor(addrSeq / 250).toString(16)}:${(addrSeq++).toString(16)}::/tcp/4001`],
     slotStart: 0,
     slotEnd: 100,
     chainId: TEST_CHAIN,

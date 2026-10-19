@@ -645,6 +645,9 @@ export type { ReattestationResult } from './identity/index.js'
 // the relay transport.
 export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
 export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'
+// 9.1 — the IPv6-only addressing policy (spec constraint 2026-10-18): the ONE
+// predicate for announce/dial/ingest eligibility on real transports.
+export { assertDialable, filterPolicyAddresses, isGlobalIp6Multiaddr } from './net/index.js'
 
 // Bootstrap-free discovery (epic 8, CAP-7 — ticket 8.2): the signed peer
 // announcement contract (digest / sign / verify / PURE validator). The

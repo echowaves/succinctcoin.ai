@@ -71,8 +71,8 @@ import type {
 // ---------------------------------------------------------------------------
 
 const TEST_CHAIN = 'succinctcoin-test'
-const ADDR_A = '/ip4/10.0.0.1/tcp/9001'
-const ADDR_B = '/ip4/10.0.0.2/tcp/9002'
+const ADDR_A = '/ip6/2001:db8:a00:1::/tcp/9001'
+const ADDR_B = '/ip6/2001:db8:a00:2::/tcp/9002'
 const REWARD_BASE_UNITS = fromDisplay('12.5')
 
 function seedFor(i: number): Uint8Array {
@@ -468,7 +468,7 @@ describe('8.3 node loop — announcements gossiped + anchored end to end', () =>
     // loop's slots (0..32) — ONLY the signature gate can stop it, so this
     // row fails loudly if the relay-gate validation were weakened.
     const forged = makeAnnouncement(KEY_C, 0n, 32n, {
-      addrs: ['/ip4/10.9.9.9/tcp/9009'],
+      addrs: ['/ip6/2001:db8:a09:909::/tcp/9009'],
       corruptSig: true,
     })
     net.received.get('announcements')?.push({ sourcePeerId: KEY_C.identityId, payload: forged.record })

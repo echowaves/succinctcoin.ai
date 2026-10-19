@@ -145,7 +145,7 @@ function sameBytes(a: Uint8Array, value: unknown): boolean {
 function surfacePayloads(): Record<'ReadPeer' | 'ReadBlock' | keyof CoreEvents, unknown> {
   const peer: ReadPeer = {
     peerId: '0'.repeat(64),
-    multiaddrs: ['/ip4/127.0.0.1/tcp/4001/p2p/12D3Koo'],
+    multiaddrs: ['/ip6/2001:db8:7f00:1::/tcp/4001/p2p/12D3Koo'],
   }
   const block: ReadBlock = {
     slot: 1,

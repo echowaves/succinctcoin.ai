@@ -50,8 +50,8 @@ const CTX: AnnouncementContext = { currentSlot: 150, expectedChainId: 'succinctc
 function fieldsAt(over: Partial<PeerAnnouncementFields> = {}): PeerAnnouncementFields {
   return {
     identityId: KEYPAIR.identityId,
-    multiaddrs: ['/ip4/192.168.1.10/tcp/4001', '/ip4/10.0.0.5/tcp/4001'],
-    observedExternalAddr: '/ip4/203.0.113.7/tcp/4001',
+    multiaddrs: ['/ip6/2001:db8:c0a8:10a::/tcp/4001', '/ip6/2001:db8:a00:5::/tcp/4001'],
+    observedExternalAddr: '/ip6/2001:db8:cb00:7107::/tcp/4001',
     slotStart: 100,
     slotEnd: 200,
     chainId: 'succinctcoin-v1',
@@ -105,19 +105,19 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
 
   it('GOLDEN_DIGEST_SIG: digest + signature are byte-pinned (domain-separated AD-12 layout)', () => {
     // Pinned at build (2026-10-18) from seed (0xa1+i)%256, addrs
-    // [/ip4/192.168.1.10/tcp/4001, /ip4/10.0.0.5/tcp/4001], observed
-    // /ip4/203.0.113.7/tcp/4001, slots 100..200, chain succinctcoin-v1.
+    // [/ip6/2001:db8:c0a8:10a::/tcp/4001, /ip6/2001:db8:a00:5::/tcp/4001], observed
+    // /ip6/2001:db8:cb00:7107::/tcp/4001, slots 100..200, chain succinctcoin-v1.
     expect(KEYPAIR.identityId).toBe(
       '0b47823e71095dd59be78ac271c576ef389f87b64561ab07cf9a4ebcd02d2041',
     )
     const digest = peerAnnouncementDigest(fieldsAt())
     expect(Buffer.from(digest).toString('hex')).toBe(
-      '5c7e132cd781de8ca4ee83781acf797234cc26c33b22aff476af588a01f56663',
+      'c0bc953e9aa6b00f07760ad1c606e2e8dda88329388d95ba3eb8ded0734e93f0',
     )
     const sig = signPeerAnnouncement(KEYPAIR, fieldsAt())
     expect(Buffer.from(sig).toString('hex')).toBe(
-      '1638e77bf6418176b264548146547b0ced5b7e5f343bec9e2354ab4c6e49b3d1' +
-        '5fc3a225b2872910de11bdedccc8be610d53fbdeb6112d6b3fd3793946e31a01',
+      '9018a638235f5b7a78ba7befec26c6c1b91503adffe239f4e815a60028a510a8' +
+        '687ae3a833f72fa1d3b3dec94bdcb1a70119193d91594b0a4f7316ff3c3a3503',
     )
   })
 
@@ -130,10 +130,11 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
     expect(
       validatePeerAnnouncement(signedAt({ observedExternalAddr: undefined }), CTX),
     ).toEqual({ ok: true })
-    // Exactly 160 chars passes the shape bound.
+    // A full-form textual address validates (under the 160-char shape bound,
+    // parses, and passes the IPv6-only policy).
     expect(
       validatePeerAnnouncement(
-        signedAt({ multiaddrs: [`/ip4/1.2.3.4/tcp/${'9'.repeat(143)}`] }), // 17 + 143 = 160
+        signedAt({ multiaddrs: ['/ip6/2001:0db8:85a3:0000:0000:8a2e:0370:7334/tcp/65535'] }),
         CTX,
       ),
     ).toEqual({ ok: true })
@@ -195,7 +196,7 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
 
   it('ORDER_CANONICAL: reordering the wire multiaddrs still verifies (sorted digest)', () => {
     const fields = fieldsAt({
-      multiaddrs: ['/ip4/10.0.0.5/tcp/4001', '/ip4/192.168.1.10/tcp/4001'],
+      multiaddrs: ['/ip6/2001:db8:a00:5::/tcp/4001', '/ip6/2001:db8:c0a8:10a::/tcp/4001'],
     })
     const sig = signPeerAnnouncement(KEYPAIR, fieldsAt()) // signed over the OTHER order
     expect(validatePeerAnnouncement({ ...fields, signature: sig }, CTX)).toEqual({ ok: true })
@@ -207,21 +208,35 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
       [
         'too many multiaddrs',
         signedAt({
-          multiaddrs: Array.from({ length: 9 }, (_, i) => `/ip4/10.0.0.${i}/tcp/1`),
+          multiaddrs: Array.from({ length: 9 }, (_, i) => `/ip6/2001:db8:${i.toString(16)}::/tcp/1`),
         }),
         'too-many-multiaddrs',
       ],
       [
         'duplicate multiaddrs',
-        signedAt({ multiaddrs: ['/ip4/1.2.3.4/tcp/1', '/ip4/1.2.3.4/tcp/1'] }),
+        signedAt({ multiaddrs: ['/ip6/2001:db8:102:304::/tcp/1', '/ip6/2001:db8:102:304::/tcp/1'] }),
         'malformed-multiaddr',
       ],
       ['no-slash entry', signedAt({ multiaddrs: ['example.com:4001'] }), 'malformed-multiaddr'],
-      ['whitespace entry', signedAt({ multiaddrs: ['/ip4/1.2.3.4 /tcp/1'] }), 'malformed-multiaddr'],
+      ['whitespace entry', signedAt({ multiaddrs: ['/ip6/2001:db8:102:304:: /tcp/1'] }), 'malformed-multiaddr'],
       [
         'observed addr malformed',
         signedAt({ observedExternalAddr: 'nope' }),
         'malformed-observed-addr',
+      ],
+      [
+        'observed addr unparseable (shape passes, parse does not)',
+        signedAt({ observedExternalAddr: '/no-such-proto/xyz' }),
+        'malformed-observed-addr',
+      ],
+      // 9.1 IPv6-only policy: an OFF-HAND-CLEAN but off-policy address (honest
+      // signature included) rejects with the new pinned reason.
+      ['ipv4 address', signedAt({ multiaddrs: ['/ip4/10.0.0.1/tcp/1'] }), 'unsupported-address'],
+      ['link-local v6', signedAt({ multiaddrs: ['/ip6/fe80::1/tcp/1'] }), 'unsupported-address'],
+      [
+        'observed addr ipv4',
+        signedAt({ observedExternalAddr: '/ip4/1.2.3.4/tcp/9' }),
+        'unsupported-address',
       ],
       // Slots are digest-bound, so malformed ones must be forged POST-signature
       // (that is exactly the untrusted-record case the validator owns).
@@ -244,9 +259,17 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
       // The pinned 160-char boundary (matrix row): 161 chars rejected…
       [
         '161-char multiaddr',
-        signedAt({ multiaddrs: [`/ip4/1.2.3.4/tcp/${'9'.repeat(144)}`] }), // 17 + 144 = 161
+        signedAt({ multiaddrs: [`/ip6/2001:db8::/tcp/${'9'.repeat(141)}`] }), // 20 + 141 = 161
         'malformed-multiaddr',
       ],
+      [
+        // Shape bound passes EXACTLY at 160; parseability is checked next and
+        // this one does not parse (port overflow) — malformed, NOT off-policy.
+        '160-char but unparseable (shape passes, parse does not)',
+        signedAt({ multiaddrs: [`/ip6/2001:db8::/tcp/${'9'.repeat(140)}`] }), // 20 + 140 = 160
+        'malformed-multiaddr',
+      ],
+      ['unparseable address', signedAt({ multiaddrs: ['/no-such-proto/xyz'] }), 'malformed-multiaddr'],
       // …and an honestly-signed empty observed addr is STILL a shape error —
       // "" is never a second spelling of "absent" (the digest binds it as present).
       ['empty observed addr', signedAt({ observedExternalAddr: '' }), 'malformed-observed-addr'],

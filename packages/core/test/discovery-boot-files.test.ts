@@ -34,7 +34,7 @@ function announcementMessage(i: number, addrs?: string[]) {
   const keypair = deriveIdentityKeypair(seedFor(i))
   const fields = {
     identityId: keypair.identityId,
-    multiaddrs: addrs ?? [`/ip4/10.0.${i}.5/tcp/4001`],
+    multiaddrs: addrs ?? [`/ip6/2001:db8:${i.toString(16)}:5::/tcp/4001`],
     observedExternalAddr: undefined,
     slotStart: 0n,
     slotEnd: 100n,
@@ -53,7 +53,7 @@ function wrongChainMessage(i: number) {
   const keypair = deriveIdentityKeypair(seedFor(i))
   const fields = {
     identityId: keypair.identityId,
-    multiaddrs: [`/ip4/10.7.${i}.7/tcp/4001`],
+    multiaddrs: [`/ip6/2001:db8:7:${i.toString(16)}::/tcp/4001`],
     observedExternalAddr: undefined,
     slotStart: 0n,
     slotEnd: 100n,
@@ -180,7 +180,7 @@ describe('8.5 T1 — runBootLadder (rungs 2 + 3, fail-soft)', () => {
     const dir = await freshDir()
     const hintsPath = join(dir, 'lan.json')
     await writeAnnouncementsFromMessages(hintsPath, [
-      announcementMessage(5, ['/ip4/10.9.9.9/tcp/4001']),
+      announcementMessage(5, ['/ip6/2001:db8:a09:909::/tcp/4001']),
     ])
 
     const book = createAddressBook()
@@ -263,7 +263,7 @@ describe('8.5 T1 — runBootLadder (rungs 2 + 3, fail-soft)', () => {
     const self = announcementMessage(8)
     await writeAnnouncementsFromMessages(artifactPath, [
       self,
-      announcementMessage(9, ['/ip4/10.20.30.1/tcp/4001']),
+      announcementMessage(9, ['/ip6/2001:db8:a14:1e01::/tcp/4001']),
     ])
 
     const dialed: string[] = []
@@ -279,7 +279,7 @@ describe('8.5 T1 — runBootLadder (rungs 2 + 3, fail-soft)', () => {
     })
     expect(report.artifact.found).toBe(true)
     expect(report.artifact.targets).toBe(1) // self excluded
-    expect(dialed).toEqual(['/ip4/10.20.30.1/tcp/4001'])
+    expect(dialed).toEqual(['/ip6/2001:db8:a14:1e01::/tcp/4001'])
 
     // The same file at a slot past expiry: zero targets, all skipped.
     const late = await runBootLadder({
@@ -296,7 +296,7 @@ describe('8.5 T1 — runBootLadder (rungs 2 + 3, fail-soft)', () => {
     const dir = await freshDir()
     const artifactPath = join(dir, 'artifact.json')
     await writeAnnouncementsFromMessages(artifactPath, [
-      announcementMessage(11, ['/ip4/10.0.0.1/tcp/1', '/ip4/10.0.0.2/tcp/2']),
+      announcementMessage(11, ['/ip6/2001:db8:a00:1::/tcp/1', '/ip6/2001:db8:a00:2::/tcp/2']),
     ])
 
     const tried: string[] = []
@@ -309,7 +309,7 @@ describe('8.5 T1 — runBootLadder (rungs 2 + 3, fail-soft)', () => {
         return addr.endsWith('/2') // first fails, second succeeds
       },
     })
-    expect(tried).toEqual(['/ip4/10.0.0.1/tcp/1', '/ip4/10.0.0.2/tcp/2'])
+    expect(tried).toEqual(['/ip6/2001:db8:a00:1::/tcp/1', '/ip6/2001:db8:a00:2::/tcp/2'])
     expect(ok.artifact.targets).toBe(1)
 
     const boom = await runBootLadder({
