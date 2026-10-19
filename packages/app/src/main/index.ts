@@ -22,6 +22,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { appendFile, readFile } from 'node:fs/promises'
+import { networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -39,6 +40,7 @@ import { BrowserWindow, app, ipcMain } from 'electron'
 import { buildDiscoveryPorts } from './discovery-ladder.js'
 import { createCoreHost } from './core-host.js'
 import { loadOrCreateIdentitySeed } from './identity-seed.js'
+import { inviteDiagnostics } from './invite-diagnostics.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
 import { defaultNetConfig, parseBootstrapFile } from './net-config.js'
 
@@ -177,6 +179,11 @@ async function boot(): Promise<void> {
   // 9.2: this node's renderable self-invitation (public signed text — the
   // clipboard/QR source; signing itself stays in main/core, E3).
   ipcMain.handle(IPC_READ.invite, () => host.getInvite())
+  // Post-9.5: the honest "why no invite yet" — classify this machine's IPv6
+  // interfaces (the os read lives HERE, the glue; the module stays pure).
+  ipcMain.handle(IPC_READ.inviteDiag, () =>
+    inviteDiagnostics(networkInterfaces()),
+  )
 
   // The BrowserWindow: contextIsolation ON, nodeIntegration OFF — the ONLY
   // bridge to the main process is the preload's `contextBridge` surface

@@ -787,6 +787,8 @@ export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from 
 // predicate for announce/dial/ingest eligibility on real transports.
 export {
   ALLOW_LOOPBACK_ENV,
+  classifyIp6Address,
+  type Ip6AddressClass,
   assertDialable,
   filterPolicyAddresses,
   isGlobalIp6Multiaddr,

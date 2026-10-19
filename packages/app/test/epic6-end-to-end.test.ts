@@ -122,6 +122,7 @@ import type {
 
 import forgeConfig from '../forge.config.js'
 import { createCoreHost } from '../src/main/core-host.js'
+import { inviteDiagnostics } from '../src/main/invite-diagnostics.js'
 import type { CoreEventName, CoreEventPayload, CoreHost } from '../src/main/core-host.js'
 import { buildInitialSnapshot, initialUiState, reduce } from '../src/renderer/ui-state.js'
 import type { UiEvent, UiState } from '../src/renderer/ui-state.js'
@@ -309,6 +310,9 @@ function makeBridge(host: CoreHost): Window['succinctcoin'] {
     getPeers: () => host.getPeers(),
     getBlock: (slot) => host.getBlock(slot),
     getInvite: async () => host.getInvite(),
+    // Post-9.5: diagnostics are glue-level (not host-level) — the stand-in
+    // reports the empty table (the pure module is tested directly).
+    getInviteDiagnostics: async () => inviteDiagnostics({}),
     applyInvite: (text) => host.applyInvite(text),
     on: (event, cb) => {
       listeners.set(event, cb as (payload: unknown) => void)
@@ -560,6 +564,7 @@ describe('6.4 — the closing end-to-end suite (plain Node, memory transport, ze
     expect([...new Set(importSpecifiers)].sort()).toEqual([
       '../forge.config.js',
       '../src/main/core-host.js',
+      '../src/main/invite-diagnostics.js', // post-9.5 pure diagnostics module
       '../src/renderer/ui-state.js',
       '@succinctcoin/core',
       'node:fs',

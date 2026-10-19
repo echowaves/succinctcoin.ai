@@ -64,6 +64,9 @@ export const IPC_READ = {
   block: 'block',
   /** 9.2: this node's renderable self-invitation (public signed text). */
   invite: 'invite',
+  /** Post-9.5: WHY there is no invite (IPv6 interface classes — counts only,
+   * `main/invite-diagnostics.ts`). Key-free diagnostics, AD-11-safe. */
+  inviteDiag: 'inviteDiagnostics',
 } as const
 
 export type IpcReadKey = keyof typeof IPC_READ

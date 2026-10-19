@@ -18,6 +18,7 @@ import type {
 } from '@succinctcoin/core'
 import { contextBridge, ipcRenderer } from 'electron'
 
+import type { InviteDiagnostics } from './main/invite-diagnostics.js'
 import type { InviteApplyResult } from './main/ipc-channels.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './main/ipc-channels.js'
 
@@ -39,6 +40,10 @@ const succinctcoin = {
   // for the clipboard) and the join seam (paste → verify → dial). NO key
   // material either way (AD-11): signing stays in main/core.
   getInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC_READ.invite),
+  // Post-9.5: why there is no invite yet (IPv6 interface classes — counts
+  // only, key-free). Rides the same read-API seam as `getInvite`.
+  getInviteDiagnostics: (): Promise<InviteDiagnostics> =>
+    ipcRenderer.invoke(IPC_READ.inviteDiag),
   applyInvite: (text: string): Promise<InviteApplyResult> =>
     ipcRenderer.invoke(IPC_COMMANDS.applyInvite, text),
   // The event stream (main → renderer push): subscribe by the CORE event

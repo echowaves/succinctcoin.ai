@@ -7,7 +7,8 @@ export { createNetAdapter } from './adapter.js'
 export type { NetAdapterConfig, NetAdapter, ReceivedEnvelope } from './adapter.js'
 export { TOPICS } from './topics.js'
 export type { TopicClass } from './topics.js'
-export { ALLOW_LOOPBACK_ENV, assertDialable, filterPolicyAddresses, isGlobalIp6Multiaddr, isLoopbackIp6Multiaddr } from './address-policy.js'
+export { ALLOW_LOOPBACK_ENV, assertDialable, classifyIp6Address, filterPolicyAddresses, isGlobalIp6Multiaddr, isLoopbackIp6Multiaddr } from './address-policy.js'
+export type { Ip6AddressClass } from './address-policy.js'
 // 5.4 — chain sync (AD-8/AD-10/AD-12): the stable `SYNC_PROTOCOL` (a
 // dedicated request/response STREAM protocol, distinct from the four gossip
 // topics) + the sync source/client surface (`SyncSource` is structural — the

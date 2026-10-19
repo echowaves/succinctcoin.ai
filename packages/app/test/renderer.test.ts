@@ -116,6 +116,15 @@ function makeBridge(): {
     // 9.2: the invitation panel READS its invite on mount; null renders the
     // "no invite yet" state. Joining stays unexercised here (a command).
     getInvite: async () => null,
+    // Post-9.5: the panel also reads the why-no-invite diagnostics.
+    getInviteDiagnostics: async () => ({
+      hasGlobal: false,
+      globalCount: 0,
+      linkLocalCount: 1,
+      uniqueLocalCount: 0,
+      loopbackCount: 1,
+      otherCount: 0,
+    }),
     applyInvite: unused,
     on: (event, cb) => {
       listeners.set(event, cb as (payload: unknown) => void)
@@ -224,6 +233,7 @@ describe('6.3 — the React renderer (headless-safe)', () => {
     // pinned — a new renderer module must re-enter this guard).
     expect(Object.keys(sources).sort()).toEqual([
       'App.tsx',
+      'ipv6-hint.ts', // post-9.5: pure hint module (no timers, no core import)
       'main.tsx',
       'ui-state.ts',
       'useSuccinctcoin.ts',

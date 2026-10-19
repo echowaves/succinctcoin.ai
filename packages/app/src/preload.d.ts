@@ -16,6 +16,8 @@ import type {
   ReadPeer,
 } from '@succinctcoin/core'
 
+import type { InviteDiagnostics } from './main/invite-diagnostics.js'
+
 declare global {
   interface Window {
     /** The preload IPC bridge (the AD-11 key-free surface). */
@@ -33,6 +35,9 @@ declare global {
       /** 9.2: this node's renderable self-invitation (public signed text;
        * null until the node has announced a policy-valid address). */
       getInvite(): Promise<string | null>
+      /** Post-9.5: WHY there is no invite yet — this machine's IPv6 interface
+       * classes (counts only, AD-11-safe; `main/invite-diagnostics.ts`). */
+      getInviteDiagnostics(): Promise<InviteDiagnostics>
       /** 9.2 join seam: verify a pasted invitation, ingest it invite-grade,
        * and dial through it. Rejects SC-CORE-1 before the node has started. */
       applyInvite(

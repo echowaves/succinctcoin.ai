@@ -6,7 +6,12 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { assertDialable, filterPolicyAddresses, isGlobalIp6Multiaddr } from '../src/net/address-policy.js'
+import {
+  assertDialable,
+  classifyIp6Address,
+  filterPolicyAddresses,
+  isGlobalIp6Multiaddr,
+} from '../src/net/address-policy.js'
 
 describe('9.1 — address policy: global /ip6 only', () => {
   it('ACCEPTS global unicast over tcp, with p2p and p2p-circuit tails', () => {
@@ -110,5 +115,34 @@ describe('9.5 — SUCCINCTCOIN_ALLOW_LOOPBACK (explicit test flag)', () => {
       if (had === undefined) delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
       else process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
     }
+  })
+})
+
+describe('post-9.5 — classifyIp6Address (diagnostics share policy math)', () => {
+  it('CLASSIFY_VECTORS: every class at its boundaries, malformed never throws', () => {
+    // Global 2000::/3 boundaries:
+    expect(classifyIp6Address('2001:db8::1')).toBe('global')
+    expect(classifyIp6Address('2000::')).toBe('global')
+    expect(classifyIp6Address('3fff::1')).toBe('global')
+    expect(classifyIp6Address('4000::1')).toBe('other') // just past /3
+    expect(classifyIp6Address('1fff::1')).toBe('other') // just before
+    // Link-local fe80::/10 boundaries:
+    expect(classifyIp6Address('fe80::1')).toBe('linkLocal')
+    expect(classifyIp6Address('febf::ffff')).toBe('linkLocal')
+    expect(classifyIp6Address('fec0::1')).toBe('other') // old site-local, gone
+    // Unique-local fc00::/7 boundaries:
+    expect(classifyIp6Address('fc00::1')).toBe('uniqueLocal')
+    expect(classifyIp6Address('fd12:3456::78')).toBe('uniqueLocal')
+    expect(classifyIp6Address('fe00::1')).toBe('other') // just past /7
+    // Loopback (the 9.5 dev class) + compressed forms:
+    expect(classifyIp6Address('::1')).toBe('loopback')
+    expect(classifyIp6Address('0:0:0:0:0:0:0:1')).toBe('loopback')
+    expect(classifyIp6Address('::2')).toBe('other') // neighbour is NOT loopback
+    expect(classifyIp6Address('::')).toBe('other') // unspecified is not loopback
+    // v4-mapped ::ffff:1.2.3.4 — first hextet 0xffff → other (never global):
+    expect(classifyIp6Address('::ffff:1.2.3.4')).toBe('other')
+    // Malformed / zone-bearing → 'other', NEVER a throw:
+    for (const bad of ['', 'nope', 'fe80::1%en0', '::1::2', '12345::', '/ip6/::1'])
+      expect(classifyIp6Address(bad)).toBe('other')
   })
 })

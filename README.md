@@ -23,11 +23,11 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (448 tests / 62 files)
+corepack pnpm test        # the full workspace test suite (460 tests / 64 files)
 corepack pnpm typecheck   # core typecheck
 ```
 
-The root `test` runs every package's suite: the core's 411-test suite (55 files) plus the app's 37-test suite (7 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
+The root `test` runs every package's suite: the core's 412-test suite (55 files) plus the app's 48-test suite (9 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
 
 ## Run the desktop app
 
@@ -48,7 +48,7 @@ On boot the app opens the window, loads the bundled renderer, and **auto-starts 
 
 ### Join with an invitation (the primary path)
 
-1. **Generate** — the running node shows its own invite in the app (the *MY INVITE* panel; the same string lands in `<userData>/invite.txt`-compatible form). It is one line: `scinvite:v1:…`.
+1. **Generate** — the running node shows its own invite in the app (the *MY INVITE* panel; the same string lands in `<userData>/invite.txt`-compatible form). It is one line: `scinvite:v1:…`. If it never appears, the panel says why — it classifies this machine's IPv6 interfaces (link-local only, VPN-overlay `fd00::`, or no IPv6 at all) so a missing invite reads as a network fact, not an app bug.
 2. **Send** — pass that line to the joining person any way you like (it is public data, already signed).
 3. **Paste** — on the new machine, paste it into the *JOIN* panel (or write it as one line into `<userData>/invite.txt` before first boot). The app verifies it fully — signature, chain id, and ticket liveness of the inviter against applied blocks — **before dialing anything**, then dials through it and lets the peer-book crawl fill out the rest of the network (bounded: depth ≤ 3, book ≤ 100 entries, ≥3 distinct /64s by design).
 

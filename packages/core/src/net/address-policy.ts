@@ -179,6 +179,31 @@ export function isLoopbackIp6Multiaddr(addr: string): boolean {
   }
   return sawLoopback
 }
+/**
+ * The class of a RAW IPv6 text address (a host interface address, NOT a
+ * multiaddr) — the same top-bit knowledge as `ip6IsGlobalUnicast`, owned
+ * HERE so policy and diagnostics never disagree (post-9.5: the app's invite
+ * panel explains WHY it has no invite by classifying what the machine has).
+ * Zone ids are NOT handled here (strip `%en0` before calling); malformed or
+ * zone-bearing input classifies as `'other'` — this never throws.
+ */
+export type Ip6AddressClass =
+  | 'global' // 2000::/3 — the only announceable class
+  | 'linkLocal' // fe80::/10 — every interface has one; reachable nobody
+  | 'uniqueLocal' // fc00::/7 — VPN/mesh overlays (Tailscale's fd00::)
+  | 'loopback' // ::1 — the dev-flag-only dial class (9.5)
+  | 'other'
+export function classifyIp6Address(text: string): Ip6AddressClass {
+  const h = expandHextets(text)
+  if (h === null || h.length !== 8) return 'other'
+  const first = h[0] as number
+  if (first >= 0x2000 && first <= 0x3fff) return 'global'
+  if (first >= 0xfe80 && first <= 0xfebf) return 'linkLocal'
+  if (first >= 0xfc00 && first <= 0xfdff) return 'uniqueLocal'
+  if (h.slice(0, 7).every((x) => x === 0) && h[7] === 1) return 'loopback'
+  return 'other'
+}
+
 /** Expand IPv6 text to EXACTLY 8 hextets (zero-filling `::`), or null. The
  * same string math {@link ip6IsGlobalUnicast} runs, kept separate so each
  * stays one job; embedded v4 counts as two hextets. */

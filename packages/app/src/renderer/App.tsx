@@ -17,6 +17,7 @@
  */
 import { useEffect, useState } from 'react'
 
+import { describeIpv6, type InviteDiagnostics } from './ipv6-hint.js'
 import { useSuccinctcoin } from './useSuccinctcoin.js'
 import type { UiState } from './ui-state.js'
 
@@ -130,12 +131,25 @@ function InvitePanel() {
   const [invite, setInvite] = useState<string | null>(null)
   const [pasted, setPasted] = useState('')
   const [status, setStatus] = useState<string | null>(null)
+  // Post-9.5: WHY there is no invite (the panel states the precondition —
+  // the hint states this machine's actual IPv6 situation).
+  const [diag, setDiag] = useState<InviteDiagnostics | null>(null)
 
   const refresh = (): void => {
-    void window.succinctcoin
-      .getInvite()
-      .then(setInvite)
-      .catch(() => setInvite(null))
+    // ONE paired fetch (review F2): invite + diagnostics land together, so a
+    // hint never describes a different snapshot than the invite beside it.
+    void Promise.all([
+      window.succinctcoin.getInvite().catch(() => null),
+      window.succinctcoin.getInviteDiagnostics().catch(() => null),
+    ])
+      .then(([nextInvite, nextDiag]) => {
+        setInvite(nextInvite)
+        setDiag(nextDiag)
+      })
+      .catch(() => {
+        setInvite(null)
+        setDiag(null)
+      })
   }
   useEffect(refresh, [])
 
@@ -159,6 +173,7 @@ function InvitePanel() {
         <p>
           No invite yet — this node announces once it has a global IPv6 address.{' '}
           <button onClick={refresh}>Refresh</button>
+          {diag !== null && <span> {describeIpv6(diag)}</span>}
         </p>
       ) : (
         <>

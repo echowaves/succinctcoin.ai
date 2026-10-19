@@ -321,11 +321,14 @@ describe('6.2 — the app in-app path (plain Node, AD-10 headless-safe)', () => 
       'CoreStopped',
     ])
     // 9.2 adds `invite` — public signed text out, never key material (E3).
+    // Post-9.5 adds `inviteDiagnostics` — IPv6 interface CLASS COUNTS only
+    // (no addresses, no hostnames — AD-11-safe by construction).
     expect(Object.values(IPC_READ).sort()).toEqual([
       'balances',
       'block',
       'chainHead',
       'invite',
+      'inviteDiagnostics',
       'peers',
     ])
     const channels = [
