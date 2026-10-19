@@ -99,3 +99,20 @@ describe('9.3 — servePeerBook policy', () => {
     expect(servePeerBook({ book, currentSlot: 5n, expectedChainId: TEST_CHAIN, limit: 5 }).witnesses).toEqual([])
   })
 })
+
+describe('9.4 — serve order follows local reliability', () => {
+  it('SCORE_ORDER: the reliable older record serves first; equal histories keep freshness order', () => {
+    const book = createAddressBook()
+    // A(block, end 50) vs C(block, end 70): pre-9.4 the fresher C led.
+    expect(book.ingestAnnouncement(annFor(A, 50), { currentSlot: 5, expectedChainId: TEST_CHAIN, sourceClass: 'block', blockRef: { blockHashHex: 'a1'.repeat(32), slot: 5n } })).toEqual({ ok: true })
+    expect(book.ingestAnnouncement(annFor(C, 70), { currentSlot: 5, expectedChainId: TEST_CHAIN, sourceClass: 'block', blockRef: { blockHashHex: 'c3'.repeat(32), slot: 5n } })).toEqual({ ok: true })
+    // Equal (empty) histories → the 9.3 freshness order is UNTOUCHED.
+    expect(servePeerBook({ book, currentSlot: 5n, expectedChainId: TEST_CHAIN, limit: 10 }).records.map((r) => r.identityId)).toEqual([C.identityId, A.identityId])
+
+    // Reliability evidence flips the order: A's sourced data held up, C's did not.
+    book.recordSourcedData(A.identityId, 20, 20)
+    book.recordSourcedData(C.identityId, 0, 20)
+    const served = servePeerBook({ book, currentSlot: 5n, expectedChainId: TEST_CHAIN, limit: 10 })
+    expect(served.records.map((r) => r.identityId)).toEqual([A.identityId, C.identityId])
+  })
+})

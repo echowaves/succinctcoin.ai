@@ -40,9 +40,12 @@ import {
   DEFAULT_QUARANTINE_SLOTS,
   MAX_BOOK_ENTRIES,
   MAX_VOUCHES_PER_SUBJECT,
+  STABILITY_WINDOW_SLOTS,
   createAddressBook,
   deriveIdentityKeypair,
+  emptyPeerHistory,
   ip6Slash64,
+  scorePeer,
   signIntroduction,
   signPeerAnnouncement,
 } from '../src/index.js'
@@ -535,5 +538,129 @@ describe('9.3 — /64 diversity floor (MAX_ENTRIES_PER_64 = 32)', () => {
     expect(ids).not.toContain(others[0]!.identityId) // the global weakest (other-group, 50) was evicted…
     expect(ids).toContain(group[0]!.identityId) // …every crowded-group member survived
     expect(book.size()).toBe(35)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 9.4 — reliability scoring: an ORDERING signal, never eligibility
+// ---------------------------------------------------------------------------
+
+describe('9.4 — reliability score on the book', () => {
+  const oneAddr = (tag: string) => [`/ip6/2001:db8:9${tag}:1::/tcp/4001`]
+  function annAt(kp: (typeof KEYPAIRS)[number], slotEnd: number, addrs: string[]) {
+    const fields = { identityId: kp.identityId, multiaddrs: addrs, slotStart: 0, slotEnd, chainId: TEST_CHAIN }
+    return { ...fields, signature: signPeerAnnouncement(kp, fields) }
+  }
+
+  it('EVICT_WITHIN_CLASS_BY_SCORE: the flakier same-class entry loses its seat despite the NEWER slotEnd', () => {
+    const book = createAddressBook({ maxEntries: 2 })
+    expect(book.ingestAnnouncement(annAt(A, 90, oneAddr('a')), classCtx('log'))).toEqual({ ok: true })
+    expect(book.ingestAnnouncement(annAt(B, 100, oneAddr('b')), classCtx('log'))).toEqual({ ok: true })
+    // B is the FRESHER record — under the pre-9.4 (class, slotEnd) order it
+    // would survive; reliability now sinks it below A.
+    book.recordDialFailure(B.identityId, 6) // one failure: EWMA 0, no quarantine
+    book.recordSourcedData(B.identityId, 0, 8) // everything B served was junk
+    const [C2] = [C] as const
+    expect(book.ingestAnnouncement(annAt(C2, 95, oneAddr('c')), classCtx('log'))).toEqual({ ok: true })
+    const ids = book.entries().map((e) => e.identityId)
+    expect(ids).toContain(A.identityId) // the reliable older entry kept its seat…
+    expect(ids).toContain(C2.identityId)
+    expect(ids).not.toContain(B.identityId) // …the flaky freshest one lost it
+  })
+
+  it('CLASS_TIER_IS_HARD: a max-score hint never outranks a log record for a seat', () => {
+    const book = createAddressBook({ maxEntries: 2 })
+    expect(book.ingestAnnouncement(annAt(A, 100, oneAddr('d1')), classCtx('hint'))).toEqual({ ok: true })
+    expect(book.ingestAnnouncement(annAt(B, 90, oneAddr('d2')), classCtx('log'))).toEqual({ ok: true })
+    // Max out the hint's reliability — trust class must still decide.
+    book.recordDialSuccess(A.identityId, 1)
+    book.recordSourcedData(A.identityId, 50, 50)
+    expect(book.score(A.identityId)).toBeGreaterThan(book.score(B.identityId))
+    expect(book.ingestAnnouncement(annAt(C, 95, oneAddr('d3')), classCtx('log'))).toEqual({ ok: true })
+    const ids = book.entries().map((e) => e.identityId)
+    expect(ids).not.toContain(A.identityId) // hint evicted despite the best score…
+    expect(ids).toContain(B.identityId) // …the weaker log record survived
+  })
+
+  it('ELIGIBILITY_INVARIANT: zeroed and maxed scores leave dialEligible IDENTICAL', () => {
+    const book = createAddressBook()
+    expect(book.ingestAnnouncement(annAt(A, 100, oneAddr('1')), blockCtx('e1'.repeat(32)))).toEqual({ ok: true })
+    expect(book.ingestAnnouncement(annAt(B, 100, oneAddr('2')), classCtx('log'))).toEqual({ ok: true }) // un-promoted
+    expect(book.ingestAnnouncement(annAt(C, 100, oneAddr('3')), classCtx('hint'))).toEqual({ ok: true }) // un-promoted
+    const base = book.dialEligible(10).map((t) => t.identityId)
+    expect(base).toEqual([A.identityId]) // class rules only — B/C need vouches
+
+    // ZERO every history hard…
+    for (const kp of [A, B, C]) {
+      book.recordDialFailure(kp.identityId, 6)
+      book.recordSourcedData(kp.identityId, 0, 99)
+    }
+    const zeroed = base.join()
+    const scoreZero = book.score(C.identityId)
+    expect(book.dialEligible(10).map((t) => t.identityId)).toEqual(base) // zero-score block record STAYS dialable
+    // NUMERIC non-vacuity: A really is near-zero (dial 0, validity 0 — only
+    // the optimistic latency default and one seen slot remain)…
+    expect(book.score(A.identityId)).toBeLessThan(0.2)
+    // …and a mild score-gate hidden in dialEligible could not hide here.
+    expect(book.score(A.identityId)).toBeLessThan(scorePeer(emptyPeerHistory()))
+
+    // …then MAX it (reliability only — no vouches, no class change). Six
+    // successes drive the dial EWMA to 1−0.7⁶ ≈ 0.88 from the zeroed 0.
+    for (const kp of [A, B, C]) {
+      for (let k = 0; k < 6; k++) book.recordDialSuccess(kp.identityId, 1)
+      book.recordSourcedData(kp.identityId, 99, 99)
+    }
+    expect(book.score(C.identityId)).toBeGreaterThan(scoreZero) // histories really moved (non-vacuity)
+    // NUMERIC again: C climbs from ≈0.11 (zeroed) to ≈0.54 — a large,
+    // asserted swing, while eligibility stays byte-identical below.
+    expect(book.score(C.identityId) - scoreZero).toBeGreaterThan(0.4)
+    expect(book.dialEligible(10).map((t) => t.identityId)).toEqual(base) // max-score hint NEVER becomes dialable
+    expect(zeroed).toBe(base.join())
+  })
+
+  it('HISTORY_ROWS: seenSlots dedupe/window, sourced accumulation, latency EWMA, corroboration count, unknown id', () => {
+    const book = createAddressBook()
+    const addr = oneAddr('7')
+    expect(book.ingestAnnouncement(annAt(A, 100, addr), blockCtx('f1'.repeat(32), 5))).toEqual({ ok: true })
+    let e = book.entries().find((x) => x.identityId === A.identityId)!
+    expect(e.history.seenSlots).toEqual([5n]) // install stamps the slot
+    expect(e.history.corroborations).toBe(0) // independent signers only — not provenance
+
+    // Re-ingest at the SAME slot dedupes; newer records at new slots extend.
+    for (const [slot, end] of [[5, 200], [6, 300], [7, 400]] as const) {
+      expect(book.ingestAnnouncement(annAt(A, end, addr), blockCtx('f1'.repeat(32), slot))).toEqual({ ok: true })
+    }
+    e = book.entries().find((x) => x.identityId === A.identityId)!
+    expect(e.history.seenSlots).toEqual([5n, 6n, 7n])
+
+    // Window: rotate through 33 more distinct slots — only the newest 24 stay.
+    for (let slot = 8; slot <= 40; slot++) {
+      expect(book.ingestAnnouncement(annAt(A, 1000 + slot, addr), blockCtx('f1'.repeat(32), slot))).toEqual({ ok: true })
+    }
+    e = book.entries().find((x) => x.identityId === A.identityId)!
+    expect(e.history.seenSlots).toHaveLength(STABILITY_WINDOW_SLOTS)
+    expect(e.history.seenSlots[0]).toBe(17n) // 40 − 24 + 1 — oldest evicted
+    expect(e.history.seenSlots[STABILITY_WINDOW_SLOTS - 1]).toBe(40n)
+
+    // Sourced data accumulates across sink calls.
+    book.recordSourcedData(A.identityId, 2, 4)
+    book.recordSourcedData(A.identityId, 3, 6)
+    e = book.entries().find((x) => x.identityId === A.identityId)!
+    expect([e.history.sourcedValid, e.history.sourcedTotal]).toEqual([5, 10])
+
+    // Latency EWMA: first sample wins, then α-blend (0.3·300 + 0.7·100).
+    book.recordDialSuccess(A.identityId, 100)
+    book.recordDialSuccess(A.identityId, 300)
+    e = book.entries().find((x) => x.identityId === A.identityId)!
+    expect(e.history.latencyEwmaMs).toBeCloseTo(160, 12)
+
+    // Distinct introduction signers add corroboration.
+    const fields = { signerIdentityId: D.identityId, subjectIdentityId: A.identityId, slotObserved: 40, reachability: 'direct' as const, chainId: TEST_CHAIN }
+    expect(book.ingestIntroduction({ ...fields, signature: signIntroduction(D, fields) }, { currentSlot: 40, expectedChainId: TEST_CHAIN })).toEqual({ ok: true })
+    e = book.entries().find((x) => x.identityId === A.identityId)!
+    expect(e.history.corroborations).toBe(1)
+
+    // An unknown id scores as a fresh history.
+    expect(book.score('ff'.repeat(32))).toBeCloseTo(scorePeer(emptyPeerHistory()), 12)
   })
 })

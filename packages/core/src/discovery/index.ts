@@ -52,6 +52,22 @@ export {
 export { servePeerBook } from './peerbook-serve.js'
 export type { ServePeerBookOptions } from './peerbook-serve.js'
 export {
+  CORROBORATION_CAP,
+  emptyPeerHistory,
+  ewmaUpdate,
+  LATENCY_CAP_MS,
+  scorePeer,
+  SCORE_EWMA_ALPHA,
+  STABILITY_WINDOW_SLOTS,
+  VALIDITY_NEUTRAL,
+  WEIGHT_CORROBORATION,
+  WEIGHT_DIAL,
+  WEIGHT_LATENCY,
+  WEIGHT_STABILITY,
+  WEIGHT_VALIDITY,
+} from './peer-score.js'
+export type { PeerHistory } from './peer-score.js'
+export {
   CRAWL_CONCURRENCY,
   CRAWL_MAX_DEPTH,
   runCrawl,

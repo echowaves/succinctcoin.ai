@@ -33,6 +33,8 @@
  */
 import { ip6Slash64 } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
+import { emptyPeerHistory, ewmaUpdate, scorePeer, STABILITY_WINDOW_SLOTS } from './peer-score.js'
+import type { PeerHistory } from './peer-score.js'
 import type { AnnouncementRejectReason, SignedPeerAnnouncement } from './announcements.js'
 import { validateIntroduction } from './introductions.js'
 import type { IntroductionRejectReason, SignedIntroduction } from './introductions.js'
@@ -115,6 +117,10 @@ export interface AddressBookEntry {
    * server re-emits served records for OTHER peers and can never re-sign
    * them — only the original holder's bytes verify. Copy on read. */
   signature: Uint8Array
+  /** Local reliability history (9.4) — selection signal only, NEVER an
+   * eligibility input. Copy on read; corroborations = distinct introduc-
+   * tion signers + block provenance. */
+  history: PeerHistory
 }
 
 /** What the dialer (8.5) consumes — addresses only, never book internals. */
@@ -162,10 +168,24 @@ export interface AddressBook {
   /** Validate-then-park/merge an introduction (8.4's contract). */
   ingestIntroduction(record: unknown, ctx: { currentSlot: number | bigint; expectedChainId: string }): BookIntroResult
   /** A dial attempt to this identity FAILED at `currentSlot`: 3 failures
-   * quarantine the entry for the configured window. Unknown id = no-op. */
+   * quarantine the entry for the configured window, and the reliability
+   * dial EWMA takes a 0-sample (9.4 — ordering signal only). Unknown id =
+   * no-op. */
   recordDialFailure(identityId: string, currentSlot: number | bigint): void
-  /** A successful dial clears the failure counter AND any quarantine. */
-  recordDialSuccess(identityId: string): void
+  /** A successful dial clears the failure counter AND any quarantine, and
+   * samples the dial EWMA with 1 (plus the latency EWMA when `latencyMs`
+   * is measured — 9.4). */
+  recordDialSuccess(identityId: string, latencyMs?: number): void
+  /** The narrow data-validity sink (9.4): `valid` of `total` records
+   * SOURCED FROM this peer verified — ingest VERDICTS, so a stale-but-valid
+   * record counts as valid evidence even when the book no longer needs it
+   * (the crawler feeds it per peer-book response). Feeds only the
+   * reliability score — never eligibility. */
+  recordSourcedData(identityId: string, valid: number, total: number): void
+  /** The local reliability score in [0,1] (9.4) — an ORDERING signal for
+   * crawl/serve/eviction; NEVER read by eligibility or validation. An
+   * unknown id scores as a fresh history. */
+  score(identityId: string): number
   /** Reorg retraction: remove exactly the entries whose CURRENT provenance
    * is this block. Returns how many entries were removed. Unknown hash =
    * no-op (0). */
@@ -187,6 +207,28 @@ export interface AddressBook {
 // internals
 // ---------------------------------------------------------------------------
 
+/** Mutable local reliability history (9.4) — see {@link PeerHistory}. */
+interface MutableHistory {
+  dialEwma?: number | undefined
+  latencyEwmaMs?: number | undefined
+  /** Distinct recent slots with a valid record for this identity, oldest
+   * first, bounded to the stability window. */
+  seenSlots: bigint[]
+  sourcedValid: number
+  sourcedTotal: number
+}
+
+function freshHistory(): MutableHistory {
+  return { seenSlots: [], sourcedValid: 0, sourcedTotal: 0 }
+}
+
+/** Stamp the slot in which this install/update was observed (9.4 stabil-
+ * ity): deduped, oldest-evicted beyond the window. */
+function stampSlot(history: MutableHistory, currentSlot: bigint): void {
+  if (!history.seenSlots.includes(currentSlot)) history.seenSlots.push(currentSlot)
+  while (history.seenSlots.length > STABILITY_WINDOW_SLOTS) history.seenSlots.shift()
+}
+
 interface MutableEntry {
   identityId: string
   multiaddrs: string[]
@@ -203,6 +245,8 @@ interface MutableEntry {
   quarantineUntilSlot?: bigint | undefined
   /** Original verified signature (9.3 peer-book re-serve; see entry view). */
   signature: Uint8Array
+  /** Local reliability history (9.4); never an eligibility input. */
+  history: MutableHistory
 }
 
 function coerce(v: number | bigint): bigint {
@@ -211,12 +255,34 @@ function coerce(v: number | bigint): bigint {
   return b
 }
 
-/** (class, slotEnd, firstSeenSlot, id)-worst ordering for eviction: the
- * entry returned by `worse(a, b)` LOSES. Deterministic total order. */
-function worse(a: MutableEntry, b: MutableEntry): MutableEntry {
+/** The reliability view of an entry: history plus corroboration (distinct
+ * introduction signers + block provenance). */
+function historyView(e: MutableEntry): PeerHistory {
+  return {
+    dialEwma: e.history.dialEwma,
+    latencyEwmaMs: e.history.latencyEwmaMs,
+    seenSlots: [...e.history.seenSlots],
+    sourcedValid: e.history.sourcedValid,
+    sourcedTotal: e.history.sourcedTotal,
+    // Independent SOURCES only — distinct verified introduction signers.
+    // Block provenance already wins its trust-class tier; adding it here
+    // would silently re-rank classes inside one score (9.3 serve order).
+    corroborations: e.introductions.size,
+  }
+}
+
+/** (9.4) Eviction ordering: trust class stays a HARD tier — reliability
+ * never rescues a hint over an invite. WITHIN a class the lower score
+ * loses its seat first; equal scores fall back to the legacy (slotEnd,
+ * firstSeen, id) order. The entry returned LOSES. */
+function worseReliability(a: MutableEntry, b: MutableEntry): MutableEntry {
   const ra = CLASS_RANK[a.sourceClass]
   const rb = CLASS_RANK[b.sourceClass]
   if (ra !== rb) return ra < rb ? a : b
+  const sa = scorePeer(historyView(a))
+  const sb = scorePeer(historyView(b))
+  if (sa !== sb) return sa < sb ? a : b
+  // Same class, same score: the legacy slot order decides (deterministic).
   if (a.slotEnd !== b.slotEnd) return a.slotEnd < b.slotEnd ? a : b
   if (a.firstSeenSlot !== b.firstSeenSlot) return a.firstSeenSlot < b.firstSeenSlot ? a : b
   return a.identityId <= b.identityId ? a : b
@@ -338,6 +404,7 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       failedDials: e.failedDials,
       quarantineUntilSlot: e.quarantineUntilSlot,
       signature: e.signature.slice(),
+      history: historyView(e),
     }
   }
 
@@ -395,12 +462,15 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
         const preservedFirstSeen = existing.firstSeenSlot
         const preservedFailures = existing.failedDials
         const preservedQuarantine = existing.quarantineUntilSlot
+        const preservedHistory = existing.history // 9.4: reliability survives record rotation
         detachProvenance(r.identityId, existing.blockRef)
         entriesById.delete(r.identityId)
         install(r.identityId, slotStart, slotEnd, preservedIntros, preservedFirstSeen)
         const e = entriesById.get(r.identityId) as MutableEntry
         e.failedDials = preservedFailures
         if (preservedQuarantine !== undefined) e.quarantineUntilSlot = preservedQuarantine
+        e.history = preservedHistory
+        stampSlot(e.history, currentSlot)
         return { ok: true }
       }
 
@@ -415,7 +485,8 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       //         frees a slot does NOT bypass this (9.3 review finding 7).
       //   (class/slot contest) when the book is full and the floor does not
       //     bind, the incoming record installs only if strictly better than
-      //     the weakest entry under the (class, slotEnd, firstSeen, id) order.
+      //     the weakest entry under the (class, score, slotEnd, firstSeen,
+      //     id) order — 9.4: reliability orders seats WITHIN a trust class.
       // The loser is dropped silently: the record stays valid, the book just
       // has no room for it (same ok:true as self-exclusion).
       const challenger: MutableEntry = {
@@ -428,7 +499,11 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
         introductions: new Map(),
         failedDials: 0,
         signature: r.signature instanceof Uint8Array ? r.signature : new Uint8Array(0),
+        history: freshHistory(),
       }
+      // 9.4: the challenger was observed THIS slot too — stamp before any
+      // seat contest so stability never stacks the deck against it.
+      stampSlot(challenger.history, currentSlot)
       const incomingGroup = slash64Of(r.multiaddrs)
       let inGroup = 0
       if (incomingGroup !== null) {
@@ -448,12 +523,12 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
           for (const e of entriesById.values()) {
             if (incomingGroup !== null && inGroup >= MAX_ENTRIES_PER_64) {
               if (slash64Of(e.multiaddrs) !== incomingGroup) continue
-              victim = victim === undefined ? e : worse(victim, e)
+              victim = victim === undefined ? e : worseReliability(victim, e)
             } else {
-              victim = victim === undefined ? e : worse(victim, e)
+              victim = victim === undefined ? e : worseReliability(victim, e)
             }
           }
-          if (victim === undefined || worse(victim, challenger) !== victim) {
+          if (victim === undefined || worseReliability(victim, challenger) !== victim) {
             return { ok: true } // the incoming record lost the seat — dropped
           }
           dropEntry(victim.identityId)
@@ -485,7 +560,9 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
           // The validator verified THIS signature against these exact fields;
           // storing it lets the peer-book server re-serve the record byte-true.
           signature: r.signature instanceof Uint8Array ? r.signature.slice() : new Uint8Array(0),
+          history: freshHistory(),
         }
+        stampSlot(entry.history, currentSlot) // 9.4: this slot counts as seen
         entriesById.set(id, entry)
         attachProvenance(id, entry.blockRef)
         mergePending(entry)
@@ -552,21 +629,43 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       return { ok: true }
     },
 
+    recordSourcedData(identityId: string, valid: number, total: number): void {
+      const e = entriesById.get(identityId)
+      if (e === undefined) return
+      if (!(total > 0)) return
+      e.history.sourcedValid += Math.max(0, Math.trunc(valid))
+      e.history.sourcedTotal += Math.max(0, Math.trunc(total))
+    },
+
+    score(identityId: string): number {
+      const e = entriesById.get(identityId)
+      return scorePeer(e === undefined ? emptyPeerHistory() : historyView(e))
+    },
+
     recordDialFailure(identityId: string, currentSlot: number | bigint): void {
       const e = entriesById.get(identityId)
       if (e === undefined) return
       expireQuarantine(e, coerce(currentSlot)) // an expired window starts fresh
       e.failedDials += 1
+      // 9.4: the reliability dial EWMA samples 0 — an ORDERING signal, and
+      // deliberately NOT what quarantines anything (that stays the counter).
+      e.history.dialEwma = ewmaUpdate(e.history.dialEwma, 0)
       if (e.failedDials >= DIAL_FAILURES_TO_QUARANTINE) {
         e.quarantineUntilSlot = coerce(currentSlot) + quarantineSlots
       }
     },
 
-    recordDialSuccess(identityId: string): void {
+    recordDialSuccess(identityId: string, latencyMs?: number): void {
       const e = entriesById.get(identityId)
       if (e === undefined) return
       e.failedDials = 0
       delete e.quarantineUntilSlot
+      // 9.4: success samples the dial EWMA with 1; a measured dial duration
+      // samples the latency EWMA (raw ms — scorePeer applies the cap).
+      e.history.dialEwma = ewmaUpdate(e.history.dialEwma, 1)
+      if (latencyMs !== undefined && Number.isFinite(latencyMs) && latencyMs >= 0) {
+        e.history.latencyEwmaMs = ewmaUpdate(e.history.latencyEwmaMs, latencyMs)
+      }
     },
 
     retractBlock(blockHashHex: string): number {

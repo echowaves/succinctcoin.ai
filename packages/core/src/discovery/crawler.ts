@@ -65,6 +65,9 @@ export interface CrawlerDeps {
   concurrency?: number
   /** Cooperative stop (node shutdown): checked between dequeues. */
   stopped?(): boolean
+  /** Optional monotonic clock (ms). When provided, dial durations are timed
+   * and fed to the book's latency EWMA (9.4) — an ordering signal only. */
+  now?: (() => number) | undefined
 }
 
 /** Counts only (AD-9): no addresses, no records, no keys in the report. */
@@ -136,9 +139,13 @@ export async function runCrawl(
   async function crawlOne(item: FrontierItem): Promise<void> {
     // Dial the specific address (one attempt — the book keeps the score).
     try {
+      const dialedAt = deps.now?.()
       await deps.dial(item.address)
       report.dialed += 1
-      deps.book.recordDialSuccess(item.identityId)
+      deps.book.recordDialSuccess(
+        item.identityId,
+        dialedAt !== undefined && deps.now !== undefined ? Math.max(0, deps.now() - dialedAt) : undefined,
+      )
     } catch {
       report.failed += 1
       deps.book.recordDialFailure(item.identityId, deps.currentSlot())
@@ -172,6 +179,7 @@ export async function runCrawl(
     // corroborator. An unsigned/forged witness object in the response buys
     // nothing: dial targets only ever come from verified records.
     const currentSlot = deps.currentSlot()
+    let acceptedRecords = 0
     interface Learned {
       identityId: string
       addrs: readonly string[]
@@ -186,6 +194,7 @@ export async function runCrawl(
       })
       if (!result.ok) continue // rejected at ingest: never stored, never followed
       report.stored += 1
+      acceptedRecords += 1
       const identityId = String((record as { identityId?: unknown }).identityId ?? '')
       // Signature-valid witnesses for THIS subject from corroborators: each
       // vouches the subject in the book (the normal introductions path) and
@@ -205,6 +214,12 @@ export async function runCrawl(
       learned.push({ identityId, addrs, corroborated })
     }
 
+    // 9.4 data-validity sink: how much of what THIS peer served survived
+    // ingest verification. Feeds only the reliability score — never any gate.
+    if (served.records.length > 0) {
+      deps.book.recordSourcedData(item.identityId, acceptedRecords, served.records.length)
+    }
+
     // The crawl dial set: INGESTED records a corroborator validly vouched,
     // at the next depth. (Poison rows — no valid witness — stop here.)
     if (item.depth >= maxDepth) {
@@ -222,7 +237,8 @@ export async function runCrawl(
     }
   }
 
-  // The worker pool: FIFO dequeue, at most `concurrency` in flight.
+  // The worker pool: score-ordered dequeue (9.4), at most `concurrency` in
+  // flight.
   await new Promise<void>((resolveAll) => {
     let settled = false
     const settle = (): void => {
@@ -242,7 +258,14 @@ export async function runCrawl(
         return
       }
       while (queue.length > 0 && active < concurrency) {
-        const item = queue.shift() as FrontierItem
+        // 9.4: dequeue the highest local reliability score first; TIES keep
+        // FIFO (strictly-greater scan), so a run over equal histories crawls
+        // in exactly the old enqueue order.
+        let best = 0
+        for (let i = 1; i < queue.length; i++) {
+          if (deps.book.score(queue[i].identityId) > deps.book.score(queue[best].identityId)) best = i
+        }
+        const item = queue.splice(best, 1)[0] as FrontierItem
         // CLAIM at dequeue: a second address of an already-claimed identity
         // can never spawn a parallel crawl of the same peer.
         if (crawledIdentities.has(item.identityId)) continue

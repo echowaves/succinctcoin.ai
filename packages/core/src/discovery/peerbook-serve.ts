@@ -11,8 +11,10 @@
  *  - CLASS EXCLUSION: hint-grade records are NEVER served — an
  *    uncorroborated observation must not propagate across the network
  *    (amplification guard; the receiver would only store it as hint anyway).
- *  - ORDER (pre-9.4): freshness — `slotEnd` desc, ties by identityId asc
- *    (deterministic). 9.4 swaps in score order HERE and only here.
+ *  - ORDER (9.4): reliability — local `scorePeer(history)` desc, ties by
+ *    slotEnd desc then identityId asc (deterministic; with empty histories
+ *    this is exactly the 9.3 freshness order). Score ORDERS the response;
+ *    it never gates it — eligibility stays `dialEligible` alone.
  *  - BYTE-TRUE records: the book stores each verified record's ORIGINAL
  *    signature; a served record must verify against its fields before it
  *    leaves (defensive re-check — nothing unverified egresses, and we can
@@ -30,6 +32,7 @@ import type { Introduction, PeerAnnouncement } from '../proto/index.js'
 import type { AddressBook } from './address-book.js'
 import { verifyPeerAnnouncementSignature } from './announcements.js'
 import type { PeerAnnouncementFields } from './announcements.js'
+import { scorePeer } from './peer-score.js'
 import { signIntroduction } from './introductions.js'
 
 export interface ServePeerBookOptions {
@@ -71,10 +74,16 @@ export function servePeerBook(opts: ServePeerBookOptions): PeerBookServed {
           e.signature,
         ),
     )
-    // Freshness order (pre-9.4; 9.4 replaces THIS comparator with score).
-    .sort((a, b) =>
-      a.slotEnd !== b.slotEnd ? (a.slotEnd < b.slotEnd ? 1 : -1) : a.identityId < b.identityId ? -1 : a.identityId === b.identityId ? 0 : 1,
-    )
+    // 9.4 reliability order: score desc, tie → slotEnd desc (the 9.3 fresh-
+    // ness order), tie → identityId asc. Empty histories score equally, so
+    // a fresh book serves exactly as in 9.3.
+    .sort((a, b) => {
+      const sa = scorePeer(a.history)
+      const sb = scorePeer(b.history)
+      if (sa !== sb) return sa < sb ? 1 : -1
+      if (a.slotEnd !== b.slotEnd) return a.slotEnd < b.slotEnd ? 1 : -1
+      return a.identityId < b.identityId ? -1 : a.identityId === b.identityId ? 0 : 1
+    })
     .slice(0, opts.limit)
 
   for (const e of served) {

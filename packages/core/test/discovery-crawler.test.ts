@@ -129,6 +129,38 @@ function buildMesh(opts: MeshOptions = {}) {
   return { door, l2, l3, l4, deps, opts, dialed, attemptsPerAddress, peak: () => peak }
 }
 
+describe('9.4 — crawl dequeue follows local reliability', () => {
+  it('SCORE_ORDER: the more reliable seed dials first…', async () => {
+    const m = buildMesh()
+    const s1 = makeNode(201)
+    const s2 = makeNode(202)
+    // Both seeds are book entries with equal fresh histories…
+    expect(m.deps.book.ingestAnnouncement(s1.record, { currentSlot: 5, expectedChainId: TEST_CHAIN, sourceClass: 'log' })).toEqual({ ok: true })
+    expect(m.deps.book.ingestAnnouncement(s2.record, { currentSlot: 5, expectedChainId: TEST_CHAIN, sourceClass: 'log' })).toEqual({ ok: true })
+    // …then s2 earns reliability: everything it ever served verified.
+    m.deps.book.recordSourcedData(s2.kp.identityId, 9, 9)
+
+    const report = await runCrawl(m.deps, [
+      { address: s1.addr, identityId: s1.kp.identityId },
+      { address: s2.addr, identityId: s2.kp.identityId },
+    ])
+    expect(report.stoppedBy).toBe('quiet')
+    expect(m.dialed).toEqual([s2.addr, s1.addr]) // boosted seed first
+  })
+
+  it('TIES_KEEP_FIFO: equal histories crawl in exactly enqueue order', async () => {
+    const m = buildMesh()
+    const s3 = makeNode(203)
+    const s4 = makeNode(204)
+    const report = await runCrawl(m.deps, [
+      { address: s3.addr, identityId: s3.kp.identityId },
+      { address: s4.addr, identityId: s4.kp.identityId },
+    ])
+    expect(report.stoppedBy).toBe('quiet')
+    expect(m.dialed).toEqual([s3.addr, s4.addr])
+  })
+})
+
 describe('9.3 — bounded BFS crawl (synthetic mesh)', () => {
   it('MESH_150_CAP: exactly 100 stored; depth ≤ 3; concurrency 8 observed; one dial per address', async () => {
     const m = buildMesh()

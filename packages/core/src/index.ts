@@ -267,6 +267,9 @@ export function createCore(ports: CorePorts): CoreInstance {
               expectedChainId: genesis!.chainId,
               currentSlot: () => BigInt(Math.max(ports.clock.slotIndex(), 0)),
               stopped: () => discoveryStopped,
+              // 9.4 latency sampling: monotonic ms around each crawl dial —
+              // a local ordering signal only, never consensus time (AD-3).
+              now: () => performance.now(),
             }, seeds).then((report) => ports.discovery?.onCrawlReport?.(report))
           })
           .catch(() => undefined) // the ladder never unwinds boot (R4)
@@ -901,6 +904,22 @@ export type { InviteContext, InviteRejectReason, InviteValidation } from './disc
 // policy (what a node shares) and the crawler machine (how far it reaches).
 // Bounds are exported for the tests that pin them.
 export { CRAWL_CONCURRENCY, CRAWL_MAX_DEPTH, runCrawl, servePeerBook } from './discovery/index.js'
+export {
+  CORROBORATION_CAP,
+  emptyPeerHistory,
+  ewmaUpdate,
+  LATENCY_CAP_MS,
+  scorePeer,
+  SCORE_EWMA_ALPHA,
+  STABILITY_WINDOW_SLOTS,
+  VALIDITY_NEUTRAL,
+  WEIGHT_CORROBORATION,
+  WEIGHT_DIAL,
+  WEIGHT_LATENCY,
+  WEIGHT_STABILITY,
+  WEIGHT_VALIDITY,
+} from './discovery/index.js'
+export type { PeerHistory } from './discovery/index.js'
 export type { CrawlReport, CrawlerDeps, ServePeerBookOptions } from './discovery/index.js'
 
 /**
