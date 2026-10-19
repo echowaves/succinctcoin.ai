@@ -46,7 +46,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { GenesisConfig } from '@succinctcoin/core'
 
-import { LAN_LISTEN_ADDRESS, defaultNetConfig } from '../src/main/net-config.js'
+import { LAN_LISTEN_ADDRESS, defaultNetConfig, parseBootstrapFile } from '../src/main/net-config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_DIR = join(here, '..')
@@ -128,5 +128,51 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
       const stripped = stripComments(raw)
       expect(stripped, `${srcPath}: no memory literal in code`).not.toMatch(/\bmemory\b/)
     }
+  })
+})
+
+describe('LAN joins when multicast is blocked — listen-port pin + bootstrap hints', () => {
+  it('LISTEN_PORT: a valid port pins /ip4/0.0.0.0/tcp/<port>; invalid falls back to ephemeral', () => {
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    expect(defaultNetConfig(g, 'aa'.repeat(32), { listenPort: 4001 }).listenAddress).toBe(
+      '/ip4/0.0.0.0/tcp/4001',
+    )
+    for (const bad of [0, -1, 70000, 2.5, Number.NaN]) {
+      expect(defaultNetConfig(g, 'aa'.repeat(32), { listenPort: bad }).listenAddress).toBe(
+        LAN_LISTEN_ADDRESS,
+      )
+    }
+    expect(defaultNetConfig(g, 'aa'.repeat(32)).listenAddress).toBe(LAN_LISTEN_ADDRESS)
+  })
+
+  it('EXTRA_BOOTSTRAP_MERGE: local hints merge AFTER genesis, deduped, as a NEW array; no hints keeps the verbatim reference', () => {
+    const peers = ['/ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleA']
+    const genesis: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: peers }
+
+    const merged = defaultNetConfig(genesis, 'bb'.repeat(32), {
+      extraBootstrap: ['/ip4/192.168.1.17/tcp/4001/p2p/12D3KooWLanPeer', peers[0] as string],
+    })
+    expect(merged.bootstrap).toEqual([
+      '/ip4/203.0.113.10/tcp/4001/p2p/12D3KooWExampleA',
+      '/ip4/192.168.1.17/tcp/4001/p2p/12D3KooWLanPeer',
+    ])
+    expect(merged.bootstrap).not.toBe(peers) // genesis untouched
+    // Empty hints ⇒ the pinned 7.2 verbatim passthrough still holds.
+    expect(defaultNetConfig(genesis, 'bb'.repeat(32), { extraBootstrap: [] }).bootstrap).toBe(peers)
+  })
+
+  it('PARSE_BOOTSTRAP_FILE: keeps multiaddr lines (trimmed, ordered); drops blanks, # comments, and non-/ lines', () => {
+    const text = [
+      '# LAN peers, one per line',
+      '  /ip4/192.168.1.17/tcp/4001/p2p/12D3KooWA  ',
+      '',
+      'not-a-multiaddr',
+      '\t/ip4/192.168.1.99/tcp/4001/p2p/12D3KooWB',
+      '# /ip4/commented.out/tcp/1/p2p/x',
+    ].join('\n')
+    expect(parseBootstrapFile(text)).toEqual([
+      '/ip4/192.168.1.17/tcp/4001/p2p/12D3KooWA',
+      '/ip4/192.168.1.99/tcp/4001/p2p/12D3KooWB',
+    ])
   })
 })

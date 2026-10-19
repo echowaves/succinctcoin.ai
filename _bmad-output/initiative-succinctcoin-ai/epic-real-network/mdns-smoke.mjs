@@ -56,7 +56,24 @@ const FIX_BLOCK = {
   hash: new Uint8Array(32).fill(label === 'A' ? 0xa1 : 0xb1),
   txCount: 0n,
 }
-await a.sendBlock(FIX_BLOCK)
+// The mesh grafts on gossipsub heartbeats (~1 s each, cross-machine can take
+// several); the adapter's send is single-shot (5.1 D6), so retry until the
+// mesh accepts — publishUntilAccepted, the pattern every 5.x driver uses.
+{
+  const pubDeadline = Date.now() + 30_000
+  let published = false
+  let lastErr = ''
+  while (Date.now() < pubDeadline && !published) {
+    try {
+      await a.sendBlock(FIX_BLOCK)
+      published = true
+    } catch (err) {
+      lastErr = String(err).slice(0, 80)
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+  if (!published) console.log(`[${label}] WARN — publish never accepted in 30s: ${lastErr}`)
+}
 console.log(`[${label}] published a block (slot 777)`)
 
 const rxDeadline = Date.now() + 20_000

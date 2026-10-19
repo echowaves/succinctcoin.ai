@@ -45,12 +45,53 @@ export const LAN_LISTEN_ADDRESS = '/ip4/0.0.0.0/tcp/0'
 export function defaultNetConfig(
   genesis: Pick<GenesisConfig, 'bootstrap'>,
   protocolIdentityId: string,
+  opts: NetConfigOptions = {},
 ): NetAdapterConfig {
+  const port = opts.listenPort
+  const listenAddress =
+    typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535
+      ? `/ip4/0.0.0.0/tcp/${port}`
+      : LAN_LISTEN_ADDRESS
+  const extra = opts.extraBootstrap ?? []
+  // Merge order: genesis first, then local hints; dedupe by exact string.
+  // With no hints the list passes through VERBATIM (the pinned 7.2 shape).
+  const bootstrap =
+    extra.length === 0
+      ? genesis.bootstrap
+      : [...new Set([...genesis.bootstrap, ...extra])]
   return {
     transport: 'tcp',
-    listenAddress: LAN_LISTEN_ADDRESS,
+    listenAddress,
     mdns: true,
-    bootstrap: genesis.bootstrap,
+    bootstrap,
     protocolIdentityId,
   }
+}
+
+/** Optional boot overrides (resolved from env/files by the thin glue). */
+export interface NetConfigOptions {
+  /** Fixed TCP listen port (1–65535) instead of ephemeral — stable LAN
+   * addresses for bootstrap hints when multicast is blocked. Invalid or
+   * absent ⇒ ephemeral (`tcp/0`), the pinned default. */
+  listenPort?: number | undefined
+  /** Locally-configured bootstrap multiaddrs (e.g. a LAN peer whose address
+   * was copied from its boot log) MERGED after `genesis.bootstrap`. */
+  extraBootstrap?: readonly string[] | undefined
+}
+
+/**
+ * Parse a local bootstrap-hints file (one multiaddr per line; `#` comments
+ * and blank lines ignored; a line that does not start with `/` is dropped —
+ * the adapter's own bootstrap service remains the validity authority). The
+ * glue reads the file; this stays pure.
+ */
+export function parseBootstrapFile(text: string): string[] {
+  const out: string[] = []
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    if (!line.startsWith('/')) continue
+    out.push(line)
+  }
+  return out
 }

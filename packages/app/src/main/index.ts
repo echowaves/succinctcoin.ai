@@ -20,7 +20,7 @@
  * `../preload.mjs` (the Electron ESM-preload rule — an ESM preload in a
  * `.js` file is parsed as CJS and never loads).
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -38,7 +38,7 @@ import { buildDiscoveryPorts } from './discovery-ladder.js'
 import { createCoreHost } from './core-host.js'
 import { loadOrCreateIdentitySeed } from './identity-seed.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
-import { defaultNetConfig } from './net-config.js'
+import { defaultNetConfig, parseBootstrapFile } from './net-config.js'
 
 /**
  * The BUNDLED `dist/config/genesis.json` — the ONE genesis source (the
@@ -76,7 +76,23 @@ async function boot(): Promise<void> {
   // transport is TEST-ONLY (AD-10): tests inject their own net configs,
   // nothing here can select it. Store: the app's userData dir (the state,
   // AD-9).
-  const net = createNetAdapter(defaultNetConfig(genesis, identity.identityId))
+  //
+  // LAN joins when MULTICAST IS BLOCKED (guest Wi-Fi, VLANs, endpoint
+  // filters): SUCCINCTCOIN_LISTEN_PORT pins a fixed port so this node's
+  // multiaddr is stable, and <userData>/bootstrap.txt lists known peer
+  // multiaddrs (one per line, `#` comments) merged after genesis.bootstrap.
+  // The boot log prints this node's own dialable multiaddr to copy over.
+  const envPort = Number.parseInt(process.env.SUCCINCTCOIN_LISTEN_PORT ?? '', 10)
+  const bootstrapFile = join(app.getPath('userData'), 'bootstrap.txt')
+  const extraBootstrap = existsSync(bootstrapFile)
+    ? parseBootstrapFile(readFileSync(bootstrapFile, 'utf8'))
+    : []
+  const net = createNetAdapter(
+    defaultNetConfig(genesis, identity.identityId, {
+      listenPort: Number.isNaN(envPort) ? undefined : envPort,
+      extraBootstrap,
+    }),
+  )
   const store = new FileChainStore(join(app.getPath('userData'), 'chain'))
   const gate = createOfflineGateVerifier({ acceptedGates: genesis.gates })
 
@@ -172,6 +188,19 @@ async function boot(): Promise<void> {
   // independent default, whose repo-root path is not in the package).
   await host.start(genesisPath())
   await host.startMining()
+
+  // Copy-paste this line's address to a LAN peer's bootstrap.txt when mDNS
+  // cannot cross the network (the dial path is plain unicast TCP).
+  try {
+    const lan = net.listenAddresses().filter((a) => !a.includes('/ip4/127.0.0.1'))
+    console.log(
+      lan.length > 0
+        ? `[boot] dial me: ${lan.join(' ')}${extraBootstrap.length > 0 ? ` (bootstrap hints: ${String(extraBootstrap.length)} from ${bootstrapFile})` : ''}`
+        : '[boot] no LAN listen address yet (adapter reported none)',
+    )
+  } catch {
+    // never unwinds boot for a log line
+  }
 }
 
 void app.whenReady().then(() =>
