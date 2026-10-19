@@ -148,3 +148,20 @@
      design (policy + validators + lint + epic-9 proofs), which is the point:
      any future dual-stack support must be an explicit architecture decision
      with its own relay/privacy analysis, not a policy tweak. -->
+
+
+<!-- OPEN 2026-10-22 (post-9.5 user report): DEV-ONLY ANNOUNCE ALLOWANCE.
+     The machine that reported "No invite yet forever" has no global IPv6 at
+     all (fe80:: only, no v6 route) — the panel now SAYS so (b6d3679), but
+     such a machine still cannot produce an invite or two-node-test the join
+     flow: 9.5's SUCCINCTCOIN_ALLOW_LOOPBACK=1 relaxes ONLY dialing
+     (assertDialable); announce stays strict by design (filterPolicyAddresses
+     in node-loop). Undecided: whether to make that flag symmetric — under an
+     explicit env allowance, let the app announce ::1 (loopback-only mesh on
+     one machine, dev/test use) without touching default policy. Design bar
+     if built: default-off per-call env read exactly like the dial side; the
+     invite text itself must remain honestly non-routable (a friend dialing
+     ::1 dials themselves — worth a UI warning); announce/ingest/bootstrap
+     rows pin the flag boundary. Origin story plan: epic-ipv6-invite-network/
+     story-invite-panel-tells-you-why-no-invite-ipv6-diagnos-plan.md ("NOT in
+     scope"). -->
