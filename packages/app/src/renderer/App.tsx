@@ -10,11 +10,34 @@
  *
  * AD-3 (chain-time only): the view renders chain-time values exactly as the
  * core reports them — no wall clock, no RNG.
- * AD-9 (read-only): the view never calls a command; it renders the state
- * the hook maintains from the event stream + the read-API (E1, no polling).
+ * AD-9 (read-first): the state panels render only what the hook maintains
+ * from the event stream + the read-API (E1, no polling). The ONE deliberate
+ * exception is the 9.2 invitation panel: joining through a pasted invite is
+ * a user COMMAND by design (and it carries no key material, E3).
  */
+import { useEffect, useState } from 'react'
+
 import { useSuccinctcoin } from './useSuccinctcoin.js'
 import type { UiState } from './ui-state.js'
+
+// Mirror of core's InviteRejectReason (thin-client rule AD-1: the renderer
+// never imports @succinctcoin/core — bridge shapes are mirrored structurally,
+// same as the ladder row mirrors its report).
+export type InviteRejectReason =
+  | 'malformed-identity'
+  | 'malformed-multiaddr'
+  | 'too-many-multiaddrs'
+  | 'malformed-observed-addr'
+  | 'malformed-slot'
+  | 'malformed-chain-id'
+  | 'malformed-signature'
+  | 'unsupported-address'
+  | 'chain-mismatch'
+  | 'bad-signature'
+  | 'not-yet-valid'
+  | 'expired'
+  | 'malformed-invite'
+  | 'no-recent-ticket'
 
 /** A short display form of a long hex id (the full id stays the list key). */
 function shortId(id: string): string {
@@ -93,7 +116,74 @@ function PeersPanel({ state }: { state: UiState }) {
   )
 }
 
-/** The 6.3 view root: the three panels, all driven by the hook's state. */
+/**
+ * The invitation panel (ticket 9.2). Two affordances, no more:
+ *  - MY INVITE: this node's renderable self-invitation — copy-paste it into
+ *    an email/SMS or render it as a QR anywhere; it refreshes as the node
+ *    keeps mining (a Refresh button re-reads it).
+ *  - JOIN: paste a friend's `scinvite:v1:…` line and connect through it.
+ * Key-free by construction (E3/AD-11): the bridge carries only public
+ * signed text in and an `{ ok | reason }` result out — signing stays in
+ * main/core, verification decides what gets dialed.
+ */
+function InvitePanel() {
+  const [invite, setInvite] = useState<string | null>(null)
+  const [pasted, setPasted] = useState('')
+  const [status, setStatus] = useState<string | null>(null)
+
+  const refresh = (): void => {
+    void window.succinctcoin
+      .getInvite()
+      .then(setInvite)
+      .catch(() => setInvite(null))
+  }
+  useEffect(refresh, [])
+
+  const join = (): void => {
+    if (pasted.trim() === '') return
+    setStatus('joining…')
+    void window.succinctcoin
+      .applyInvite(pasted)
+      .then((r) =>
+        r.ok
+          ? setStatus(`joined through ${r.identityId.slice(0, 8)}…`)
+          : setStatus(`rejected: ${(r as { reason: InviteRejectReason }).reason}`),
+      )
+      .catch((e: unknown) => setStatus(`failed: ${String(e)}`))
+  }
+
+  return (
+    <section>
+      <h2>Invitations</h2>
+      {invite === null ? (
+        <p>
+          No invite yet — this node announces once it has a global IPv6 address.{' '}
+          <button onClick={refresh}>Refresh</button>
+        </p>
+      ) : (
+        <>
+          <p>Your invite (send it to a friend):</p>
+          <textarea readOnly rows={3} cols={72} value={invite} onFocus={(e) => e.currentTarget.select()} />
+          <button onClick={refresh}>Refresh</button>
+        </>
+      )}
+      <p>Join via a friend's invite:</p>
+      <textarea
+        rows={3}
+        cols={72}
+        placeholder="scinvite:v1:…"
+        value={pasted}
+        onChange={(e) => setPasted(e.target.value)}
+      />
+      <button onClick={join} disabled={pasted.trim() === ''}>
+        Join
+      </button>
+      {status !== null ? <p role="status">{status}</p> : null}
+    </section>
+  )
+}
+
+/** The view root: the state panels + the 9.2 invitation panel. */
 export function App() {
   const state = useSuccinctcoin()
   // F6: a missing bridge (the preload did not expose the surface) is a
@@ -112,6 +202,7 @@ export function App() {
       <MiningPanel state={state} />
       <BalancesPanel state={state} />
       <PeersPanel state={state} />
+      <InvitePanel />
     </main>
   )
 }

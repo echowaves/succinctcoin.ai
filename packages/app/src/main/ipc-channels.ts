@@ -15,7 +15,14 @@
  * `ReadPeer`/`ReadBlock`) — the spine: "the UI gets only peer IDs,
  * status, signed artifacts".
  */
-import type { CoreEvents } from '@succinctcoin/core'
+import type { CoreEvents, InviteRejectReason } from '@succinctcoin/core'
+
+/**
+ * Ticket 9.2: the result of `applyInvite` (owned HERE — the ONE owner of
+ * the IPC shape; both bridge sides type against it). Public data only:
+ * an identity id or a reject reason, never key material (AD-11).
+ */
+export type InviteApplyResult = { ok: true; identityId: string } | { ok: false; reason: InviteRejectReason }
 
 /** The core event names (the single owner of the set is `CoreEvents`). */
 export type CoreEventName = keyof CoreEvents
@@ -28,6 +35,8 @@ export const IPC_COMMANDS = {
   start: 'core.start',
   stop: 'core.stop',
   startMining: 'core.startMining',
+  /** 9.2 join seam: verify a pasted invitation and join through it. */
+  applyInvite: 'core.applyInvite',
 } as const
 
 export type IpcCommandKey = keyof typeof IPC_COMMANDS
@@ -53,6 +62,8 @@ export const IPC_READ = {
   balances: 'balances',
   peers: 'peers',
   block: 'block',
+  /** 9.2: this node's renderable self-invitation (public signed text). */
+  invite: 'invite',
 } as const
 
 export type IpcReadKey = keyof typeof IPC_READ

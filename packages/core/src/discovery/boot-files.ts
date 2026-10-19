@@ -36,6 +36,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { validatePeerAnnouncement } from './announcements.js'
+import { MAX_INVITE_TEXT_LEN, verifyInvite } from './invitation.js'
 import type { AddressBook } from './address-book.js'
 
 import { PeerAnnouncement } from '../proto/index.js'
@@ -77,6 +78,8 @@ export interface LadderReport {
   hints: LadderRungReport
   /** Rung 3: artifact file — VALID record count kept as dial targets. */
   artifact: { found: boolean; targets: number; skipped: number }
+  /** Rung 0 (9.2): invitation file — verified + applied invite count. */
+  invites: { found: boolean; verified: number; rejected: number }
   /** Rung 4: block-announcement ingest is wired (8.3/8.4 `chainId`). */
   blocks: boolean
 }
@@ -86,6 +89,13 @@ export interface BootLadderOptions {
   chainId: string
   /** Caller-supplied chain time for validation (AD-3 — no clock here). */
   currentSlot: number | bigint
+  /** Rung 0 (9.2) input: the invitation file (verified invite-grade join). */
+  inviteFilePath?: string
+  /** Rung 0 liveness probe (passed to `verifyInvite`); absent = invites on
+   * disk cannot be verified and are counted rejected — never dialed blind. */
+  hadRecentTicket?: (identityId: string, sinceWindow: bigint) => boolean
+  /** Rung 0 liveness lookback window (default inside `verifyInvite`). */
+  inviteLookbackSlots?: number | bigint
   /** Rung 2 input: the LAN shared address-book file (hint-grade ingest). */
   hintsFilePath?: string
   /** Rung 2 sink: without a book the rung reports `found` and ingests 0. */
@@ -212,6 +222,140 @@ export async function readAnnouncementFile(path: string): Promise<AnnouncementFi
 }
 
 // ---------------------------------------------------------------------------
+// invitation file (9.2) — plain-text lines, verify-before-dial
+// ---------------------------------------------------------------------------
+
+/** Invite lines per file (beyond this, the rest are skipped). */
+export const MAX_INVITE_LINES = 8
+
+export interface InviteFileRead {
+  /** False when the file is absent/unreadable; junk-but-present is TRUE. */
+  found: boolean
+  /** Non-empty, non-comment lines, in file order (NOT yet verified — a line
+   * is text, not trust; `applyInvites` runs the full verification). */
+  lines: string[]
+  /** Lines dropped for shape reasons or over-cap overflow. */
+  skipped: number
+}
+
+/**
+ * Read `<userData>/invite.txt` (one `scinvite:v1:` line per invite, `#`
+ * comments + blanks ignored). NEVER throws — same fail-soft contract as the
+ * announcement files. Lines are kept verbatim (whitespace inside a line is
+ * stripped later by `parseInvite`; wrapping is tolerated there too).
+ */
+export async function readInviteFile(path: string): Promise<InviteFileRead> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch {
+    return { found: false, lines: [], skipped: 0 }
+  }
+  const lines: string[] = []
+  let skipped = 0
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    // Length cap (9.2 review): a valid encoded record is ~2 KB; an absurd
+    // single-line file must not hand boot a megabyte base64 decode. Counted
+    // as skipped — fail-soft, like every other malformed line.
+    if (line.replace(/\s/g, '').length > MAX_INVITE_TEXT_LEN || lines.length >= MAX_INVITE_LINES) {
+      skipped += 1
+      continue
+    }
+    lines.push(line)
+  }
+  return { found: true, lines, skipped }
+}
+
+/** Options for `applyInvites` — all time/chain inputs caller-supplied (AD-3). */
+export interface ApplyInvitesOptions {
+  lines: readonly string[]
+  chainId: string
+  currentSlot: number | bigint
+  /** Liveness getter passed through to `verifyInvite` untouched. */
+  hadRecentTicket(identityId: string, sinceWindow: bigint): boolean
+  lookbackSlots?: number | bigint
+  /** Verified records ingest invite-grade here (absent = verify + dial only). */
+  book?: AddressBook
+  /** Own identity: an invite to ourselves verifies but is not applied. */
+  selfIdentityId?: string
+  /** Dialer: resolves true on connect; failures swallowed into counts. */
+  dial?: (multiaddr: string) => Promise<boolean>
+}
+
+/** Counts only (AD-9): no invite text, no keys, no addresses. */
+export interface InviteApplyReport {
+  verified: number
+  rejected: number
+  /** Records whose dial list was attempted to completion (success or not). */
+  dialed: number
+}
+
+/**
+ * Verify-then-apply invite lines (9.2 join seam): every line runs the FULL
+ * three-gate `verifyInvite` (parse → 8.2 validator → ticket liveness) in a
+ * FIRST pass; only then are the verified records stored and dialed in a
+ * second pass. Two passes bound the liveness snapshot's staleness to the
+ * verify pass alone — dial timeouts (10 s each) can no longer stretch the
+ * window between an allow-all boot snapshot and the later lines' verdicts.
+ * A failure is a counted reject and yields NO dial target — structural
+ * verify-before-connect. Successes ingest invite-grade into `book` and get
+ * their addresses dialed in order, first success wins (artifact rung rule).
+ */
+export async function applyInvites(opts: ApplyInvitesOptions): Promise<InviteApplyReport> {
+  const report: InviteApplyReport = { verified: 0, rejected: 0, dialed: 0 }
+  // Pass 1 — verify everything (pure CPU; no awaits, so no staleness).
+  const verifiedRecords: { record: InviteVerifiedRecord }[] = []
+  for (const line of opts.lines) {
+    const result = verifyInvite(line, {
+      currentSlot: opts.currentSlot,
+      expectedChainId: opts.chainId,
+      hadRecentTicket: opts.hadRecentTicket,
+      lookbackSlots: opts.lookbackSlots,
+    })
+    if (!result.ok) {
+      report.rejected += 1
+      continue
+    }
+    if (opts.selfIdentityId !== undefined && result.record.identityId === opts.selfIdentityId) {
+      report.verified += 1 // own invite: verified, never applied/dialed
+      continue
+    }
+    report.verified += 1
+    verifiedRecords.push({ record: result.record })
+  }
+  // Pass 2 — store + dial the accepted records (the only awaiting phase).
+  for (const { record } of verifiedRecords) {
+    if (opts.book !== undefined) {
+      opts.book.ingestAnnouncement(record, {
+        currentSlot: opts.currentSlot,
+        expectedChainId: opts.chainId,
+        sourceClass: 'invite',
+      })
+    }
+    report.dialed += 1
+    if (opts.dial !== undefined) {
+      for (const addr of record.multiaddrs) {
+        let ok = false
+        try {
+          ok = await opts.dial(addr)
+        } catch {
+          ok = false
+        }
+        if (ok) break
+      }
+    }
+  }
+  return report
+}
+
+type InviteVerifiedRecord = Extract<
+  Awaited<ReturnType<typeof verifyInvite>>,
+  { ok: true }
+>['record']
+
+// ---------------------------------------------------------------------------
 // OS-appropriate LAN shared-file default (pure — platform/env injected)
 // ---------------------------------------------------------------------------
 
@@ -258,9 +402,38 @@ export function defaultLanBookPath(
 export async function runBootLadder(opts: BootLadderOptions): Promise<LadderReport> {
   const report: LadderReport = {
     mdns: opts.mdnsEnabled ?? false,
+    invites: { found: false, verified: 0, rejected: 0 },
     hints: { found: false, ingested: 0, skipped: 0 },
     artifact: { found: false, targets: 0, skipped: 0 },
     blocks: opts.blocksEnabled ?? false,
+  }
+
+  // Rung 0 (9.2) — invitation file FIRST: a trusted invite outranks every
+  // hint rung, and its verified records make the later rungs' jobs easier.
+  if (opts.inviteFilePath !== undefined) {
+    const read = await readInviteFile(opts.inviteFilePath)
+    report.invites.found = read.found
+    if (read.lines.length === 0) {
+      report.invites.rejected = read.skipped
+    } else if (opts.hadRecentTicket === undefined) {
+      // No liveness probe configured: an invite we cannot verify is NOTHING
+      // (and dialing blind would break verify-before-connect). Count rejects.
+      report.invites.rejected = read.lines.length + read.skipped
+    } else {
+      const applied = await applyInvites({
+        lines: read.lines,
+        chainId: opts.chainId,
+        currentSlot: opts.currentSlot,
+        hadRecentTicket: opts.hadRecentTicket,
+        lookbackSlots: opts.inviteLookbackSlots,
+        book: opts.book,
+        selfIdentityId: opts.selfIdentityId,
+        dial: opts.dial,
+      })
+      report.invites.verified = applied.verified
+      // Rejected lines + line-level skips are all rejects (counts, AD-9).
+      report.invites.rejected = applied.rejected + read.skipped
+    }
   }
 
   // Rung 2 — LAN hints file: validate-then-store HINT-GRADE (the book's own
@@ -329,4 +502,10 @@ export async function runBootLadder(opts: BootLadderOptions): Promise<LadderRepo
 /** The default artifact path inside a host's data dir (per-install). */
 export function defaultArtifactPath(userDataDir: string): string {
   return join(userDataDir, 'discovery-artifact.json')
+}
+
+/** The default invitation file inside a host's data dir (9.2 — plain text:
+ * one `scinvite:v1:` line per invite; the operator pastes/receives it). */
+export function defaultInvitePath(userDataDir: string): string {
+  return join(userDataDir, 'invite.txt')
 }

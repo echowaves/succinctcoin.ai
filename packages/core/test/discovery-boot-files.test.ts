@@ -12,10 +12,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   MAX_ARTIFACT_RECORDS,
+  MAX_INVITE_LINES,
   createAddressBook,
   defaultLanBookPath,
   deriveIdentityKeypair,
+  encodeInvite,
   readAnnouncementFile,
+  readInviteFile,
   runBootLadder,
   signPeerAnnouncement,
   validatePeerAnnouncement,
@@ -327,7 +330,117 @@ describe('8.5 T1 — runBootLadder (rungs 2 + 3, fail-soft)', () => {
     const report = await runBootLadder({ chainId: TEST_CHAIN, currentSlot: 0n })
     expect(report.hints).toEqual({ found: false, ingested: 0, skipped: 0 })
     expect(report.artifact).toEqual({ found: false, targets: 0, skipped: 0 })
+    expect(report.invites).toEqual({ found: false, verified: 0, rejected: 0 })
     expect(report.mdns).toBe(false)
     expect(report.blocks).toBe(false)
+  })
+})
+
+describe('9.2 — invitation file + invite rung', () => {
+  it('readInviteFile: absent is fail-soft; comments/blanks dropped; cap counted', async () => {
+    const dir = await freshDir()
+    expect(await readInviteFile(join(dir, 'nope.txt'))).toEqual({
+      found: false,
+      lines: [],
+      skipped: 0,
+    })
+    const path = join(dir, 'invite.txt')
+    const lines = Array.from({ length: MAX_INVITE_LINES + 2 }, (_, i) => `scinvite:v1:x${i}`)
+    await writeFile(path, ['# comment', '', ...lines, '  '].join('\n'), 'utf8')
+    const read = await readInviteFile(path)
+    expect(read.found).toBe(true)
+    expect(read.lines).toEqual(lines.slice(0, MAX_INVITE_LINES))
+    expect(read.skipped).toBe(2) // overflow past the cap
+  })
+
+  it('rung: verified invite ⇒ book INVITE-grade + dialed; report counts only', async () => {
+    const dir = await freshDir()
+    const path = join(dir, 'invite.txt')
+    const peer = announcementMessage(9, ['/ip6/2001:db8:9::/tcp/4001', '/ip6/2001:db8:99::/tcp/4002'])
+    await writeFile(path, `# friend's invite\n${encodeInvite(peer)}\n`, 'utf8')
+    const book = createAddressBook()
+    const dialed: string[] = []
+    const report = await runBootLadder({
+      chainId: TEST_CHAIN,
+      currentSlot: 50n,
+      inviteFilePath: path,
+      hadRecentTicket: () => true,
+      book,
+      dial: async (addr) => {
+        dialed.push(addr)
+        return true // first address wins
+      },
+    })
+    expect(report.invites).toEqual({ found: true, verified: 1, rejected: 0 })
+    expect(dialed).toEqual(['/ip6/2001:db8:9::/tcp/4001'])
+    const entries = book.entries()
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.sourceClass).toBe('invite')
+    expect(book.dialEligible(50n).map((t) => t.identityId)).toEqual([peer.keypair.identityId])
+  })
+
+  it('rung: SQUATTER (no recent ticket) is rejected — stored nothing, dialed nothing', async () => {
+    const dir = await freshDir()
+    const path = join(dir, 'invite.txt')
+    const peer = announcementMessage(10)
+    await writeFile(path, encodeInvite(peer), 'utf8')
+    const book = createAddressBook()
+    const dialed: string[] = []
+    const report = await runBootLadder({
+      chainId: TEST_CHAIN,
+      currentSlot: 50n,
+      inviteFilePath: path,
+      hadRecentTicket: () => false, // the squatter row
+      book,
+      dial: async (addr) => {
+        dialed.push(addr)
+        return true
+      },
+    })
+    expect(report.invites).toEqual({ found: true, verified: 0, rejected: 1 })
+    expect(book.size()).toBe(0)
+    expect(dialed).toEqual([])
+  })
+
+  it('rung: no liveness probe ⇒ lines counted rejected, never dialed blind', async () => {
+    const dir = await freshDir()
+    const path = join(dir, 'invite.txt')
+    await writeFile(path, encodeInvite(announcementMessage(11)), 'utf8')
+    const dialed: string[] = []
+    const report = await runBootLadder({
+      chainId: TEST_CHAIN,
+      currentSlot: 50n,
+      inviteFilePath: path,
+      dial: async (addr) => {
+        dialed.push(addr)
+        return true
+      },
+    })
+    expect(report.invites).toEqual({ found: true, verified: 0, rejected: 1 })
+    expect(dialed).toEqual([])
+  })
+
+  it('rung: own invite verifies but is never applied or dialed (no self-dial)', async () => {
+    const dir = await freshDir()
+    const path = join(dir, 'invite.txt')
+    const self = announcementMessage(12)
+    await writeFile(path, encodeInvite(self), 'utf8')
+    const book = createAddressBook({ selfIdentityId: self.keypair.identityId })
+    const dialed: string[] = []
+    const report = await runBootLadder({
+      chainId: TEST_CHAIN,
+      currentSlot: 50n,
+      inviteFilePath: path,
+      hadRecentTicket: () => true,
+      book,
+      selfIdentityId: self.keypair.identityId,
+      dial: async (addr) => {
+        dialed.push(addr)
+        return true
+      },
+    })
+    expect(report.invites.verified).toBe(1)
+    expect(book.size()).toBe(0)
+    expect(dialed).toEqual([])
   })
 })

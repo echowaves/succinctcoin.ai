@@ -28,6 +28,8 @@ describe('8.5 T4 — resolveLadderPaths (pure path seam)', () => {
     expect(resolveLadderPaths({ platform: 'darwin', ...base })).toEqual({
       hintsFilePath: '/Users/Shared/succinctcoin/address-book.json',
       artifactFilePath: join('/ud', 'discovery-artifact.json'),
+      // 9.2: per-install plain-text invitation file.
+      inviteFilePath: join('/ud', 'invite.txt'),
     })
     expect(resolveLadderPaths({ platform: 'linux', ...base }).hintsFilePath).toBe(
       '/var/tmp/succinctcoin/address-book.json',
@@ -60,15 +62,26 @@ describe('8.5 T4 — resolveLadderPaths (pure path seam)', () => {
 describe('8.5 T4 — buildDiscoveryPorts (passthrough wiring)', () => {
   it('announce hook + report sink pass through untouched; paths resolved', () => {
     const reports: unknown[] = []
+    const invites: string[] = []
     const ports = buildDiscoveryPorts(
       { platform: 'linux', env: {}, userDataDir: '/ud' },
       () => ['/ip6/2001:db8:102:304::/tcp/9'],
       (r) => reports.push(r),
+      (i) => invites.push(i),
     )
     expect(ports.hintsFilePath).toBe('/var/tmp/succinctcoin/address-book.json')
     expect(ports.artifactFilePath).toBe(join('/ud', 'discovery-artifact.json'))
+    expect(ports.inviteFilePath).toBe(join('/ud', 'invite.txt')) // 9.2
     expect(ports.announceAddresses?.()).toEqual(['/ip6/2001:db8:102:304::/tcp/9'])
-    ports.onLadderReport?.({ mdns: true, hints: { found: false, ingested: 0, skipped: 0 }, artifact: { found: false, targets: 0, skipped: 0 }, blocks: true })
+    ports.onSelfInvite?.('scinvite:v1:test')
+    expect(invites).toEqual(['scinvite:v1:test'])
+    ports.onLadderReport?.({
+      mdns: true,
+      invites: { found: false, verified: 0, rejected: 0 },
+      hints: { found: false, ingested: 0, skipped: 0 },
+      artifact: { found: false, targets: 0, skipped: 0 },
+      blocks: true,
+    })
     expect(reports).toHaveLength(1)
   })
 })

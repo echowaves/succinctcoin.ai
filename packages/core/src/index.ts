@@ -22,9 +22,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadGenesis } from './config/index.js'
-import { MINT_ID, createNodeLoop, mineAndApply } from './consensus/index.js'
-import { createAddressBook, runBootLadder } from './discovery/index.js'
-import type { AddressBook } from './discovery/index.js'
+import { MINT_ID, TRACER_WINNER_ID, createNodeLoop, mineAndApply } from './consensus/index.js'
+import { createAddressBook, runBootLadder, verifyInvite } from './discovery/index.js'
+import { DEFAULT_TICKET_LOOKBACK_SLOTS, encodeInvite } from './discovery/index.js'
+import type { AddressBook, InviteRejectReason } from './discovery/index.js'
 import { Block } from './proto/index.js'
 import { fromDisplay, fromJson, toJson, toDisplay, totalSupply } from './ledger/index.js'
 
@@ -124,6 +125,11 @@ export function createCore(ports: CorePorts): CoreInstance {
   // gossiped records/introductions, LAN-file hints from the boot ladder.
   // Verify-before-connect stays structural: each path validates internally.
   let addressBook: AddressBook | null = null
+  // Ticket 9.2: the renderable self-invitation — the latest self-announce-
+  // ment encoded (`encodeInvite`), refreshed every announce window; null
+  // until the first announcement publishes. Public text (a signed public
+  // record), safe for the clipboard/UI (AD-9: no key material).
+  let latestSelfInvite: string | null = null
 
   return {
     on<K extends keyof CoreEvents>(event: K, listener: (payload: CoreEvents[K]) => void) {
@@ -178,9 +184,20 @@ export function createCore(ports: CorePorts): CoreInstance {
           dial?: (address: string) => Promise<void>
         }
         const bootSlot = await ports.store.headSlot()
+        // 9.2 invite rung: the liveness probe over APPLIED blocks, computed
+        // ONCE at boot (the sync getter `verifyInvite` needs — AD-3 keeps the
+        // pure module store-free). If a host ever exposes a custom lookback,
+        // pass it HERE too — the probe snapshot and verifyInvite's window are
+        // two parameters of ONE rule and must move together.
+        const inviteProbe =
+          ports.discovery.inviteFilePath === undefined
+            ? undefined
+            : await createInviteLiveness(ports.store, bootSlot)
         void runBootLadder({
           chainId: genesis.chainId,
           currentSlot: bootSlot,
+          inviteFilePath: ports.discovery.inviteFilePath,
+          hadRecentTicket: inviteProbe,
           hintsFilePath: ports.discovery.hintsFilePath,
           book: addressBook,
           artifactFilePath: ports.discovery.artifactFilePath,
@@ -217,6 +234,7 @@ export function createCore(ports: CorePorts): CoreInstance {
         loop = null
       }
       genesis = null
+      latestSelfInvite = null // 9.2: a stopped node has no renderable invite
       this.emit('CoreStopped', { slot: ports.clock.slotIndex() })
       await ports.store.close()
     },
@@ -260,6 +278,16 @@ export function createCore(ports: CorePorts): CoreInstance {
         // a port without `sendIntroduction` simply publishes nothing.
         chainId: genesis.chainId,
         announceAddresses: ports.discovery?.announceAddresses,
+        // 9.2: the renderable self-invitation (refreshed every announce
+        // window — invites stay fresh as long as the node keeps mining).
+        onSelfAnnouncement: (record) => {
+          try {
+            latestSelfInvite = encodeInvite(record)
+            ports.discovery?.onSelfInvite?.(latestSelfInvite)
+          } catch {
+            /* render/observer errors never unwind the loop */
+          }
+        },
         introduce: true,
         // CAP-7 (8.5): every ingest path feeds the core-owned book —
         // block-grade with REAL blockRefs (post-commit handoff, 8.3's
@@ -302,6 +330,59 @@ export function createCore(ports: CorePorts): CoreInstance {
       // CAP-7 (8.5): the core-owned book (created in `start()`; undefined
       // before boot). Public data only — dial decisions belong to the host.
       return addressBook ?? undefined
+    },
+    getInvite(): string | null {
+      // 9.2: the renderable self-invitation — public signed text, safe for
+      // the clipboard (AD-9: no key material in anything invite-shaped).
+      return latestSelfInvite
+    },
+    async applyInvite(
+      text: string,
+    ): Promise<{ ok: true; identityId: string } | { ok: false; reason: InviteRejectReason }> {
+      // 9.2 join seam (runtime paste path — the boot file rung applies the
+      // same verification). Requires a booted node: chain scope + liveness
+      // come from the running store, so pre-start there is nothing to
+      // verify against (SC-CORE-1 like every other command).
+      if (genesis === null || addressBook === null) {
+        const err = new Error('SC-CORE-1: applyInvite requires start() to have run first')
+        ;(err as { code?: string }).code = 'SC-CORE-1'
+        throw err
+      }
+      const head = await ports.store.headSlot()
+      const currentSlot = Math.max(head, 0)
+      const liveness = await createInviteLiveness(ports.store, head)
+      const result = verifyInvite(text, {
+        currentSlot,
+        expectedChainId: genesis.chainId,
+        hadRecentTicket: liveness,
+      })
+      if (!result.ok) return { ok: false, reason: result.reason }
+      // Own invite: verified, then verify-only — never stored, NEVER DIALed
+      // (the book's self-exclusion covers storage only; the dial loop below
+      // must not lean on it — same rule as applyInvites' self skip).
+      if (ports.identity !== undefined && ports.identity.identityId === result.record.identityId) {
+        return { ok: true, identityId: result.record.identityId }
+      }
+      // Invite-grade ingest, then fire-and-forget dial, ladder rules (fail-soft R4).
+      addressBook.ingestAnnouncement(result.record, {
+        currentSlot,
+        expectedChainId: genesis.chainId,
+        sourceClass: 'invite',
+      })
+      const netExt = ports.net as unknown as { dial?: (address: string) => Promise<void> }
+      if (netExt.dial !== undefined) {
+        void (async () => {
+          for (const addr of result.record.multiaddrs) {
+            try {
+              await netExt.dial!(addr)
+              return
+            } catch {
+              /* next address — the book's ladder owns the retry policy */
+            }
+          }
+        })()
+      }
+      return { ok: true, identityId: result.record.identityId }
     },
     async getBlock(slot) {
       // The block read-model for `slot` (D4): a missing slot is a NORMAL
@@ -715,17 +796,78 @@ export type {
 // (genesis-loader precedent): this is the ONE discovery module allowed fs,
 // never purity-scanned; everything downstream stays pure.
 export {
+  applyInvites,
   defaultArtifactPath,
+  defaultInvitePath,
   defaultLanBookPath,
   MAX_ARTIFACT_RECORDS,
+  MAX_INVITE_LINES,
   readAnnouncementFile,
+  readInviteFile,
   runBootLadder,
   writeAnnouncementFile,
   writeAnnouncementsFromMessages,
 } from './discovery/index.js'
 export type {
   AnnouncementFileRead,
+  ApplyInvitesOptions,
   BootLadderOptions,
+  InviteApplyReport,
+  InviteFileRead,
   LadderReport,
   LadderRungReport,
 } from './discovery/index.js'
+
+// Invitation join (epic 9 — ticket 9.2): the ONE invite text format (an 8.2
+// announcement + ticket liveness, base64url of the proto bytes) — render,
+// parse, verify. Verification is three-gated with distinct reasons; an
+// unverified invite never yields a dial target (verify-before-connect).
+export {
+  DEFAULT_TICKET_LOOKBACK_SLOTS,
+  encodeInvite,
+  INVITE_PREFIX,
+  parseInvite,
+  verifyInvite,
+} from './discovery/index.js'
+export type { InviteContext, InviteRejectReason, InviteValidation } from './discovery/index.js'
+
+/**
+ * 9.2 — the ticket-liveness ground truth over APPLIED blocks (the getter
+ * `verifyInvite` consumes). Winner identities of the last `lookbackSlots`
+ * block slots; winner tickets ONLY — gossiped tickets are un-anchored and
+ * prove nothing, applied winners were validated at accept time.
+ *
+ * THE EMPTY-CHAIN RULE (pinned): a freshly wiped node has no real tickets —
+ * its only block is the boot tracer's, whose winner (`TRACER_WINNER_ID`) is
+ * not a signable identity. Demanding liveness there would make invitation
+ * joining impossible at exactly the moment it exists for. So when the scan
+ * finds NO real (non-tracer) winner, liveness is UNDECIDABLE and the probe
+ * allows: the trust event is then the social channel the invite arrived on
+ * (spec: "a trusted party shares it with a friend"), still gated by parse +
+ * signature + freshness + chain scope + IPv6 policy. The moment real blocks
+ * exist (post-sync), the probe goes strict — a squatter replaying an old
+ * announcement dies at `no-recent-ticket`.
+ */
+export async function createInviteLiveness(
+  store: StorePort,
+  headSlot: number,
+  lookbackSlots: number = DEFAULT_TICKET_LOOKBACK_SLOTS,
+): Promise<(identityId: string) => boolean> {
+  const winners = new Set<string>()
+  if (headSlot >= 0) {
+    const from = Math.max(0, headSlot - lookbackSlots + 1)
+    for (let s = headSlot; s >= from; s -= 1) {
+      try {
+        const bytes = await store.getBlock(s)
+        if (bytes === null) continue
+        winners.add(Block.decode(bytes).winnerIdentityId)
+      } catch {
+        /* unreadable slot: skip — liveness counts what IS on chain */
+      }
+    }
+  }
+  let realWinners = 0
+  for (const id of winners) if (id !== TRACER_WINNER_ID) realWinners += 1
+  if (realWinners === 0) return () => true // undecidable → social-trust allow
+  return (identityId: string) => winners.has(identityId)
+}

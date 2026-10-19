@@ -5,7 +5,7 @@
  * report to the host sink. Fake ports throughout (the `core-surface`
  * pattern); the ladder is fire-and-forget, so rows poll BOUNDED.
  */
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,9 @@ import {
   FileChainStore,
   createCore,
   deriveIdentityKeypair,
+  encodeInvite,
   loadGenesis,
+  parseInvite,
   signPeerAnnouncement,
   writeAnnouncementsFromMessages,
 } from '../src/index.js'
@@ -181,6 +183,108 @@ describe('8.5 T3 — createCore boot ladder wiring', () => {
     await core.start()
     await until(() => report !== null)
     expect((report as unknown as LadderReport).artifact.targets).toBe(1)
+    await core.stop()
+  })
+})
+
+describe('9.2 — createCore invitation wiring', () => {
+  it('boot with invite.txt: invite-grade ingest + dial + report; pre-start surface is empty', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
+    const invitePath = join(dir, 'invite.txt')
+    const peer = announcementMessage(5, ['/ip6/2001:db8:a05:5::/tcp/4001'])
+    await writeFile(invitePath, `# a friend\n${encodeInvite(peer)}\n`, 'utf8')
+
+    const dialed: string[] = []
+    let report: LadderReport | null = null
+    const ports = makePorts(dir, {
+      dial: async (addr) => {
+        dialed.push(addr)
+      },
+    })
+    ports.discovery = { inviteFilePath: invitePath, onLadderReport: (r) => (report = r) }
+    const core = createCore(ports)
+
+    // Pre-start surface: no invite to render; applyInvite rejects SC-CORE-1.
+    expect(core.getInvite()).toBeNull()
+    await expect(core.applyInvite('scinvite:v1:x')).rejects.toMatchObject({ code: 'SC-CORE-1' })
+
+    await core.start() // fresh chain = tracer-only blocks ⇒ social-trust allow
+    await until(() => report !== null)
+    const r = report as unknown as LadderReport
+    expect(r.invites).toEqual({ found: true, verified: 1, rejected: 0 })
+    expect(dialed).toEqual(['/ip6/2001:db8:a05:5::/tcp/4001'])
+    const entries = core.addressBook!.entries()
+    expect(entries.map((e) => [e.identityId, e.sourceClass])).toEqual([
+      [peer.keypair.identityId, 'invite'],
+    ])
+    await core.stop()
+  })
+
+  it('getInvite renders the self-announcement; applyInvite is STRICT once real winners exist', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
+    const dialed: string[] = []
+    const ports = makePorts(dir, { dial: async (a) => void dialed.push(a) })
+    ports.identity = deriveIdentityKeypair(seedFor(1))
+    ports.discovery = { announceAddresses: () => ['/ip6/2001:db8:a00:9::/tcp/4000'] }
+    const core = createCore(ports)
+    await core.start()
+    await core.startMining()
+
+    // The self-invite appears once the first announce window publishes.
+    await until(() => core.getInvite() !== null)
+    const invite = core.getInvite() as string
+    const parsed = parseInvite(invite)
+    expect(parsed.ok).toBe(true)
+    expect((parsed as { record: { identityId: string } }).record.identityId).toBe(
+      ports.identity!.identityId,
+    )
+
+    // Mining committed real winners ⇒ liveness is decidable ⇒ STRICT: an
+    // honest-looking invite for a ticket-less identity rejects, never dials.
+    const squatter = announcementMessage(7, ['/ip6/2001:db8:a07:7::/tcp/4001'])
+    const rejected = await core.applyInvite(encodeInvite(squatter))
+    expect(rejected).toEqual({ ok: false, reason: 'no-recent-ticket' })
+    expect(
+      core.addressBook!.entries().some((e) => e.identityId === squatter.keypair.identityId),
+    ).toBe(false)
+
+    // The winner identity itself (this node) passes liveness — and the book
+    // self-excludes it. Crucially the RUNTIME path must not DIAL our own
+    // address either (9.2 review finding 1: dial loop must honour self).
+    const self = await core.applyInvite(invite)
+    expect(self).toEqual({ ok: true, identityId: ports.identity!.identityId })
+    await new Promise((r) => setTimeout(r, 30)) // let any fire-and-forget dial land
+    expect(dialed).not.toContain('/ip6/2001:db8:a00:9::/tcp/4000')
+    expect(
+      core.addressBook!.entries().some((e) => e.identityId === ports.identity!.identityId),
+    ).toBe(false)
+
+    await core.stop()
+  })
+
+  it('runtime applyInvite (remote, empty chain): invite-grade ingest + dial', async () => {
+    // Fresh tracer-only chain ⇒ social-trust allow (the join-from-scratch case).
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
+    const dialed: string[] = []
+    const ports = makePorts(dir, { dial: async (a) => void dialed.push(a) })
+    ports.identity = deriveIdentityKeypair(seedFor(1)) // self = seed 1
+    const core = createCore(ports)
+    await core.start()
+
+    const remote = announcementMessage(6, [
+      '/ip6/2001:db8:a06:6::/tcp/4001',
+      '/ip6/2001:db8:a06:7::/tcp/4002',
+    ])
+    const res = await core.applyInvite(encodeInvite(remote))
+    expect(res).toEqual({ ok: true, identityId: remote.keypair.identityId })
+
+    const entry = core.addressBook!
+      .entries()
+      .find((e) => e.identityId === remote.keypair.identityId)
+    expect(entry?.sourceClass).toBe('invite')
+    await until(() => dialed.length > 0) // first-success dial, fire-and-forget
+    expect(dialed[0]).toBe('/ip6/2001:db8:a06:6::/tcp/4001')
+
     await core.stop()
   })
 })

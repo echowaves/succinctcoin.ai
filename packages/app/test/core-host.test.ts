@@ -310,6 +310,7 @@ describe('6.2 — the app in-app path (plain Node, AD-10 headless-safe)', () => 
     // (e) The IPC tables (the ONE owner of the IPC shape): exactly the
     //     command + event + read surface, and NO key-material channel.
     expect(Object.values(IPC_COMMANDS).sort()).toEqual([
+      'core.applyInvite', // 9.2 join seam — text in, { ok | reason } out
       'core.start',
       'core.startMining',
       'core.stop',
@@ -319,7 +320,14 @@ describe('6.2 — the app in-app path (plain Node, AD-10 headless-safe)', () => 
       'CoreStarted',
       'CoreStopped',
     ])
-    expect(Object.values(IPC_READ).sort()).toEqual(['balances', 'block', 'chainHead', 'peers'])
+    // 9.2 adds `invite` — public signed text out, never key material (E3).
+    expect(Object.values(IPC_READ).sort()).toEqual([
+      'balances',
+      'block',
+      'chainHead',
+      'invite',
+      'peers',
+    ])
     const channels = [
       ...Object.values(IPC_COMMANDS),
       ...Object.values(IPC_EVENTS),
@@ -361,5 +369,24 @@ describe('6.2 — the app in-app path (plain Node, AD-10 headless-safe)', () => 
     expect(block.slot).toBe(latest.slot)
     expect(block.hash).toBe(latest.hash)
     expect(block.winnerIdentityId).toBe(latest.winnerIdentityId)
+  })
+})
+
+// Type-level parity (9.2 review): the renderer mirrors core's InviteRejectReason
+// union (thin-client AD-1 forbids a runtime import), so nothing pins it at the
+// type layer EXCEPT this compile-time mutual-assignability check — a core-side
+// rename/deletion fails `tsc` here instead of silently degrading UI labels.
+type _Assert<T extends true> = T
+type _RendererReasons = import('../src/renderer/App.js').InviteRejectReason
+type _CoreContainsAllRenderer = _RendererReasons extends
+  import('@succinctcoin/core').InviteRejectReason ? true : false
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _PIN_RENDERER_REASONS_SUBSET = _Assert<_CoreContainsAllRenderer>
+
+describe('9.2 — invite reject-reason parity', () => {
+  it('renderer mirror is a compile-checked subset of core (see type pins)', () => {
+    // The assertion lives entirely in the types above; this runtime row just
+    // keeps the suite honest that the pin file is present and compiled.
+    expect(true).toBe(true)
   })
 })

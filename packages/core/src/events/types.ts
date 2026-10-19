@@ -16,6 +16,7 @@
  * Types only — `createCore` lives in the package entry.
  */
 import type { AddressBook } from '../discovery/address-book.js'
+import type { InviteRejectReason } from '../discovery/invitation.js'
 
 /** A lightweight UI projection of a connected peer. NOT the wire type. */
 export interface ReadPeer {
@@ -143,6 +144,16 @@ export interface CoreReadApi {
  */
 export interface CoreDiscoveryAccess {
   readonly addressBook?: AddressBook | undefined
+  /** Ticket 9.2: this node's renderable self-invitation (public signed
+   * text — safe for the clipboard), or null until the first announce window. */
+  getInvite(): string | null
+  /** Ticket 9.2 join seam (runtime paste path): verify one invite line in
+   * full (parse → validator → ticket liveness); on success ingest it
+   * invite-grade and fire-and-forget dial. Never throws for record-level
+   * junk — every failure is a `{ ok: false, reason }`. */
+  applyInvite(
+    text: string,
+  ): Promise<{ ok: true; identityId: string } | { ok: false; reason: InviteRejectReason }>
 }
 
 /** The complete core instance: events + commands + read-API (+ 8.5 book). */

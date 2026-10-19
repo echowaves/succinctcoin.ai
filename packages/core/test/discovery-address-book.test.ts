@@ -110,6 +110,36 @@ describe('8.4 — address book: classes, introductions, expiry, retraction', () 
     expect(book.dialEligible(101).length).toBe(0) // expired at slotEnd+1
   })
 
+  it('INVITE_FRESH (9.2): a verified invitation is dial-eligible with zero vouches', () => {
+    const book = createAddressBook()
+    expect(book.ingestAnnouncement(annFor(A), classCtx('invite'))).toEqual({ ok: true })
+    // Eligible immediately — the door (sig + freshness + liveness) is the trust event.
+    expect(book.dialEligible(5).map((t) => t.identityId)).toEqual([A.identityId])
+    const [entry] = book.entries()
+    expect(entry?.sourceClass).toBe('invite')
+    // No blockRef: that field stays exactly block-provenance.
+    expect(entry?.blockRef).toBeUndefined()
+    // Freshness still applies — an expired invite entry is not eligible.
+    expect(book.dialEligible(101)).toEqual([])
+  })
+
+  it('INVITE_BEATS_LOG (9.2): eviction ranks invite between block and log', () => {
+    const small = createAddressBook({ maxEntries: 2 })
+    expect(small.ingestAnnouncement(annFor(A), blockCtx(HASH_1))).toEqual({ ok: true })
+    expect(small.ingestAnnouncement(annFor(B), classCtx('invite'))).toEqual({ ok: true })
+    // A hint cannot evict block or invite…
+    expect(small.ingestAnnouncement(annFor(C), classCtx('hint'))).toEqual({ ok: true })
+    expect(small.entries().map((e) => e.sourceClass).sort()).toEqual(['block', 'invite'])
+    // …but an invite evicts a log-grade entry.
+    const pair = createAddressBook({ maxEntries: 2 })
+    expect(pair.ingestAnnouncement(annFor(B), classCtx('invite'))).toEqual({ ok: true })
+    expect(pair.ingestAnnouncement(annFor(C), classCtx('hint'))).toEqual({ ok: true })
+    expect(pair.ingestAnnouncement(annFor(D), classCtx('log'))).toEqual({ ok: true })
+    const kept = pair.entries().map((e) => e.identityId)
+    expect(kept).toContain(B.identityId) // invite survived the log
+    expect(kept).not.toContain(C.identityId) // hint was the worst entry
+  })
+
   it('SELF_EXCLUDE: records describing this node never enter a self-aware book', () => {
     const book = createAddressBook({ selfIdentityId: A.identityId })
     // Own announcement (e.g. anchored in a block this node itself applied):
@@ -131,7 +161,7 @@ describe('8.4 — address book: classes, introductions, expiry, retraction', () 
       ['dns', 3],
       ['hint', 3],
     ]
-    expect(ADDRESS_SOURCE_CLASSES).toEqual(['block', 'log', 'dns', 'hint'])
+    expect(ADDRESS_SOURCE_CLASSES).toEqual(['block', 'invite', 'log', 'dns', 'hint'])
     for (const [klass, required] of table) {
       const book = createAddressBook()
       expect(book.ingestAnnouncement(annFor(A), classCtx(klass))).toEqual({ ok: true })

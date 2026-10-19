@@ -113,6 +113,10 @@ function makeBridge(): {
     getBlock: async () => {
       throw new Error('the 6.3 view never reads a block (the panels use the head + the peers)')
     },
+    // 9.2: the invitation panel READS its invite on mount; null renders the
+    // "no invite yet" state. Joining stays unexercised here (a command).
+    getInvite: async () => null,
+    applyInvite: unused,
     on: (event, cb) => {
       listeners.set(event, cb as (payload: unknown) => void)
       return () => {

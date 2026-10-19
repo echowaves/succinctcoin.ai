@@ -29,6 +29,7 @@ import type {
   DiscoveryPorts,
   GateVerifier,
   IdentityKeypair,
+  InviteRejectReason,
   NetPort,
   ReadBalances,
   ReadBlock,
@@ -86,6 +87,14 @@ export interface CoreHost {
   getBalances(): Promise<ReadBalances>
   getPeers(): Promise<ReadPeer[]>
   getBlock(slot: number): Promise<ReadBlock>
+  /** 9.2: this node's renderable self-invitation (public signed text; null
+   * until the first announce window). Delegated to the core untouched. */
+  getInvite(): string | null
+  /** 9.2 join seam: verify + ingest + dial one pasted invitation. The glue
+   * persists successful lines to `invite.txt` — the host stays fs-free. */
+  applyInvite(
+    text: string,
+  ): Promise<{ ok: true; identityId: string } | { ok: false; reason: InviteRejectReason }>
 }
 
 /**
@@ -149,5 +158,7 @@ export function createCoreHost(opts: CoreHostOptions): CoreHost {
     getBalances: () => core.getBalances(),
     getPeers: () => core.getPeers(),
     getBlock: (slot) => core.getBlock(slot),
+    getInvite: () => core.getInvite(),
+    applyInvite: (text) => core.applyInvite(text),
   }
 }

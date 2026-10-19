@@ -195,6 +195,13 @@ export interface NodeLoopOptions {
    * wires into the book.
    */
   onGossipedIntroduction?: (introduction: IntroductionMsg, slot: bigint) => void
+  /**
+   * Ticket 9.2: fires after THIS node's own announcement is signed and
+   * published — the renderable self-record the host encodes as an
+   * invitation (`encodeInvite`). One call per successful announce window;
+   * a throwing listener is swallowed (same never-unwinds rule).
+   */
+  onSelfAnnouncement?: (record: PeerAnnouncementMsg, slot: bigint) => void
 }
 
 /**
@@ -348,6 +355,13 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
           await opts.net.sendAnnouncement?.(record)
         } catch {
           /* best-effort gossip — the block is the durable anchor */
+        }
+        // 9.2: the renderable self-record (invite encoding is the host's
+        // job — the loop never imports the invite format).
+        try {
+          opts.onSelfAnnouncement?.(record, slot)
+        } catch {
+          /* listener errors are the listener's own */
         }
       }
     }

@@ -308,6 +308,8 @@ function makeBridge(host: CoreHost): Window['succinctcoin'] {
     getBalances: () => host.getBalances(),
     getPeers: () => host.getPeers(),
     getBlock: (slot) => host.getBlock(slot),
+    getInvite: async () => host.getInvite(),
+    applyInvite: (text) => host.applyInvite(text),
     on: (event, cb) => {
       listeners.set(event, cb as (payload: unknown) => void)
       return () => {

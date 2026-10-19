@@ -21,6 +21,7 @@
  * `.js` file is parsed as CJS and never loads).
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { appendFile, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -100,6 +101,11 @@ async function boot(): Promise<void> {
   const store = new FileChainStore(join(app.getPath('userData'), 'chain'))
   const gate = createOfflineGateVerifier({ acceptedGates: genesis.gates })
 
+  // 9.2: the renderable self-invitation is logged ONCE (it refreshes every
+  // announce window — logging each would spam; the UI reads it via IPC).
+  let inviteLogged = false
+  const inviteFile = join(app.getPath('userData'), 'invite.txt')
+
   const host = createCoreHost({
     net,
     store,
@@ -116,6 +122,12 @@ async function boot(): Promise<void> {
         userDataDir: app.getPath('userData'),
       },
       () => net.listenAddresses(),
+      undefined,
+      (invite) => {
+        if (inviteLogged) return
+        inviteLogged = true
+        console.log(`[boot] to invite a friend, send them exactly:\n${invite}`)
+      },
     ),
     // The AD-11 IPC seam: the core's key-free event payloads → the
     // renderer (the preload's `on()` delivers them on the channel in
@@ -134,12 +146,37 @@ async function boot(): Promise<void> {
   ipcMain.handle(IPC_COMMANDS.stop, () => host.stop())
   ipcMain.handle(IPC_COMMANDS.startMining, () => host.startMining())
 
+  // 9.2 join seam: verify + join NOW (core), and persist the line for the
+  // next boot only after it verified — invite.txt never accumulates junk.
+  // The file write is fail-soft (a full disk must not undo a live join).
+  ipcMain.handle(IPC_COMMANDS.applyInvite, async (_event, text: string) => {
+    const result = await host.applyInvite(text)
+    if (result.ok) {
+      try {
+        const line = text.replace(/\s+/g, '')
+        const existing = await readFile(inviteFile, 'utf8').catch(() => '')
+        if (!existing.split(/\r?\n/).some((l) => l.trim().replace(/\s+/g, '') === line)) {
+          // A hand-edited file may lack a trailing newline — never splice the
+          // new invite onto the previous line (that would corrupt both).
+          const sep = existing.length === 0 ? '# SuccinctCoin invitations (one scinvite:v1: line each)\n' : existing.endsWith('\n') ? '' : '\n'
+          await appendFile(inviteFile, sep + line + '\n', 'utf8')
+        }
+      } catch {
+        /* persistence is best-effort — the join already happened */
+      }
+    }
+    return result
+  })
+
   // The read-API surface (renderer → main): key-free read-models only
   // (AD-9: the UI reads state only via the read-API).
   ipcMain.handle(IPC_READ.chainHead, () => host.getChainHead())
   ipcMain.handle(IPC_READ.balances, () => host.getBalances())
   ipcMain.handle(IPC_READ.peers, () => host.getPeers())
   ipcMain.handle(IPC_READ.block, (_event, slot: number) => host.getBlock(slot))
+  // 9.2: this node's renderable self-invitation (public signed text — the
+  // clipboard/QR source; signing itself stays in main/core, E3).
+  ipcMain.handle(IPC_READ.invite, () => host.getInvite())
 
   // The BrowserWindow: contextIsolation ON, nodeIntegration OFF — the ONLY
   // bridge to the main process is the preload's `contextBridge` surface

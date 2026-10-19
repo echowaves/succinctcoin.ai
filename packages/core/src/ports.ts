@@ -27,6 +27,14 @@ export interface DiscoveryPorts {
   /** Rung 3: the block-grade artifact file (validated + dialed at boot).
    * Absent ⇒ rung skipped. */
   artifactFilePath?: string
+  /** Ticket 9.2: the invitation file (`defaultInvitePath(userDataDir)`) —
+   * verified invite-grade join, run BEFORE the hint rungs. Absent ⇒ skipped. */
+  inviteFilePath?: string
+  /** Ticket 9.2: sink for this node's renderable self-invitation (fires
+   * every announce window once the node has a policy-valid address). The
+   * invite is PUBLIC signed text — safe for clipboard/UI (AD-9). A throwing
+   * sink is swallowed. */
+  onSelfInvite?: (invite: string) => void
   /** The local listen addresses to advertise (8.5: wired from the net
    * adapter's `listenAddresses()`). Absent/empty ⇒ nothing announced —
    * gossip/sync still flow (the 8.3 rule). */

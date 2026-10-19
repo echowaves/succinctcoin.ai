@@ -40,18 +40,23 @@ import type { IntroductionRejectReason, SignedIntroduction } from './introductio
 // vocabulary
 // ---------------------------------------------------------------------------
 
-/** Trust classes, most trusted first (discovery-design.md taxonomy). */
-export const ADDRESS_SOURCE_CLASSES = ['block', 'log', 'dns', 'hint'] as const
+/** Trust classes, most trusted first (discovery-design.md taxonomy).
+ * `invite` (9.2) sits between block and log: a verified invitation carries
+ * signature + freshness + chain scope + TICKET LIVENESS — the door itself is
+ * the trust event, so no introductions top it up. It never carries a
+ * `blockRef`: that field stays exactly block-provenance (reorg retraction). */
+export const ADDRESS_SOURCE_CLASSES = ['block', 'invite', 'log', 'dns', 'hint'] as const
 export type AddressSourceClass = (typeof ADDRESS_SOURCE_CLASSES)[number]
 
-/** Higher = more trusted. `block` is the only class with a producer today;
- * `log`/`dns` are enum-only stubs this epic (no producers ship). */
-const CLASS_RANK: Record<AddressSourceClass, number> = { block: 3, log: 2, dns: 1, hint: 0 }
+/** Higher = more trusted. `block`/`invite` have producers today; `log`/`dns`
+ * are enum-only stubs (no producers ship). */
+const CLASS_RANK: Record<AddressSourceClass, number> = { block: 4, invite: 3, log: 2, dns: 1, hint: 0 }
 
-/** Introductions required for eligibility per class (pinned table): block
- * none while fresh; log >= 1; dns/hint >= 3 (the three-introductions rule). */
+/** Introductions required for eligibility per class (pinned table): block /
+ * invite none while fresh; log >= 1; dns/hint >= 3 (three-introductions). */
 const REQUIRED_INTRODUCTIONS: Record<AddressSourceClass, number> = {
   block: 0,
+  invite: 0,
   log: 1,
   dns: 3,
   hint: 3,
@@ -381,11 +386,32 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
         return { ok: true }
       }
 
-      // Capacity: prune expired first, then evict the worst (freshest /
-      // highest-class survive — the pinned pressure policy).
+      // Capacity: prune expired first, then the incoming record CONTESTS the
+      // weakest seat (9.2): it is installed only if strictly better than the
+      // current worst entry under the (class, slotEnd, firstSeen, id) order —
+      // a hint can never displace an invite-grade observation. The loser of
+      // the contest is dropped silently: the record stays valid, the book
+      // just has no room for it (same ok:true semantics as self-exclusion).
       if (entriesById.size >= maxEntries) {
         pruneExpiredInner(currentSlot)
-        if (entriesById.size >= maxEntries) evictOne(currentSlot)
+        if (entriesById.size >= maxEntries) {
+          let weakest: MutableEntry | undefined
+          for (const e of entriesById.values()) weakest = worse(weakest ?? e, e)
+          const challenger: MutableEntry = {
+            identityId: r.identityId,
+            multiaddrs: [],
+            sourceClass: ctx.sourceClass,
+            slotStart,
+            slotEnd,
+            firstSeenSlot: currentSlot,
+            introductions: new Map(),
+            failedDials: 0,
+          }
+          if (weakest === undefined || worse(weakest, challenger) !== weakest) {
+            return { ok: true } // the incoming record lost the seat — dropped
+          }
+          evictOne(currentSlot)
+        }
       }
       install(r.identityId, slotStart, slotEnd, new Map(), currentSlot)
       return { ok: true }

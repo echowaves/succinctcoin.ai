@@ -17,7 +17,7 @@
  *    of block-grade announcement records the user (or a repair flow) drops
  *    for an amnesiac boot.
  */
-import { defaultArtifactPath, defaultLanBookPath } from '@succinctcoin/core'
+import { defaultArtifactPath, defaultInvitePath, defaultLanBookPath } from '@succinctcoin/core'
 
 import type { DiscoveryPorts, LadderReport } from '@succinctcoin/core'
 
@@ -37,12 +37,16 @@ export interface LadderSeamInputs {
 export interface LadderPaths {
   hintsFilePath: string
   artifactFilePath: string
+  /** Ticket 9.2: `<userData>/invite.txt` — one `scinvite:v1:` line per
+   * invitation; received by email/SMS/paste, written by the join UI. */
+  inviteFilePath: string
 }
 
 export function resolveLadderPaths(inputs: LadderSeamInputs): LadderPaths {
   return {
     hintsFilePath: defaultLanBookPath(inputs.platform, inputs.env, inputs.lanSharedDir),
     artifactFilePath: defaultArtifactPath(inputs.userDataDir),
+    inviteFilePath: defaultInvitePath(inputs.userDataDir),
   }
 }
 
@@ -60,12 +64,17 @@ export function buildDiscoveryPorts(
     // The what-worked line (design: "how did this node find its way").
     console.info('[discovery-ladder]', JSON.stringify(report))
   },
+  /** 9.2: sink for this node's renderable self-invitation (the glue logs it
+   * ONCE — the invite refreshes every announce window). */
+  onSelfInvite?: (invite: string) => void,
 ): DiscoveryPorts {
   const paths = resolveLadderPaths(inputs)
   return {
+    inviteFilePath: paths.inviteFilePath,
     hintsFilePath: paths.hintsFilePath,
     artifactFilePath: paths.artifactFilePath,
     announceAddresses,
+    onSelfInvite,
     onLadderReport: log,
   }
 }

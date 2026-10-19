@@ -48,20 +48,36 @@ export {
 } from './address-book.js'
 
 export {
+  applyInvites,
   defaultArtifactPath,
+  defaultInvitePath,
   defaultLanBookPath,
   MAX_ARTIFACT_RECORDS,
+  MAX_INVITE_LINES,
   readAnnouncementFile,
+  readInviteFile,
   runBootLadder,
   writeAnnouncementFile,
   writeAnnouncementsFromMessages,
 } from './boot-files.js'
 export type {
   AnnouncementFileRead,
+  ApplyInvitesOptions,
   BootLadderOptions,
+  InviteApplyReport,
+  InviteFileRead,
   LadderReport,
   LadderRungReport,
 } from './boot-files.js'
+
+export {
+  DEFAULT_TICKET_LOOKBACK_SLOTS,
+  encodeInvite,
+  INVITE_PREFIX,
+  parseInvite,
+  verifyInvite,
+} from './invitation.js'
+export type { InviteContext, InviteRejectReason, InviteValidation } from './invitation.js'
 export type {
   AddressBook,
   AddressBookEntry,
