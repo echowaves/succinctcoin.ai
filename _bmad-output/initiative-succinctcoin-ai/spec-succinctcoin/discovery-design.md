@@ -11,6 +11,7 @@ The chain continuously receives **signed liveness proofs**: mining tickets (iden
 `PeerAnnouncement { identityId, multiaddrs[], observedExternalAddr?, slotStart, slotEnd }`, signed by the identity key.
 
 - Gossiped on the existing peers topic AND anchored in block metadata (block winners and ticket submitters publish theirs).
+- **IPv6-only:** `multiaddrs` entries are global `/ip6` addresses only — IPv4, link-local `fe80::`, and loopback never enter an announcement (spec constraint); macOS-style rotating interface IDs are absorbed by chain-time re-announce.
 - **Expiry is chain-time:** valid for `[slotStart, slotEnd]`; re-announce driven by block-applied events; expired records are dead weight nobody relays. No wall clocks (AD-3).
 - **Reorg-safe:** announcements are block data — they roll back and re-confirm exactly like the chain (no off-chain address state to desync).
 - **One identity, many addresses:** book dedupes by `identityId`, not address — DHCP/NAT rotation is natural; identities persist.
@@ -22,7 +23,7 @@ Every record is tagged `(source class, first-seen slot)`. Connect-eligibility ru
 
 | Class | Examples | Cost to forge | Rule |
 |---|---|---|---|
-| block-grade | announcements in validated blocks | mining work | connect-eligible if fresh |
+| block-grade | announcements in validated blocks; **verified invitations** (sig + chain-time-fresh + identity has recent tickets) | mining work | connect-eligible if fresh |
 | log-grade | CT-style public logs (parked tier) | ~log fee | corroborate, then dial |
 | dns-grade | `dnsaddr`/SRV conventions (parked tier) | a domain | hint until 3 introductions |
 | hint-grade | gossiped records, books, embedded release hints | ~nothing | never dialed directly; never re-gossiped until verified |
@@ -31,12 +32,25 @@ Every record is tagged `(source class, first-seen slot)`. Connect-eligibility ru
 
 ## Fallback ladder (boot sequence; MVP rungs)
 
-1. **mDNS** (LAN multicast) — shipped 7.2.
-2. **LAN shared address-book file** — OS-level file the instances on a machine/subnet share; also the answer when Electron sandbox/firewall blocks multicast (open 7.2 unknown).
+0. **Trusted invitation** (human channel) — a fresh identity-signed announcement rendered as text/QR and shared out-of-band (email/SMS/copy-paste); verified by signature + chain-time freshness + recent-ticket liveness before the first dial. This is rung 0 since the 2026-10-18 course correction: middleboxes in real LANs drop multicast, so zero-config discovery cannot be load-bearing.
+1. **mDNS** (LAN multicast) — OPTIONAL dev/LAN convenience behind an opt-in flag, default off (`@libp2p/mdns` is IPv4-multicast-only by construction); the `bootstrap.txt` file seam is its CLI/headless sibling for invites.
+2. **LAN shared address-book file** — OS-level file the instances on a machine share; still useful in air-gapped dev.
 3. **Sync the chain from ANY artifact** — peer, torrent, `.scsnap` snapshot file, USB stick, archive mirror: *read before dial*; membership bootstraps from data, not from a live peer.
 4. **Read announcements from recent blocks** — the address book arrives with the chain.
 
 No rung is required; there is no shipped file of defaults that can stale out. Release-embedded build-time hints are allowed only as explicitly stamp-expired hint-grade entries.
+
+## Peer-book exchange & crawl (recursive fill from one invite)
+
+Joining from a single invitation must reach the wider network without infrastructure:
+
+- **Protocol:** `/succinctcoin/peerbook/1` request/response stream (proto, AD-8/AD-12, PROTO_OK gate): `PeerBookRequest { limit }` → `PeerBookResponse { records[] }` where each record is a signed announcement + the responder's corroboration witness. Responses serve the responder's top-scored fresh records.
+- **Crawl policy (BFS from the invite):** depth ≤ 3, concurrency ≤ 8, per-address dial budget 2 s (existing rule), quarantine on failure (existing rule), and a hard book cap of **100 entries**. Records enter the book through the same IPv6-only + trust-class gate as every other ingest; the crawl never dials hint-grade records directly.
+- **Diversity:** at-cap eviction keeps /64-prefix diversity (eclipse guard extended to v6 prefixes); Address Grafting is load-bearing for learning one's own global v6 face.
+
+## Reliability scoring (local, selection-only)
+
+Every book record carries a local score — Bitcoin addrman / Ethereum peer-scoring precedent. Inputs: dial-success EWMA, seen-across-slots stability, served-data validity (blocks/tickets it gossipped validated), corroboration count, observed latency. Uses are **selection only**: dial-order priority, which records to re-share (top-K), at-cap eviction. A score never grants connect-eligibility or validation trust — a poisoned record can only sink itself (verify-before-connect preserved).
 
 ## Swarm rules (dumb, local, emergent)
 
@@ -51,9 +65,9 @@ No rung is required; there is no shipped file of defaults that can stale out. Re
 
 ## Verification testbeds
 
-- **Amnesiac Boot Proof** (CAP-7 success): wiped node + ONE block-grade record → ≥k healthy peers across distinct /24s in <30 s — LAN and NATed-internet variants; runs headless over memory transport with a simulated book (AD-10), real-stack variant via the `mdns-smoke.mjs` pattern.
+- **Amnesiac Boot Proof** (CAP-7 success): wiped node + ONE block-grade record (a human-channel invitation qualifies) → ≥k healthy peers across distinct /64s in <30 s, book ≤100 — LAN and NATed-internet variants; runs headless over memory transport with a simulated book (AD-10); real-stack variant via the `dial-manual.mjs` invite-dial pattern (`mdns-smoke.mjs` retired to legacy).
 - **Poison test:** injected forged/expired/hint-grade records never produce a dial or a re-gossip.
-- **Discovery lint (CI):** repo-wide scan fails on hardwired multiaddrs outside test fixtures — the anti-seed immune system.
+- **Discovery lint (CI):** repo-wide scan fails on hardwired multiaddrs outside test fixtures, and on `/ip4` multiaddrs in non-test sources — the anti-seed / IPv6-only immune system.
 
 ## Prerequisite (blocking build)
 

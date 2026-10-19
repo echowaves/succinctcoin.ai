@@ -73,3 +73,12 @@ covers = ["CAP-7", "CAP-3"]
 after = [
   { epic = 7, needs = "the app booting the real transport (tcp+mDNS, optional-bootstrap genesis) that this epic's ladder wires onto" },
 ]
+
+[[epic]]
+id = 9
+slug = "epic-ipv6-invite-network"
+title = "IPv6-only + invitation join + scored peer-book"
+covers = ["CAP-3", "CAP-7"]
+after = [
+  { epic = 8, needs = "PeerAnnouncement proto + validator (8.2) the invitation reuses, and the address book (8.4) the crawl fills" },
+]

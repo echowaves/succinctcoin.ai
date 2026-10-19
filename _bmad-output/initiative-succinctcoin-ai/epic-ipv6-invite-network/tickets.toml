@@ -1,0 +1,64 @@
+# tickets.toml — epic-ipv6-invite-network's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "IPv6-only addressing policy: v6 listen, boundary rejects, mDNS default off"
+description = "Flip the node onto the IPv6-only constraint (spec 2026-10-18). Core: add a pure address-policy module (e.g. core/src/net/address-policy.ts) exporting isGlobalIp6Multiaddr / assertDialable — accepts /ip6/<global-unicast>/tcp/<port>[/p2p/...], rejects /ip4, fe80::, ::1, unspecified, and non-tcp with an SC-NET-* error naming the parked relay tier; wire it into (a) the address-book ingest boundary — records whose multiaddrs all fail are rejected as a new failure reason, (b) the adapter's dial() path for tcp transport (memory transport unaffected, AD-10), and (c) announcement construction in core (a node never announces a non-policy address). App: defaultNetConfig listenAddress becomes /ip6/::/tcp/0 (pinned port form /ip6/::/tcp/<port>); mdns defaults OFF with SUCCINCTCOIN_MDNS=1 opt-in; boot's dial-me line filters to global /ip6. Migrate every fixture/test from /ip4 fakes to /ip6 ULA-or-global fakes (ULA fc00::/7 accepted ONLY in tests — policy accepts site-local? NO: policy accepts global 2000::/3 only; test fakes use 2001:db8::/32, the documentation prefix). Extend the 8.5 discovery lint: /ip4 multiaddrs outside test fixtures + probe scripts fail the scan. The Amnesiac proof's diversity assertion moves /24 -> /64 (regex on the first four hextets)."
+verify = "Policy unit rows: 2001:db8::1 accepted; fe80::1, ::1, 2000::/3-outside globals, /ip4, missing tcp rejected with SC-NET code; book ingest rejects an all-v4 record (new reason), mixed record keeps only v6 addrs; dial('/ip4/...') rejects before socket (memory transport dials still pass); app net-config rows updated (v6 listen shapes, mdns default false + env opt-in); Amnesiac proof passes with /ip6 fakes and asserts distinct /64s; lint row fails on an embedded /ip4 fixture, passes on the repo; full root + app suites green headless."
+covers = ["R1", "E2"]
+after = []
+hitl = false
+risk = "medium"
+unknown = "Blast radius of the fixture migration (every 8.2-8.5 test using /ip4 fakes) — enumerate at build; whether libp2p tcp announces unwanted addrs on a dual-stack host (verify listenAddresses() output shape on macOS at build; filter announcements by policy regardless)."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Invitation: render, parse, verify (sig + freshness + ticket liveness), join seam"
+description = "An invitation IS a PeerAnnouncement (8.2) plus its proof of liveness. Core pure module (core/src/discovery/invitation.ts): encodeInvite(announcement) -> compact single-line string (base64url of the proto bytes, 'scinvite:v1:' prefix — QR-friendly); parseInvite(text) -> announcement; verifyInvite(announcement, {currentSlot, recentTicketsByIndex, chainId}) reusing 8.2's validator PLUS a liveness probe: the identity must hold >= 1 valid mining ticket within the caller-supplied lookback window index (caller passes a getter — no clocks, AD-3). App boot: an invite FILE (<userData>/invite.txt, one or more lines) is read beside bootstrap.txt; parsed + verified invites enter the book as block-grade with source 'invite' and are dialed at start (replaces bootstrap-hint dialing for joins; bootstrap.txt stays as the raw-hint dev tool). Renderer: minimal affordances via existing IPC — copyable invite string from the node's OWN latest self-announcement (signing stays in core, E3) and a paste box that writes invite.txt + triggers re-verify/re-dial; QR rendering only if a tiny dep already exists in the tree (else text-only, pinned decision). Boot log prints the renderable invite once the node has a policy-valid announced address."
+verify = "Round-trip rows encode->parse->verify on known-good; rejects: bad signature, expired/not-yet slot range, wrong chainId, ZERO recent tickets (squatter) — each refuses with a distinct reason and never yields a dial target; boot-file rows (tmp dir): valid invite -> book block-grade + dial attempted (memory/mock adapter), squatter invite -> stored-rejected never dialed; IPC surface pins no key material crosses to renderer (scan); app + root suites green headless."
+covers = ["R2", "E1", "E3"]
+after = [1]
+hitl = false
+risk = "medium"
+unknown = "Invite string encoding final shape (raw proto base64url vs text multiaddr+sig hex) — build-time call, must stay copy-paste tolerant (strip whitespace); whether the renderer already has a QR lib in-tree (check lockfile at build; default text-only)."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Peer-book exchange protocol + bounded BFS crawl to 100"
+description = "Recursive fill from one invite. Proto: PeerBookRequest { limit } / PeerBookResponse { records[] (signed announcements) + witnesses[] } in protocol.proto, regenerate (PROTO_OK; messages are NOT in any block digest — no protocolVersion bump unless the build finds a digest touchpoint, pin the call). Adapter/core: register stream handler /succinctcoin/peerbook/1 on the SERVER side following the sync.ts pattern — serves up to `limit` of the responder's dial-eligible fresh records ordered by score desc (9.4 hook; pre-9.4 = freshness order), never hint-grade, all policy-valid v6. Crawler (core/src/discovery/crawler.ts, pure state machine + injected dial/request fns): BFS from dialed peers, depth <= 3, concurrency <= 8, per-address dial budget 2 s + quarantine rules reused from the book, hard cap 100 book entries; at-cap insertion evicts lowest-score (pre-9.4: oldest/least-corroborated) while keeping /64 diversity floors (max share per /64 pinned); responses enter through the normal book ingest (trust classes preserved — peerbook records are block-grade only if independently seen in blocks, else hint-grade per verify-before-connect; introductions path already upgrades). Node loop starts a crawl after boot when book < cap and stops at cap or quiet."
+verify = "Memory-transport mesh test (synthetic 150-node star from one invite): crawler reaches >= 100 book entries exactly capped, depth never exceeds 3 (asserted via synthetic distance labels), concurrency <= 8 observed; peerbook response serving: top-fresh ordered, hint-grade excluded, limit honored; poison row: a peerbook record not corroborated by blocks stays hint-grade and is NEVER dialed directly; eviction respects /64 diversity floor; PROTO_OK green; full suites green headless."
+covers = ["R3", "E1", "E2"]
+after = [2]
+hitl = false
+risk = "high"
+unknown = "Whether peerbook rides the adapter (new registered protocol) or core-over-stream API — follow sync.ts precedent at build; witness shape minimal-viable (signer id + slot) vs full introduction reuse — prefer introducing enum-only alias if full Introduction reuse bloats."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Reliability scoring: local, selection-only, never trust"
+description = "core/src/discovery/peer-score.ts pure module: score(record, history) -> number in [0,1] from injectable signals — dialSuccessEwma (alpha pinned), seenAcrossSlots stability (count of distinct recent slots the identity had a valid record), servedDataValidity (valid blocks/tickets sourced from that peer / total sourced), corroborationCount (independent sources incl. introductions), latency (EWMA, capped) — weights pinned as named constants + property-tested for monotonicity. Wiring: book records carry mutable local History updated by real events (dial ok/fail on connect events, data-validity from the existing apply/verify paths via a narrow sink interface, latency from dial timing); selection consumers switch to score order: crawler request order, peerbook serve order, re-share top-K, at-cap eviction (lowest first, diversity floor intact). THE invariant, pinned by property rows: score NEVER appears in any connect-eligibility or validation predicate — eligibility stays exactly 8.4's trust-class rules; a zero-score block-grade record remains dialable, a max-score hint never becomes dialable."
+verify = "fast-check properties: monotone improvement per signal => non-decreasing score; eligibility set identical at all-zero vs all-max scores (non-vacuity: the property fails if wiring leaks score into eligibility); eviction order = score order under cap; EWMA/stability rows against hand-computed vectors; full suites green headless."
+covers = ["R4", "E1", "E2"]
+after = [3]
+hitl = false
+risk = "medium"
+unknown = "Exact signal weights + EWMA alpha (pin named constants, revisit with 8.6 field data); whether latency needs a new timing hook in the adapter or rides existing connection events."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Amnesiac Invite Boot Proof + probes + docs (closing, CI-side)"
+description = "CI proof + retirement sweep. Amnesiac Invite Boot Proof (memory transport, simulated mesh like 8.5's): wiped node, empty config, ONE verified invitation -> >= k healthy peers across distinct /64s within a bounded slot budget, crawl respects cap 100, scores present on every book record; plus the negative pair: same setup where the invite identity has no tickets -> zero dials. Probes: dial-manual.mjs gains an invite mode (encode/parse/verify against real core dist, print-then-dial) so the two-device proof (re-scoped 8.6) runs on it; mdns-smoke.mjs moved under epic-real-network/legacy/ with a README note (kept for the opt-in flag). Docs: README quickstart gains the invite flow (generate -> send -> paste), IPv6-only statement incl. router-inbound caveat and the Norton/middlebox rationale, bootstrap.txt demoted to dev-tool section; discovery-lint untouched beyond 9.1's rule. deferred-work.md: record relay-tier open question pointer + IPv4-unsupported decision."
+verify = "Amnesiac Invite Proof green (bounded, event-driven, no wall clock); negative squatter row green; invite-mode probe runs against built dist on loopback v6 (::1 EXCLUDED from announce but usable in the probe behind an explicit test flag — pin how); README renders the flow end-to-end for a new user with two machines; suites green headless."
+covers = ["R1", "R2", "R3", "E2"]
+after = [3, 4]
+hitl = false
+risk = "low"
+unknown = "k and slot budget constants (reuse 8.5's); probe loopback exemption shape (must not weaken the shipped policy)."

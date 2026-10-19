@@ -28,8 +28,8 @@ A vision to realize: a currency whose protocol makes a running node's chance to 
   - **intent:** a gate-verified person acquires exactly one base identity through a personhood gate; the protocol enforces an acceptance cap (one valid ticket per identity per window) so a second identity is never cheaper than the first, and the mining reward never scales with identity count.
   - **success:** in a multi-identity simulation, N identities of one operator earn no more slot-eligibility throughput than one (enforced by the acceptance cap, not by challenge hardness); the slot winner is verifiable from public data by any node (public-coin draw); a node not selected by the draw cannot win a slot; lapsing re-attestation loses eligibility.
 - **CAP-3** — node network
-  - **intent:** nodes join with no preconfigured peer — mDNS on LAN, ticket-seeded discovery (CAP-7) beyond it; the genesis bootstrap list is an optional hint source (empty = LAN-only), never a requirement. Home NAT traversed via circuit-relay v2; blocks and transactions propagate via gossipsub over tcp+noise+yamux.
-  - **success:** a node behind a simulated NAT discovers peers, syncs, and gossips a test block to k peers within a bounded time, with no real sockets in CI and zero configured addresses.
+  - **intent:** nodes join via a trusted invitation — an out-of-band IPv6 multiaddr (QR / SMS / email / copy-paste) verified as a fresh identity-signed announcement backed by recent mining tickets; ticket-seeded discovery (CAP-7) propagates the rest of the network. Addressing is IPv6-only; home NAT traversed via circuit-relay v2 (parked escape); blocks and transactions propagate via gossipsub over tcp+noise+yamux.
+  - **success:** a node behind a simulated NAT joins from ONE verified invitation, syncs, and gossips a test block to k peers within a bounded time, with no real sockets in CI and nothing preconfigured beyond the invitation.
 - **CAP-4** — desktop app
   - **intent:** an Electron shell runs the node in its main process (plain Node) with a React UI for balance, mining status, and network peers.
   - **success:** the packaged app starts a node on a testnet and shows blocks being mined, while the same core package's test suite passes unchanged under a plain-Node runner with no shell.
@@ -41,12 +41,13 @@ A vision to realize: a currency whose protocol makes a running node's chance to 
   - **success:** CI runs the entire core suite headless in a bare Node environment, with all libp2p-dependent tests on the in-process memory transport.
 - **CAP-7** — ticket-seeded bootstrap-free discovery
   - **intent:** a node joining with zero preconfigured peers discovers the network automatically on LAN and internet; presence is proven by artifacts the chain already receives — mining tickets are signed liveness proofs, so forging presence costs mining work — and every learned address is a hint until verified through independent corroboration; no single channel is load-bearing (mechanism: `discovery-design.md`).
-  - **success:** Amnesiac Boot Proof — a wiped node with empty config re-enters from ONE block-grade artifact obtained via any non-peer channel and reaches ≥ k healthy peers across distinct /24s within 30 s on LAN and NATed-internet testnets; injected forged or hint-grade records never produce a dial or a re-gossip.
+  - **success:** Amnesiac Boot Proof — a wiped node with empty config re-enters from ONE block-grade artifact obtained via any non-peer channel (a human-channel invitation qualifies) and reaches ≥ k healthy peers across distinct /64s within 30 s on LAN and NATed-internet testnets; injected forged or hint-grade records never produce a dial or a re-gossip.
 
 ## Constraints
 
 - One language for core + shell + tests (JS/TS); building, running, or testing the core must not require any second language's toolchain.
 - big.js records all money; js-libp2p provides networking, discovery, and bootstrap (user-mandated, not a choice).
+- Network addressing is IPv6-only with no dual-stack fallback: listen/announce/dial/ingest accept global `/ip6` multiaddrs only; IPv4, link-local `fe80::`, and loopback are rejected at every book boundary with a clear error (the parked community-relay tier is the future path for IPv4-only networks); discovery diversity is measured in /64 prefixes.
 - Registration/survival cost is enforced by plain protocol rules: an acceptance cap (one valid ticket per identity per window), tickets windowed in **chain-time**, a periodic re-attestation, and a slot reward that never scales with identity count. Money, compute, and storage are structurally disqualified as cost bases (C(s,T)=o(sT), arXiv:2605.29651 — motivation for this constraint, not a load-bearing dependency).
 - No VDF anywhere as a time anchor (Ethereum abandoned its Minroot-VDF plan after a discovered attack); long-range anchoring is PoW-like accumulated work.
 - The per-PoW-attempt path must not call big.js `times` (~1000× slower than `plus`, measured) nor pure-JS keccak (~35× slower than native sha256, measured); node:crypto sha256 + plain integer counter only.
@@ -56,7 +57,7 @@ A vision to realize: a currency whose protocol makes a running node's chance to 
 
 ## Non-goals
 
-- No DHT at launch — bootstrap + mDNS; Kad-DHT deferred until the network outgrows them.
+- No DHT at launch — invitation join + peer-book exchange; mDNS retained only behind an opt-in flag for LAN dev (its IPv4 multicast is middlebox-hostile); Kad-DHT deferred until the network outgrows them.
 - The project operates no official discovery infrastructure — no seed, relay, or registry endpoints it runs; volunteer and community tiers are community-owned (kills the bootstrap SPOF at the operational layer too).
 - No browser-runtime node (the node is a Node.js process; browser transports are not in scope).
 - No proof-of-space.
@@ -70,14 +71,14 @@ In a multi-node simulation over the in-process transport, slot odds track uptime
 ## Assumptions
 
 - TypeScript + Vitest + pnpm + Node 24 toolchain (settled by two independent production JS consensus clients, Lodestar and EthereumJS).
-- Small community scale at launch (10 → few thousand mostly-stable nodes); bootstrap + mDNS suffice at that size.
+- Small community scale at launch (10 → few thousand mostly-stable nodes); invitation join + peer-book crawl suffice at that size.
 - Block metadata can carry small announcement records without breaking block-size or validation budgets — verify by measurement at build time; the proto change runs the PROTO_OK gate.
 
 ## Open Questions
 
-- At what node count do bootstrap + mDNS stop sufficing and Kad-DHT become warranted? (Resolve by memory-transport simulation, or adopt DHT day-one for the "always works" story.)
+- At what node count do invitation join + peer-book crawl stop sufficing and Kad-DHT become warranted? (Resolve by memory-transport simulation, or adopt DHT day-one for the "always works" story.)
 - Personhood gate: dual gate at launch (biometric + social graph) is the recommended config after the attack pass (a cheap weak gate is the sybil faucet — gates are addable only by protocol upgrade, never auto-valid). Residual: which two gates, and the re-attestation cadence K.
 - τ-erosion: AI-solver throughput trend is unknown (the BPC paper's 97–100%-yet-throughput-bounded result is a snapshot, not a trend line); challenge-family rotation cadence is undecided.
 - Gate uniqueness: the #1 external trust is the personhood gate (iris fakery, colluding vouching clusters); the dual-gate config and re-attestation bound the damage, but gate-specific attack research is per-gate, not protocol-level.
 - Address rotation / privacy policy for announced multiaddrs: on-chain presence is linkable; one-identity-many-addresses dedupe exists, but the rotation cadence is undecided.
-- CAP-7 MVP tier boundary: which fallback rungs ship first (mDNS → LAN shared book file → sync chain from any artifact → read block announcements) vs later tiers (stateless UDP Hello Packet, CT-log registry, mega-DHT rendezvous under genesis-hash namespace).
+- Relay-tier criteria for IPv4-only networks: an IPv6-reachable community relay is the escape hatch for peers that cannot bind or route IPv6; which tier ships when, and operator incentives under the no-operated-infrastructure non-goal. (The MVP tier-boundary question closed with the 2026-10-18 pivot: rung 0 = trusted invitation.)
