@@ -42,6 +42,7 @@ import {
   MAX_VOUCHES_PER_SUBJECT,
   createAddressBook,
   deriveIdentityKeypair,
+  ip6Slash64,
   signIntroduction,
   signPeerAnnouncement,
 } from '../src/index.js'
@@ -356,7 +357,7 @@ describe('8.4 — address book: classes, introductions, expiry, retraction', () 
   })
 
   it('CAP_EVICT: the size cap evicts the (class, slotEnd)-worst entry', () => {
-    expect(MAX_BOOK_ENTRIES).toBe(64)
+    expect(MAX_BOOK_ENTRIES).toBe(100) // 9.3: spec fill target "up to 100 total"
     const book = createAddressBook({ maxEntries: 3 })
     expect(book.ingestAnnouncement(annFor(A, { slotEnd: 300 }), blockCtx(HASH_1))).toEqual({ ok: true })
     expect(book.ingestAnnouncement(annFor(B, { slotEnd: 200 }), blockCtx(HASH_1))).toEqual({ ok: true })
@@ -448,5 +449,91 @@ describe('8.4 — address book: classes, introductions, expiry, retraction', () 
       }),
       { numRuns: 60 },
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 9.3 — the slash-64 diversity FLOOR under capacity pressure: a crowded /64
+// may only grow by evicting ITS OWN weakest, never a different-prefix seat.
+// ---------------------------------------------------------------------------
+describe('9.3 — /64 diversity floor (MAX_ENTRIES_PER_64 = 32)', () => {
+  const GROUP_ADDRS = (h: number) => [`/ip6/2001:db8:f00d:1:${h.toString(16)}::/tcp/4001`] // /64 …:f00d:1 — h is the FIFTH hextet
+  const kps = (n: number, base: number) => Array.from({ length: n }, (_, i) => deriveIdentityKeypair(new Uint8Array(32).fill(base + i)))
+
+  function annAt(kp: (typeof KEYPAIRS)[number], slotEnd: number, addrs: string[]) {
+    const fields = { identityId: kp.identityId, multiaddrs: addrs, slotStart: 0, slotEnd, chainId: TEST_CHAIN }
+    return { ...fields, signature: signPeerAnnouncement(kp, fields) }
+  }
+
+  /** Book of 35 (cap 35): 32 in group f00d:1 (slotEnds 101..132), plus three
+   * other-group entries at slotEnds 50 / 60 / 70. */
+  function crowded() {
+    const book = createAddressBook({ maxEntries: 35 })
+    const ctx = classCtx('log')
+    const group = kps(32, 0x70)
+    const others = kps(3, 0xC0)
+    group.forEach((kp, i) => expect(book.ingestAnnouncement(annAt(kp, 101 + i, GROUP_ADDRS(i + 1)), ctx)).toEqual({ ok: true }))
+    others.forEach((kp, i) => expect(book.ingestAnnouncement(annAt(kp, 50 + i * 10, [`/ip6/2001:db8:cafe:${i + 1}::/tcp/4001`]), ctx)).toEqual({ ok: true }))
+    expect(book.size()).toBe(35)
+    return { book, group, others }
+  }
+
+  it('SAME_GROUP_VICTIM: a crowded /64 grows only by evicting its own weakest', () => {
+    const { book, group, others } = crowded()
+    // A fresh same-group record (slotEnd 120) that would WITHOUT the floor
+    // evict the global weakest (other-group slotEnd 50).
+    const [fresh] = kps(1, 0xD0)
+    expect(book.ingestAnnouncement(annAt(fresh, 120, GROUP_ADDRS(99)), classCtx('log'))).toEqual({ ok: true })
+
+    const ids = book.entries().map((e) => e.identityId)
+    expect(ids).toContain(fresh.identityId) // installed… (the same-group weakest lost)
+    expect(ids).not.toContain(group[0]!.identityId) // …its own group's weakest (slotEnd 101)
+    expect(ids).toContain(others[0]!.identityId) // the global weakest SURVIVED — floor honored
+    expect(book.size()).toBe(35)
+    // The group never exceeded the ceiling.
+    const groups = new Map<string, number>()
+    for (const e of book.entries()) {
+      const g = ip6Slash64(e.multiaddrs[0] ?? '')
+      if (g !== null) groups.set(g, (groups.get(g) ?? 0) + 1)
+    }
+    expect(Math.max(...groups.values())).toBeLessThanOrEqual(32)
+  })
+
+  it('GROUP_LOSES_SEAT: a same-group challenger worse than its own group is dropped', () => {
+    const { book, group, others } = crowded()
+    const [weak] = kps(1, 0xD1)
+    expect(book.ingestAnnouncement(annAt(weak, 90, GROUP_ADDRS(98)), classCtx('log'))).toEqual({ ok: true }) // weaker than every group member
+    const ids = book.entries().map((e) => e.identityId)
+    expect(ids).not.toContain(weak.identityId) // dropped, not installed…
+    expect(ids).toContain(group[0]!.identityId) // nothing evicted…
+    expect(others.every((kp) => ids.includes(kp.identityId))).toBe(true)
+    expect(book.size()).toBe(35)
+  })
+
+  it('FLOOR_BELOW_CAP: a full /64 stays full even when the book has room (9.3 review)', () => {
+    const book = createAddressBook({ maxEntries: 40 }) // plenty of room overall
+    const ctx = classCtx('log')
+    const group = kps(33, 0x90)
+    group.slice(0, 32).forEach((kp, i) => expect(book.ingestAnnouncement(annAt(kp, 101 + i, GROUP_ADDRS(i + 1)), ctx)).toEqual({ ok: true }))
+    expect(book.size()).toBe(32)
+    // The 33rd same-group record — FRESHER than every member, no capacity
+    // pressure — must still be dropped by the floor (9.3 review finding 7).
+    expect(book.ingestAnnouncement(annAt(group[32]!, 500, GROUP_ADDRS(33)), ctx)).toEqual({ ok: true })
+    expect(book.size()).toBe(32)
+    expect(book.entries().some((e) => e.identityId === group[32]!.identityId)).toBe(false)
+  })
+
+  it('FLOOR_OPENS_DOOR: a different-/64 challenger may still evict the global weakest', () => {
+    const { book, group, others } = crowded()
+    // The global weakest is other-group slotEnd 50; a fresh-DIFFERENT-/64
+    // challenger beats it, so the ordinary contest applies unchanged — the
+    // floor only constrains challengers FROM the crowded group.
+    const [fresh] = kps(1, 0xD2)
+    expect(book.ingestAnnouncement(annAt(fresh, 105, ['/ip6/2001:db8:beef:1::/tcp/4001']), classCtx('log'))).toEqual({ ok: true })
+    const ids = book.entries().map((e) => e.identityId)
+    expect(ids).toContain(fresh.identityId)
+    expect(ids).not.toContain(others[0]!.identityId) // the global weakest (other-group, 50) was evicted…
+    expect(ids).toContain(group[0]!.identityId) // …every crowded-group member survived
+    expect(book.size()).toBe(35)
   })
 })

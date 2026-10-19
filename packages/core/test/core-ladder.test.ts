@@ -19,10 +19,12 @@ import {
   encodeInvite,
   loadGenesis,
   parseInvite,
+  signIntroduction,
   signPeerAnnouncement,
+  verifyIntroductionSignature,
   writeAnnouncementsFromMessages,
 } from '../src/index.js'
-import type { CorePorts, LadderReport } from '../src/index.js'
+import type { CorePorts, CrawlReport, LadderReport, PeerBookServed } from '../src/index.js'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const GENESIS_PATH = join(here, '..', '..', '..', 'config', 'genesis.json')
@@ -52,7 +54,14 @@ function announcementMessage(i: number, addrs?: string[]) {
 // The REAL store on a tmp dir (the 8.4 harness lesson: boot commits genesis
 // and the ladder reads headSlot — a fake with an inconsistent head makes
 // mineAndApply throw inside the swallowed first window).
-function makePorts(dir: string, netExtra: Partial<{ dial(addr: string): Promise<void> }> = {}): CorePorts {
+function makePorts(
+  dir: string,
+  netExtra: Partial<{
+    dial(addr: string): Promise<void>
+    setPeerBookSource(source: ((limit: number) => Promise<PeerBookServed>) | null): void
+    requestPeerBook(peer: string, limit: number): Promise<PeerBookServed>
+  }> = {},
+): CorePorts {
   return {
     genesisPath: GENESIS_PATH,
     net: {
@@ -284,6 +293,99 @@ describe('9.2 — createCore invitation wiring', () => {
     expect(entry?.sourceClass).toBe('invite')
     await until(() => dialed.length > 0) // first-success dial, fire-and-forget
     expect(dialed[0]).toBe('/ip6/2001:db8:a06:6::/tcp/4001')
+
+    await core.stop()
+  })
+})
+
+describe('9.3 — createCore peer-book exchange wiring', () => {
+  it('start() registers a live serve source over the book; stop() unregisters', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-pbk-'))
+    const invitePath = join(dir, 'invite.txt')
+    const peer = announcementMessage(5, ['/ip6/2001:db8:b00d:5::/tcp/4001'])
+    await writeFile(invitePath, `${encodeInvite(peer)}\n`, 'utf8')
+
+    let source: ((limit: number) => Promise<PeerBookServed>) | null = null
+    let reportRef: LadderReport | null = null
+    const ports = makePorts(dir, {
+      dial: async () => {},
+      setPeerBookSource: (s) => {
+        source = s
+      },
+    }) // NO requestPeerBook ⇒ the crawl is skipped — this row isolates the source
+    ports.identity = deriveIdentityKeypair(seedFor(1)) // signer for witnesses; self ≠ peer
+    ports.discovery = { inviteFilePath: invitePath, onLadderReport: (r) => (reportRef = r) }
+
+    const core = createCore(ports)
+    await core.start()
+    await until(() => reportRef !== null) // ladder done; source registered at start
+
+    expect(source).not.toBeNull()
+    const served = await source!(10)
+    expect(served.records.map((r) => r.identityId)).toEqual([peer.keypair.identityId])
+    expect(served.witnesses).toHaveLength(1) // self-signed by ports.identity
+    expect(served.witnesses[0]!.subjectIdentityId).toBe(peer.keypair.identityId)
+    const w0 = served.witnesses[0]!
+    expect(verifyIntroductionSignature({ ...w0, reachability: w0.reachability as 'direct' }, w0.signature)).toBe(true)
+
+    await core.stop()
+    expect(source).toBeNull() // unregistered on stop — no serves after shutdown
+  })
+
+  it('crawl runs after the ladder: report on the sink, corroborated child stored hint-grade', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-crawl-'))
+    const invitePath = join(dir, 'invite.txt')
+    const seedPeer = announcementMessage(5, ['/ip6/2001:db8:c0fe:5::/tcp/4001'])
+    const child = announcementMessage(8, ['/ip6/2001:db8:c0fe:8::/tcp/4001'])
+    await writeFile(invitePath, `${encodeInvite(seedPeer)}\n`, 'utf8')
+
+    // The seed peer serves the child WITH its own witness (crawl-local
+    // corroboration); every other peer serves empty.
+    const witnessFields = {
+      signerIdentityId: seedPeer.keypair.identityId,
+      subjectIdentityId: child.keypair.identityId,
+      slotObserved: 5n,
+      reachability: 'direct' as const,
+      chainId: TEST_CHAIN,
+    }
+    const dialed: string[] = []
+    let crawl: CrawlReport | null = null
+    const ports = makePorts(dir, {
+      dial: async (addr) => {
+        dialed.push(addr)
+      },
+      setPeerBookSource: () => {},
+      async requestPeerBook(peer) {
+        if (peer === '/ip6/2001:db8:c0fe:5::/tcp/4001')
+          return {
+            records: [child] as unknown as PeerBookServed['records'],
+            witnesses: [{ ...witnessFields, signature: signIntroduction(seedPeer.keypair, witnessFields) }] as unknown as PeerBookServed['witnesses'],
+          }
+        return { records: [], witnesses: [] }
+      },
+    })
+    ports.identity = deriveIdentityKeypair(seedFor(1))
+    ports.discovery = {
+      inviteFilePath: invitePath,
+      onCrawlReport: (r) => {
+        crawl = r
+      },
+    }
+
+    const core = createCore(ports)
+    await core.start()
+    await until(() => crawl !== null) // chained after the ladder, fire-and-forget
+    const c = crawl as unknown as CrawlReport
+    expect(c.stoppedBy).toBe('quiet')
+    expect(c.stored).toBe(1) // the corroborated child
+    expect(c.dialed).toBe(2) // seed + child (crawl-local budget)
+    expect(c.served).toBe(2)
+    expect(c.uncorroborated).toBe(0)
+
+    const entries = core.addressBook!.entries()
+    const childEntry = entries.find((e) => e.identityId === child.keypair.identityId)
+    expect(childEntry?.sourceClass).toBe('hint') // crawl records are hint-grade, always
+    expect(dialed).toContain('/ip6/2001:db8:c0fe:8::/tcp/4001')
 
     await core.stop()
   })

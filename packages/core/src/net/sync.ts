@@ -70,8 +70,9 @@ const FRAME_HEADER_BYTES = 4
 /**
  * Encode one proto message as a u32be length-prefix frame (the AD-12
  * message + the transport's framing — the frame is the stream's job).
+ * Exported for `peerbook.ts` — ONE framing implementation on the wire.
  */
-function encodeFrame(message: Uint8Array): Uint8Array {
+export function encodeFrame(message: Uint8Array): Uint8Array {
   const frame = new Uint8Array(FRAME_HEADER_BYTES + message.length)
   new DataView(frame.buffer).setUint32(0, message.length, false) // u32be
   frame.set(message, FRAME_HEADER_BYTES)
@@ -136,9 +137,9 @@ class FrameAccumulator {
  * its full frame becomes available (never before). `decode` maps one
  * decoded payload to a value — `SyncRequest.decode` for the server's read
  * of the ONE request, `SyncBlock.decode` for the client's read of the
- * response stream.
+ * response stream. Exported for `peerbook.ts` (shared framing, 9.3).
  */
-async function* decodeFramed<T>(
+export async function* decodeFramed<T>(
   stream: Stream,
   decode: (buf: Uint8Array) => T,
 ): AsyncGenerator<T> {

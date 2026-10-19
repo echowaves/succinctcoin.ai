@@ -2832,6 +2832,387 @@ export namespace succinctcoin {
     }
   }
 
+  export interface PeerBookRequest {
+    limit: number
+  }
+
+  export interface PeerBookRequestInput {
+    limit?: number
+  }
+
+  export namespace PeerBookRequest {
+    let _codec: Codec<PeerBookRequest, PeerBookRequestInput>
+
+    export const codec = (): Codec<PeerBookRequest, PeerBookRequestInput> => {
+      if (_codec == null) {
+        _codec = message<PeerBookRequest, PeerBookRequestInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if ((obj.limit != null && obj.limit !== 0)) {
+            w.uint32(8)
+            w.uint32(obj.limit)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length) => {
+          const obj: any = {
+            limit: 0
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.limit = r.uint32()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.PeerBookRequest'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield {
+                  field: `${prefix}limit`,
+                  value: r.uint32()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.PeerBookRequest'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface PeerBookRequestLimitFieldEvent {
+      field: '.limit'
+      value: number
+    }
+
+    export function encode (obj: PeerBookRequestInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, PeerBookRequest.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerBookRequest>): PeerBookRequest {
+      return decodeMessage(buf, PeerBookRequest.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerBookRequest>): Generator<PeerBookRequestLimitFieldEvent> {
+      return streamMessage(buf, PeerBookRequest.codec(), opts)
+    }
+  }
+
+  export interface PeerBookResponse {
+    records: succinctcoin.PeerAnnouncement[]
+    witnesses: succinctcoin.Introduction[]
+  }
+
+  export interface PeerBookResponseInput {
+    records?: succinctcoin.PeerAnnouncementInput[]
+    witnesses?: succinctcoin.IntroductionInput[]
+  }
+
+  export namespace PeerBookResponse {
+    let _codec: Codec<PeerBookResponse, PeerBookResponseInput>
+
+    export const codec = (): Codec<PeerBookResponse, PeerBookResponseInput> => {
+      if (_codec == null) {
+        _codec = message<PeerBookResponse, PeerBookResponseInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.records != null && obj.records.length > 0) {
+            for (const value of obj.records) {
+              w.uint32(10)
+              succinctcoin.PeerAnnouncement.codec().encode(value, w)
+            }
+          }
+
+          if (obj.witnesses != null && obj.witnesses.length > 0) {
+            for (const value of obj.witnesses) {
+              w.uint32(18)
+              succinctcoin.Introduction.codec().encode(value, w)
+            }
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            records: [],
+            witnesses: []
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                if (opts.limits?.records != null && obj.records.length === opts.limits.records) {
+                  throw new MaxLengthError('Decode error - repeated field "records" had too many elements')
+                }
+
+                obj.records.push(succinctcoin.PeerAnnouncement.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.records$
+                }))
+                break
+              }
+              case 2: {
+                if (opts.limits?.witnesses != null && obj.witnesses.length === opts.limits.witnesses) {
+                  throw new MaxLengthError('Decode error - repeated field "witnesses" had too many elements')
+                }
+
+                obj.witnesses.push(succinctcoin.Introduction.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.witnesses$
+                }))
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const obj = {
+            records: 0,
+            witnesses: 0
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.PeerBookResponse'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                if (opts.limits?.records != null && obj.records === opts.limits.records) {
+                  throw new MaxLengthError('Streaming decode error - repeated field "records" had too many elements')
+                }
+
+                for (const evt of succinctcoin.PeerAnnouncement.codec().stream(r, r.uint32(), `${prefix}records[].`, {
+                  limits: opts.limits?.records$
+                })) {
+                  yield {
+                    ...evt,
+                    index: obj.records
+                  }
+                }
+
+                obj.records++
+
+                break
+              }
+              case 2: {
+                if (opts.limits?.witnesses != null && obj.witnesses === opts.limits.witnesses) {
+                  throw new MaxLengthError('Streaming decode error - repeated field "witnesses" had too many elements')
+                }
+
+                for (const evt of succinctcoin.Introduction.codec().stream(r, r.uint32(), `${prefix}witnesses[].`, {
+                  limits: opts.limits?.witnesses$
+                })) {
+                  yield {
+                    ...evt,
+                    index: obj.witnesses
+                  }
+                }
+
+                obj.witnesses++
+
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.PeerBookResponse'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface PeerBookResponseRecordsIdentityIdFieldEvent {
+      field: '.records[].identityId'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseRecordsMultiaddrsFieldEvent {
+      field: '.records[].multiaddrs[]'
+      index: number
+      value: string
+    }
+
+    export interface PeerBookResponseRecordsObservedExternalAddrFieldEvent {
+      field: '.records[].observedExternalAddr'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseRecordsSlotStartFieldEvent {
+      field: '.records[].slotStart'
+      value: bigint
+      index: number
+    }
+
+    export interface PeerBookResponseRecordsSlotEndFieldEvent {
+      field: '.records[].slotEnd'
+      value: bigint
+      index: number
+    }
+
+    export interface PeerBookResponseRecordsChainIdFieldEvent {
+      field: '.records[].chainId'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseRecordsSignatureFieldEvent {
+      field: '.records[].signature'
+      value: Uint8Array<ArrayBuffer>
+      index: number
+    }
+
+    export interface PeerBookResponseRecordsMessageStartEvent {
+      field: '.records[]'
+      index: number
+      type: 'start'
+      message: string
+    }
+
+    export interface PeerBookResponseRecordsMessageEndEvent {
+      field: '.records[]'
+      index: number
+      type: 'end'
+      message: string
+    }
+
+    export interface PeerBookResponseWitnessesSignerIdentityIdFieldEvent {
+      field: '.witnesses[].signerIdentityId'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseWitnessesSubjectIdentityIdFieldEvent {
+      field: '.witnesses[].subjectIdentityId'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseWitnessesSlotObservedFieldEvent {
+      field: '.witnesses[].slotObserved'
+      value: bigint
+      index: number
+    }
+
+    export interface PeerBookResponseWitnessesReachabilityFieldEvent {
+      field: '.witnesses[].reachability'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseWitnessesChainIdFieldEvent {
+      field: '.witnesses[].chainId'
+      value: string
+      index: number
+    }
+
+    export interface PeerBookResponseWitnessesSignatureFieldEvent {
+      field: '.witnesses[].signature'
+      value: Uint8Array<ArrayBuffer>
+      index: number
+    }
+
+    export interface PeerBookResponseWitnessesMessageStartEvent {
+      field: '.witnesses[]'
+      index: number
+      type: 'start'
+      message: string
+    }
+
+    export interface PeerBookResponseWitnessesMessageEndEvent {
+      field: '.witnesses[]'
+      index: number
+      type: 'end'
+      message: string
+    }
+
+    export function encode (obj: PeerBookResponseInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, PeerBookResponse.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerBookResponse>): PeerBookResponse {
+      return decodeMessage(buf, PeerBookResponse.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<PeerBookResponse>): Generator<PeerBookResponseRecordsIdentityIdFieldEvent | PeerBookResponseRecordsMultiaddrsFieldEvent | PeerBookResponseRecordsObservedExternalAddrFieldEvent | PeerBookResponseRecordsSlotStartFieldEvent | PeerBookResponseRecordsSlotEndFieldEvent | PeerBookResponseRecordsChainIdFieldEvent | PeerBookResponseRecordsSignatureFieldEvent | PeerBookResponseRecordsMessageStartEvent | PeerBookResponseRecordsMessageEndEvent | PeerBookResponseWitnessesSignerIdentityIdFieldEvent | PeerBookResponseWitnessesSubjectIdentityIdFieldEvent | PeerBookResponseWitnessesSlotObservedFieldEvent | PeerBookResponseWitnessesReachabilityFieldEvent | PeerBookResponseWitnessesChainIdFieldEvent | PeerBookResponseWitnessesSignatureFieldEvent | PeerBookResponseWitnessesMessageStartEvent | PeerBookResponseWitnessesMessageEndEvent> {
+      return streamMessage(buf, PeerBookResponse.codec(), opts)
+    }
+  }
+
   let _codec: Codec<succinctcoin, succinctcoinInput>
 
   export const codec = (): Codec<succinctcoin, succinctcoinInput> => {

@@ -25,6 +25,8 @@ import { loadGenesis } from './config/index.js'
 import { MINT_ID, TRACER_WINNER_ID, createNodeLoop, mineAndApply } from './consensus/index.js'
 import { createAddressBook, runBootLadder, verifyInvite } from './discovery/index.js'
 import { DEFAULT_TICKET_LOOKBACK_SLOTS, encodeInvite } from './discovery/index.js'
+import { MAX_BOOK_ENTRIES, runCrawl, servePeerBook } from './discovery/index.js'
+import type { PeerBookServed, PeerBookSource } from './net/peerbook.js'
 import type { AddressBook, InviteRejectReason } from './discovery/index.js'
 import { Block } from './proto/index.js'
 import { fromDisplay, fromJson, toJson, toDisplay, totalSupply } from './ledger/index.js'
@@ -130,6 +132,10 @@ export function createCore(ports: CorePorts): CoreInstance {
   // until the first announcement publishes. Public text (a signed public
   // record), safe for the clipboard/UI (AD-9: no key material).
   let latestSelfInvite: string | null = null
+  // Ticket 9.3: cooperative stop for the fire-and-forget crawl (the boot
+  // ladder + crawl run detached from `start()`; `stop()` flips this so an
+  // in-flight crawl drains between dequeues instead of outliving the node).
+  let discoveryStopped = false
 
   return {
     on<K extends keyof CoreEvents>(event: K, listener: (payload: CoreEvents[K]) => void) {
@@ -174,15 +180,33 @@ export function createCore(ports: CorePorts): CoreInstance {
       // Self-exclusion (8.5): the node's own announcements/introductions are
       // valid observations but never dial targets — the book ignores them.
       addressBook = createAddressBook({ selfIdentityId: ports.identity?.identityId })
+      discoveryStopped = false
+      const netExt = ports.net as unknown as {
+        dial?: (address: string) => Promise<void>
+        setPeerBookSource?: (source: PeerBookSource | null) => void
+        requestPeerBook?: (peer: string, limit: number) => Promise<PeerBookServed>
+      }
+      // 9.3 — peer-book SERVER: serve this book on /succinctcoin/peerbook/1
+      // when the adapter carries the stream surface (memory/tcp alike). The
+      // policy lives in `servePeerBook` (freshness order pre-9.4, hint-grade
+      // excluded, self-signed witnesses); slot + chain scope read FRESH per
+      // request so a long-lived node never serves against stale time.
+      netExt.setPeerBookSource?.(
+        async (limit) =>
+          servePeerBook({
+            book: addressBook!,
+            currentSlot: BigInt(Math.max(await ports.store.headSlot(), 0)),
+            expectedChainId: genesis!.chainId,
+            limit,
+            witnessSigner: ports.identity,
+          }),
+      )
       // CAP-7 (8.5): the fallback-ladder boot — rungs 2 + 3 (LAN hints file,
       // artifact file) over the just-created book. FIRE-AND-FORGET: dial
       // timeouts must never stall boot (fail-soft, R4); the report lands at
       // the host sink when the run finishes. Rungs 1 + 4 are reported from
       // the config truths (mDNS flag / chainId wiring).
       if (ports.discovery !== undefined) {
-        const netExt = ports.net as unknown as {
-          dial?: (address: string) => Promise<void>
-        }
         const bootSlot = await ports.store.headSlot()
         // 9.2 invite rung: the liveness probe over APPLIED blocks, computed
         // ONCE at boot (the sync getter `verifyInvite` needs — AD-3 keeps the
@@ -219,6 +243,32 @@ export function createCore(ports: CorePorts): CoreInstance {
                 },
         })
           .then((report) => ports.discovery?.onLadderReport?.(report))
+          // 9.3 — the CRAWL starts where the ladder's trust ends: seeds are
+          // the dial-eligible identities the invite/artifact rungs produced,
+          // and the bounded BFS (depth ≤ 3, concurrency ≤ 8) fills the book
+          // toward the cap. Fire-and-forget like the ladder (R4); stops at
+          // cap, at quiet, or when `stop()` flips the shared flag.
+          .then(() => {
+            if (
+              netExt.dial === undefined ||
+              netExt.requestPeerBook === undefined ||
+              addressBook === null ||
+              addressBook.size() >= MAX_BOOK_ENTRIES
+            )
+              return
+            const seeds = addressBook
+              .dialEligible(BigInt(Math.max(ports.clock.slotIndex(), 0)))
+              .flatMap((t) => t.multiaddrs.map((address) => ({ address, identityId: t.identityId })))
+            if (seeds.length === 0) return
+            return runCrawl({
+              request: (address, limit) => netExt.requestPeerBook!(address, limit),
+              dial: (address) => netExt.dial!(address),
+              book: addressBook,
+              expectedChainId: genesis!.chainId,
+              currentSlot: () => BigInt(Math.max(ports.clock.slotIndex(), 0)),
+              stopped: () => discoveryStopped,
+            }, seeds).then((report) => ports.discovery?.onCrawlReport?.(report))
+          })
           .catch(() => undefined) // the ladder never unwinds boot (R4)
       }
       this.emit('CoreStarted', { slot: ports.clock.slotIndex() })
@@ -235,6 +285,10 @@ export function createCore(ports: CorePorts): CoreInstance {
       }
       genesis = null
       latestSelfInvite = null // 9.2: a stopped node has no renderable invite
+      discoveryStopped = true // 9.3: an in-flight crawl drains between dequeues
+      ;(ports.net as unknown as {
+        setPeerBookSource?: (source: PeerBookSource | null) => void
+      }).setPeerBookSource?.(null)
       this.emit('CoreStopped', { slot: ports.clock.slotIndex() })
       await ports.store.close()
     },
@@ -730,6 +784,18 @@ export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from 
 // predicate for announce/dial/ingest eligibility on real transports.
 export { assertDialable, filterPolicyAddresses, isGlobalIp6Multiaddr } from './net/index.js'
 
+// Peer-book exchange (epic 9 — ticket 9.3): the `/succinctcoin/peerbook/1`
+// stream (pure handler/client, sync's framing) + the /64 group key used by
+// the book's diversity floor.
+export {
+  ip6Slash64,
+  makePeerBookHandler,
+  PEERBOOK_PROTOCOL,
+  PEERBOOK_TIMEOUT_MS,
+  requestPeerBook,
+} from './net/index.js'
+export type { PeerBookSource, PeerBookServed } from './net/index.js'
+
 // Bootstrap-free discovery (epic 8, CAP-7 — ticket 8.2): the signed peer
 // announcement contract (digest / sign / verify / PURE validator). The
 // signature IS the liveness proof; freshness is judged against a CALLER-
@@ -830,6 +896,12 @@ export {
   verifyInvite,
 } from './discovery/index.js'
 export type { InviteContext, InviteRejectReason, InviteValidation } from './discovery/index.js'
+
+// Peer-book exchange + bounded BFS crawl (epic 9 — ticket 9.3): the serve
+// policy (what a node shares) and the crawler machine (how far it reaches).
+// Bounds are exported for the tests that pin them.
+export { CRAWL_CONCURRENCY, CRAWL_MAX_DEPTH, runCrawl, servePeerBook } from './discovery/index.js'
+export type { CrawlReport, CrawlerDeps, ServePeerBookOptions } from './discovery/index.js'
 
 /**
  * 9.2 — the ticket-liveness ground truth over APPLIED blocks (the getter

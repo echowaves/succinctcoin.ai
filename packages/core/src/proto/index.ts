@@ -45,6 +45,12 @@ export type SyncBlock = succinctcoin.SyncBlock
 export type PeerAnnouncement = succinctcoin.PeerAnnouncement
 export type Introduction = succinctcoin.Introduction
 
+// Peer-book field-set types (epic 9, ticket 9.3 — request/response over a
+// dedicated stream: `PeerBookRequest { limit }` + `PeerBookResponse {
+// records[], witnesses[] }`).
+export type PeerBookRequest = succinctcoin.PeerBookRequest
+export type PeerBookResponse = succinctcoin.PeerBookResponse
+
 // Codec namespaces (value space): `codec` / `encode` / `decode` / `stream`.
 export const Block = succinctcoin.Block
 export const Ticket = succinctcoin.Ticket
@@ -66,6 +72,10 @@ export const SyncBlock = succinctcoin.SyncBlock
 // Discovery codec namespaces (epic 8, CAP-7 — tickets 8.2/8.4).
 export const PeerAnnouncement = succinctcoin.PeerAnnouncement
 export const Introduction = succinctcoin.Introduction
+
+// Peer-book codec namespaces (epic 9, ticket 9.3 — AD-12 proto codecs).
+export const PeerBookRequest = succinctcoin.PeerBookRequest
+export const PeerBookResponse = succinctcoin.PeerBookResponse
 
 // Full generated namespace (type + value) and the wire input types, for
 // `succinctcoin.Block`-style access and `*Input` partial field sets.

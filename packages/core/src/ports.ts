@@ -11,6 +11,7 @@
  * imports `electron`.
  */
 import type { IdentityKeypair } from './identity/identity.js'
+import type { CrawlReport } from './discovery/crawler.js'
 import type { LadderReport } from './discovery/boot-files.js'
 
 /**
@@ -45,6 +46,11 @@ export interface DiscoveryPorts {
   /** What-worked report sink (AD-9: counts only — never key material). The
    * host logs it / surfaces it in the UI. A throwing sink is swallowed. */
   onLadderReport?: (report: LadderReport) => void
+  /** Ticket 9.3: sink for the peer-book crawl report (counts only — stored /
+   * dialed / depth / concurrency / stop reason). Fires once when a boot crawl
+   * drains (cap, quiet, or stopped). Absent ⇒ the crawl still runs, unlogged.
+   * A throwing sink is swallowed. */
+  onCrawlReport?: (report: CrawlReport) => void
 }
 
 /**

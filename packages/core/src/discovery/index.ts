@@ -44,8 +44,19 @@ export {
   DEFAULT_QUARANTINE_SLOTS,
   DIAL_FAILURES_TO_QUARANTINE,
   MAX_BOOK_ENTRIES,
+  MAX_ENTRIES_PER_64,
   MAX_VOUCHES_PER_SUBJECT,
 } from './address-book.js'
+
+// 9.3 — the peer-book serve policy + bounded BFS crawler.
+export { servePeerBook } from './peerbook-serve.js'
+export type { ServePeerBookOptions } from './peerbook-serve.js'
+export {
+  CRAWL_CONCURRENCY,
+  CRAWL_MAX_DEPTH,
+  runCrawl,
+} from './crawler.js'
+export type { CrawlerDeps, CrawlReport } from './crawler.js'
 
 export {
   applyInvites,

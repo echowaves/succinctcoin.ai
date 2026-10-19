@@ -125,6 +125,8 @@ import {
 import type { Introduction, PeerAnnouncement } from '../proto/index.js'
 import { TOPICS } from './topics.js'
 import type { TopicClass } from './topics.js'
+import { PEERBOOK_PROTOCOL, makePeerBookHandler, requestPeerBook } from './peerbook.js'
+import type { PeerBookServed, PeerBookSource } from './peerbook.js'
 import { SYNC_PROTOCOL, makeSyncHandler, syncFrom } from './sync.js'
 import type { SyncSource } from './sync.js'
 
@@ -270,6 +272,20 @@ export interface NetAdapter extends NetPort {
    * consumes, D7). NOT on the `NetPort` (D8).
    */
   syncFrom(peer: string, request: SyncRequest): AsyncIterable<SyncBlock>
+
+  // -------------------------------------------------------------------------
+  // 9.3 — peer-book exchange (NOT on the `NetPort`; the same extension seam
+  // as sync). A dedicated request/response STREAM (`PEERBOOK_PROTOCOL`):
+  // the server serves up to `limit` dial-eligible records (+ self-signed
+  // witnesses); the client asks one peer for its book. Policy lives in
+  // `discovery/peerbook-serve.ts`; this surface only moves bytes.
+  // -------------------------------------------------------------------------
+  /** Register the peer-book SOURCE the handler serves on inbound requests
+   * (lazy like `setSyncSource` — readable after `start()`). `null` clears. */
+  setPeerBookSource(source: PeerBookSource | null): void
+  /** Ask `peer` (multiaddr string) for up to `limit` book records; resolves
+   * with the decoded `{ records, witnesses }` (empty on an empty serve). */
+  requestPeerBook(peer: string, limit: number): Promise<PeerBookServed>
 }
 
 /** The service map this adapter's node carries.
@@ -397,6 +413,7 @@ async function buildNode(
   config: NetAdapterConfig,
   received: Map<TopicClass, ReceivedEnvelope[]>,
   getSource: () => SyncSource | null,
+  getPeerBookSource: () => PeerBookSource | null,
 ): Promise<Libp2p<Services>> {
   // 5.7 D8 — the client (NATed) role listens on NOTHING: no direct inbound
   // listener (inbound only via the relay), so the config's `listenAddress`
@@ -460,6 +477,10 @@ async function buildNode(
   // reads the CURRENT source lazily (the operator may `setSyncSource` after
   // `start()`).
   await node.handle(SYNC_PROTOCOL, makeSyncHandler(getSource))
+
+  // 9.3 — the peer-book STREAM handler, registered exactly like sync (same
+  // lazy-source seam: `setPeerBookSource` may run after `start()`).
+  await node.handle(PEERBOOK_PROTOCOL, makePeerBookHandler(getPeerBookSource))
 
   // 5.3 D4 — ONE node-level `peer:discovery` listener dials discovered peers.
   // Registered before `node.start()` (buildNode runs first) so it cannot miss
@@ -611,6 +632,9 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
   // source (inbound sync requests yield zero blocks).
   let syncSource: SyncSource | null = null
   const getSyncSource = (): SyncSource | null => syncSource
+  // 9.3 — the peer-book source (server side), same lazy-getter seam.
+  let peerBookSource: PeerBookSource | null = null
+  const getPeerBookSource = (): PeerBookSource | null => peerBookSource
 
   function requireNode(): Libp2p<Services> {
     if (node === null) {
@@ -634,7 +658,7 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // Idempotent: a second start() on a running adapter is a no-op; a
       // start() after stop() re-creates a fresh node.
       if (node !== null) return
-      node = await buildNode(config, received, getSyncSource)
+      node = await buildNode(config, received, getSyncSource, getPeerBookSource)
       await node.start()
       // 5.2 D4 — subscribe to ALL class topics (the 5.1 scratch topic is
       // gone; six since 8.3's announcements + 8.4's introductions classes).
@@ -752,6 +776,13 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // head, D2). NOT `async`: the transport client returns the iterable
       // synchronously (the dial is lazy, inside the generator).
       return syncFrom(requireNode(), multiaddr(peer), request)
+    },
+    // 9.3 — peer-book exchange (the sync pair's mirror, one level up).
+    setPeerBookSource(source: PeerBookSource | null) {
+      peerBookSource = source
+    },
+    async requestPeerBook(peer: string, limit: number): Promise<PeerBookServed> {
+      return requestPeerBook(requireNode(), multiaddr(peer), limit)
     },
     get received() {
       return received

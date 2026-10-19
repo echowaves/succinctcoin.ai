@@ -270,3 +270,33 @@ message IntroductionEnvelope {
   // 32-byte hex protocol identity id of the publishing node (4.2).
   string sourcePeerId = 2;
 }
+
+// ---------------------------------------------------------------------------
+// Peer-book exchange (epic 9, ticket 9.3 — recursive fill from one invite).
+//
+// A PULL over a dedicated libp2p STREAM (`/succinctcoin/peerbook/1`, the sync
+// pattern — NOT a gossip topic): the client sends ONE `PeerBookRequest` and
+// reads ONE `PeerBookResponse`, then the server half-closes. Both messages
+// are proto-encoded (AD-12) and u32be length-prefix framed (framing is the
+// transport's job). PURELY ADDITIVE: every existing message is UNCHANGED, and
+// NEITHER message is reachable from any block digest (the block hash is
+// sha256 over the canonical `Block` encoding only, AD-6) — so protocolVersion
+// does NOT bump.
+// ---------------------------------------------------------------------------
+
+// The peer-book request: how many records the client wants at most.
+message PeerBookRequest {
+  // Max records the client will accept (the server clamps to its own bounds).
+  uint32 limit = 1;
+}
+
+// The peer-book response: signed announcements + a witness vouch per record.
+message PeerBookResponse {
+  // Signed self-announcements (each independently verified by the receiver —
+  // verify-before-connect; nothing here is trusted because it was served).
+  repeated PeerAnnouncement records = 1;
+  // FULL `Introduction` reuse (8.4): one SELF-SIGNED witness per served
+  // record ("I verified this identity at slotObserved"), signed by the
+  // RESPONDING node. The receiver's independence rule applies unchanged.
+  repeated Introduction witnesses = 2;
+}

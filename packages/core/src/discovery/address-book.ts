@@ -31,6 +31,7 @@
  * method takes `currentSlot` as a parameter. This module decides who is
  * SAFE TO DIAL; the dialing itself is 8.5's fallback ladder.
  */
+import { ip6Slash64 } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import type { AnnouncementRejectReason, SignedPeerAnnouncement } from './announcements.js'
 import { validateIntroduction } from './introductions.js'
@@ -66,8 +67,15 @@ const REQUIRED_INTRODUCTIONS: Record<AddressSourceClass, number> = {
 export const DIAL_FAILURES_TO_QUARANTINE = 3
 export const DEFAULT_QUARANTINE_SLOTS = 32n
 
-/** Book size cap (entries); eviction prefers freshest/highest-class. */
-export const MAX_BOOK_ENTRIES = 64
+/** Book size cap (entries); eviction prefers freshest/highest-class.
+ * 9.3: 64 → 100 — the spec's "other nodes up to 100 total" fill target. */
+export const MAX_BOOK_ENTRIES = 100
+
+/** /64 diversity floor (9.3): at most this many entries may share one IPv6
+ * /64. At cap it forces ≥ 4 distinct prefixes — a single provider's address
+ * block can never monopolise the dial surface (the crawl's eviction honours
+ * it; the group is taken from each entry's first policy-valid /ip6). */
+export const MAX_ENTRIES_PER_64 = 32
 
 /** Distinct vouches retained per subject (entry OR parked) — the memory
  * bound: one key flooding introductions cannot grow a vouch map without
@@ -103,6 +111,10 @@ export interface AddressBookEntry {
   failedDials: number
   /** While `currentSlot <= quarantineUntilSlot` the entry is ineligible. */
   quarantineUntilSlot?: bigint | undefined
+  /** The verified record's ORIGINAL signature bytes (9.3): the peer-book
+   * server re-emits served records for OTHER peers and can never re-sign
+   * them — only the original holder's bytes verify. Copy on read. */
+  signature: Uint8Array
 }
 
 /** What the dialer (8.5) consumes — addresses only, never book internals. */
@@ -189,6 +201,8 @@ interface MutableEntry {
   introductions: Map<string, bigint>
   failedDials: number
   quarantineUntilSlot?: bigint | undefined
+  /** Original verified signature (9.3 peer-book re-serve; see entry view). */
+  signature: Uint8Array
 }
 
 function coerce(v: number | bigint): bigint {
@@ -299,12 +313,15 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
     entriesById.delete(id)
   }
 
-  function evictOne(currentSlot: bigint): void {
-    let worst: MutableEntry | undefined
-    for (const e of entriesById.values()) {
-      worst = worst === undefined ? e : worse(worst, e)
+  /** The /64 group key of an entry's addresses (9.3 floor): first address
+   * whose /ip6 yields a group; null when none does (defensive — validated
+   * records always carry a policy-valid /ip6). */
+  function slash64Of(multiaddrs: readonly string[]): string | null {
+    for (const a of multiaddrs) {
+      const g = ip6Slash64(a)
+      if (g !== null) return g
     }
-    if (worst !== undefined) dropEntry(worst.identityId)
+    return null
   }
 
   function snapshot(e: MutableEntry): AddressBookEntry {
@@ -320,6 +337,7 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       introductionSigners: [...e.introductions.keys()],
       failedDials: e.failedDials,
       quarantineUntilSlot: e.quarantineUntilSlot,
+      signature: e.signature.slice(),
     }
   }
 
@@ -386,31 +404,61 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
         return { ok: true }
       }
 
-      // Capacity: prune expired first, then the incoming record CONTESTS the
-      // weakest seat (9.2): it is installed only if strictly better than the
-      // current worst entry under the (class, slotEnd, firstSeen, id) order —
-      // a hint can never displace an invite-grade observation. The loser of
-      // the contest is dropped silently: the record stays valid, the book
-      // just has no room for it (same ok:true semantics as self-exclusion).
-      if (entriesById.size >= maxEntries) {
+      // Capacity + diversity (9.2 contest, 9.3 floor). The rules compose:
+      //   (/64 FLOOR) installing must never push the incoming record's /64
+      //     group past MAX_ENTRIES_PER_64. When its group is already full:
+      //       - book NOT full ⇒ DROP — there is room in the book, but not in
+      //         this /64; the floor never churn-evicts inside a quiet book;
+      //       - book full ⇒ the victim MUST come from that same group (a
+      //         member it strictly beats), else drop. A crowded /64 can never
+      //         grow by evicting a different-prefix seat — and pruning that
+      //         frees a slot does NOT bypass this (9.3 review finding 7).
+      //   (class/slot contest) when the book is full and the floor does not
+      //     bind, the incoming record installs only if strictly better than
+      //     the weakest entry under the (class, slotEnd, firstSeen, id) order.
+      // The loser is dropped silently: the record stays valid, the book just
+      // has no room for it (same ok:true as self-exclusion).
+      const challenger: MutableEntry = {
+        identityId: r.identityId,
+        multiaddrs: [...r.multiaddrs],
+        sourceClass: ctx.sourceClass,
+        slotStart,
+        slotEnd,
+        firstSeenSlot: currentSlot,
+        introductions: new Map(),
+        failedDials: 0,
+        signature: r.signature instanceof Uint8Array ? r.signature : new Uint8Array(0),
+      }
+      const incomingGroup = slash64Of(r.multiaddrs)
+      let inGroup = 0
+      if (incomingGroup !== null) {
+        for (const e of entriesById.values())
+          if (slash64Of(e.multiaddrs) === incomingGroup) inGroup += 1
+      }
+
+      if (entriesById.size < maxEntries) {
+        // Room overall — the floor is the ONLY constraint left standing.
+        if (incomingGroup !== null && inGroup >= MAX_ENTRIES_PER_64) return { ok: true }
+      } else {
         pruneExpiredInner(currentSlot)
         if (entriesById.size >= maxEntries) {
-          let weakest: MutableEntry | undefined
-          for (const e of entriesById.values()) weakest = worse(weakest ?? e, e)
-          const challenger: MutableEntry = {
-            identityId: r.identityId,
-            multiaddrs: [],
-            sourceClass: ctx.sourceClass,
-            slotStart,
-            slotEnd,
-            firstSeenSlot: currentSlot,
-            introductions: new Map(),
-            failedDials: 0,
+          // Full book: a seat must be traded. Pick the victim — same-group
+          // weakest when the floor binds, else the global weakest.
+          let victim: MutableEntry | undefined
+          for (const e of entriesById.values()) {
+            if (incomingGroup !== null && inGroup >= MAX_ENTRIES_PER_64) {
+              if (slash64Of(e.multiaddrs) !== incomingGroup) continue
+              victim = victim === undefined ? e : worse(victim, e)
+            } else {
+              victim = victim === undefined ? e : worse(victim, e)
+            }
           }
-          if (weakest === undefined || worse(weakest, challenger) !== weakest) {
+          if (victim === undefined || worse(victim, challenger) !== victim) {
             return { ok: true } // the incoming record lost the seat — dropped
           }
-          evictOne(currentSlot)
+          dropEntry(victim.identityId)
+        } else if (incomingGroup !== null && inGroup >= MAX_ENTRIES_PER_64) {
+          return { ok: true } // pruning made room overall — the /64 stays full
         }
       }
       install(r.identityId, slotStart, slotEnd, new Map(), currentSlot)
@@ -434,6 +482,9 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
           blockRef: ctx.blockRef === undefined ? undefined : { ...ctx.blockRef },
           introductions: intros,
           failedDials: 0,
+          // The validator verified THIS signature against these exact fields;
+          // storing it lets the peer-book server re-serve the record byte-true.
+          signature: r.signature instanceof Uint8Array ? r.signature.slice() : new Uint8Array(0),
         }
         entriesById.set(id, entry)
         attachProvenance(id, entry.blockRef)

@@ -136,3 +136,75 @@ export function assertDialable(addr: string): void {
     )
   }
 }
+/** Expand IPv6 text to EXACTLY 8 hextets (zero-filling `::`), or null. The
+ * same string math {@link ip6IsGlobalUnicast} runs, kept separate so each
+ * stays one job; embedded v4 counts as two hextets. */
+function expandHextets(text: string): number[] | null {
+  if (text.includes('%')) return null
+  let head = text
+  let tail = ''
+  const dd = text.indexOf('::')
+  if (dd !== -1) {
+    if (dd === 0) head = ''
+    else if (text.indexOf('::', dd + 1) !== -1) return null
+    else {
+      head = text.slice(0, dd)
+      tail = text.slice(dd + 2)
+    }
+  }
+  const parse = (part: string): number[] | null => {
+    if (part.includes('.')) {
+      const oct = part.split('.')
+      if (oct.length !== 4 || !oct.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255))
+        return null
+      return [(Number(oct[0]) << 8) | Number(oct[1]), (Number(oct[2]) << 8) | Number(oct[3])]
+    }
+    if (!/^[0-9a-fA-F]{1,4}$/.test(part)) return null
+    return [Number.parseInt(part, 16)]
+  }
+  const groups = (s: string): number[] | null => {
+    if (s === '') return []
+    const out: number[] = []
+    for (const part of s.split(':')) {
+      if (part === '') return null
+      const h = parse(part)
+      if (h === null) return null
+      out.push(...h)
+    }
+    return out
+  }
+  const hs = groups(head)
+  const ts = groups(tail)
+  if (hs === null || ts === null) return null
+  if (dd === -1) return hs.length === 8 ? hs : null
+  const fill = 8 - hs.length - ts.length
+  if (fill < 0) return null
+  return [...hs, ...new Array<number>(fill).fill(0), ...ts]
+}
+
+/**
+ * The address's /64 group key (9.3 diversity floor): the first four hextets
+ * of the FIRST `/ip6` component, rendered canonically lowercase as
+ * `"h0:h1:h2:h3"`. Null when the string has no parseable global /ip6 (junk
+ * addresses group as null — the caller decides; the book only stores
+ * policy-valid ones, so null is a defensive path). Pure.
+ */
+export function ip6Slash64(addr: string): string | null {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return null
+  }
+  for (const component of components) {
+    if (component.code !== CODE_IP6 || typeof component.value !== 'string') continue
+    if (!ip6IsGlobalUnicast(component.value)) continue
+    const h = expandHextets(component.value)
+    if (h === null) return null
+    return h
+      .slice(0, 4)
+      .map((x) => x.toString(16))
+      .join(':')
+  }
+  return null
+}

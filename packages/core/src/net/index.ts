@@ -14,3 +14,11 @@ export { assertDialable, filterPolicyAddresses, isGlobalIp6Multiaddr } from './a
 // consensus module's `buildSyncSource` satisfies it without a net import, D7).
 export { SYNC_PROTOCOL } from './sync.js'
 export type { SyncSource } from './sync.js'
+
+// 9.3 — peer-book exchange (the sync pair's sibling): the stable
+// `PEERBOOK_PROTOCOL` stream + the pure handler/client + `PeerBookSource`.
+export { PEERBOOK_PROTOCOL, PEERBOOK_TIMEOUT_MS, makePeerBookHandler, requestPeerBook } from './peerbook.js'
+export type { PeerBookSource, PeerBookServed } from './peerbook.js'
+
+// 9.3 — the /64 group key (diversity floor), next to the address policy.
+export { ip6Slash64 } from './address-policy.js'
