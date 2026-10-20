@@ -9,7 +9,9 @@
  * set: no consensus, crypto-purity, or headless-logic module imports fs;
  * everything downstream (`announcements.ts`, `address-book.ts`, the loop)
  * stays pure and receives already-read bytes. The orchestrator here keeps
- * the LOGIC testable by taking explicit paths/deps — no ambient state.
+ * the LOGIC testable by taking explicit paths/deps — the one ambient read is
+ * the dev-only `loopbackAnnounceAllowed()` env resolution at the artifact
+ * rung's validation context (a dial-target load, never consensus).
  *
  * THE LADDER (design order, each rung independent + fail-soft):
  *   1. mDNS            — shipped in 7.2's net config; reported, not re-done.
@@ -35,6 +37,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
+import { loopbackAnnounceAllowed } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import { MAX_INVITE_TEXT_LEN, verifyInvite } from './invitation.js'
 import type { AddressBook } from './address-book.js'
@@ -471,6 +474,8 @@ export async function runBootLadder(opts: BootLadderOptions): Promise<LadderRepo
       const validation = validatePeerAnnouncement(record, {
         currentSlot: opts.currentSlot,
         expectedChainId: opts.chainId,
+        // Dial-target load, not consensus (10.3 closeout) — dev flag applies.
+        allowLoopbackAddresses: loopbackAnnounceAllowed(),
       })
       if (!validation.ok) {
         report.artifact.skipped += 1

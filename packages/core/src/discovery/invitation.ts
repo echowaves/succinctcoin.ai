@@ -19,7 +19,8 @@
  *   1. parse      — prefix/base64/proto decode must succeed (`malformed-invite`);
  *   2. the 8.2 validator VERBATIM (`validatePeerAnnouncement`) — shape, chain
  *      scope, Ed25519 signature, slot freshness, and the 9.1 IPv6-only policy
- *      (an invite with no global-v6 address is not an invitation to anything);
+ *      (an invite with no global-v6 address is not an invitation to anything
+ *      — except the pinned dev-only loopback allowance, see below);
  *   3. TICKET LIVENESS — the identity must have had a valid mining ticket in
  *      a recent window (`no-recent-ticket`). This is what makes an old,
  *      faithfully-signed announcement useless to a squatter: re-announcing
@@ -27,8 +28,11 @@
  *      getter is caller-supplied (AD-3 — no clocks, no store, no net here);
  *      the core boot wires it to applied-block winner tickets.
  *
- * Pure module: no clock, no fs, no net (AD-3/AD-10).
+ * Pure apart from one seam: no clock, no fs, no net (AD-3/AD-10); the single
+ * ambient read is the dev-only `loopbackAnnounceAllowed()` env resolution for
+ * the verification context — invite verify is a JOIN surface, never consensus.
  */
+import { loopbackAnnounceAllowed } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import type { AnnouncementRejectReason, SignedPeerAnnouncement } from './announcements.js'
 
@@ -156,6 +160,11 @@ export function verifyInvite(text: string, ctx: InviteContext): InviteValidation
   const validated = validatePeerAnnouncement(parsed.record, {
     currentSlot: ctx.currentSlot,
     expectedChainId: ctx.expectedChainId,
+    // Invite verification is a JOIN surface, not consensus (10.3 closeout):
+    // under the dev flag a `::1` invite verifies so local meshes work — and
+    // such a record still fails STRICT block validation everywhere, so it
+    // can never enter anyone's chain.
+    allowLoopbackAddresses: loopbackAnnounceAllowed(),
   })
   if (!validated.ok) return { ok: false, reason: validated.reason }
   const record = parsed.record as SignedPeerAnnouncement

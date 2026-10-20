@@ -31,7 +31,7 @@
  * method takes `currentSlot` as a parameter. This module decides who is
  * SAFE TO DIAL; the dialing itself is 8.5's fallback ladder.
  */
-import { ip6Slash64 } from '../net/address-policy.js'
+import { ip6Slash64, loopbackAnnounceAllowed } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import { emptyPeerHistory, ewmaUpdate, scorePeer, STABILITY_WINDOW_SLOTS } from './peer-score.js'
 import type { PeerHistory } from './peer-score.js'
@@ -439,6 +439,12 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       const verdict = validatePeerAnnouncement(record, {
         currentSlot,
         expectedChainId: ctx.expectedChainId,
+        // Book ingest is a dial-target surface (10.3 closeout): the dev flag
+        // may keep `::1` records HERE (they are how a same-machine mesh dials
+        // at all) — but BLOCK-grade ingest is chain evidence and never gets
+        // the relaxation, flag or no flag.
+        allowLoopbackAddresses:
+          ctx.sourceClass !== 'block' && loopbackAnnounceAllowed(),
       })
       if (!verdict.ok) return verdict
       // Validator-approved: the shape is now a pinned fact (D5 taxonomy).

@@ -17,7 +17,7 @@
  */
 import { useEffect, useState } from 'react'
 
-import { describeIpv6, type InviteDiagnostics } from './ipv6-hint.js'
+import { describeIpv6, describeLoopbackInvite, type InviteDiagnostics } from './ipv6-hint.js'
 import { useSuccinctcoin } from './useSuccinctcoin.js'
 import type { UiState } from './ui-state.js'
 
@@ -166,6 +166,11 @@ function InvitePanel() {
       .catch((e: unknown) => setStatus(`failed: ${String(e)}`))
   }
 
+  // Dev-only announce allowance honesty (computed once): an invite while
+  // this machine has NO global IPv6 is either a loopback dev invite or a
+  // stale one — friends cannot dial in either way. Say so.
+  const loopbackWarning = diag !== null ? describeLoopbackInvite(diag) : null
+
   return (
     <section>
       <h2>Invitations</h2>
@@ -180,6 +185,7 @@ function InvitePanel() {
           <p>Your invite (send it to a friend):</p>
           <textarea readOnly rows={3} cols={72} value={invite} onFocus={(e) => e.currentTarget.select()} />
           <button onClick={refresh}>Refresh</button>
+          {loopbackWarning !== null && <p role="status">{loopbackWarning}</p>}
         </>
       )}
       <p>Join via a friend's invite:</p>

@@ -132,17 +132,18 @@ const POLICY_ERROR_CODE = 'SC-NET-1'
  * tcp boundaries only (adapter dial, bootstrap wiring) — the message names
  * the parked relay tier so an IPv4-only operator learns the actual path.
  *
- * The ONE documented exception (9.5, probe-only): with the environment
- * variable {@link ALLOW_LOOPBACK_ENV} explicitly set to `1`, a pure-`::1`
- * address becomes DIALABLE — nothing else changes. Default-off; announce
- * policy never sees this function (loopback is still never announced); any
- * other rejected address (v4, ULA, link-local, junk) still throws with the
- * flag set. Shipped nodes never set the variable; two-machine and loopback
- * PROOFS opt in on the probe command line only.
+ * The ONE documented exception (9.5, extended by the dev-only announce
+ * allowance): with the environment variable {@link ALLOW_LOOPBACK_ENV}
+ * explicitly set to `1`, a pure-`::1` address becomes DIALABLE — and via
+ * {@link isDialableMultiaddr} it follows the SAME law on the announce,
+ * ingest (announcement validation) and bootstrap sides, so one machine can
+ * run the real join flow over loopback. Default-off; any other rejected
+ * address (v4, ULA, link-local, junk) still throws with the flag set, and
+ * shipped nodes never set the variable — a loopback record is rejected by
+ * every unflagged node, so it cannot reach a real network.
  */
 export function assertDialable(addr: string): void {
-  if (!isGlobalIp6Multiaddr(addr)) {
-    if (loopbackAllowEnabled() && isLoopbackIp6Multiaddr(addr)) return
+  if (!isDialableMultiaddr(addr)) {
     throw Object.assign(
       new Error(
         `${POLICY_ERROR_CODE}: this network is IPv6-only (global unicast over TCP); ` +
@@ -154,8 +155,46 @@ export function assertDialable(addr: string): void {
   }
 }
 
+/**
+ * The BOOLEAN twin of {@link assertDialable} — policy-global, or pure-`::1`
+ * under the dev flag. Drives the DIAL-side surfaces: announce construction
+ * and bootstrap filtering (the post-9.5 "DEV-ONLY ANNOUNCE ALLOWANCE", built
+ * for machines with no global IPv6 at all): with `SUCCINCTCOIN_ALLOW_LOOPBACK=1`
+ * a node may ANNOUNCE its `::1` listener and bootstrap entries survive the
+ * list filter — so two app instances on ONE machine run the real join flow.
+ * Default off (per-call env read); with the flag unset this is exactly
+ * {@link isGlobalIp6Multiaddr}. Nothing about `fe80::`, ULA, `/ip4` or zones
+ * ever changes. RECORD VALIDATION is deliberately NOT wired to this env
+ * directly — it is context-gated (`AnnouncementContext.allowLoopbackAddresses`,
+ * strict in every consensus path) so flagged nodes can never fork unflagged
+ * ones over chain data; see `loopbackAnnounceAllowed`.
+ */
+export function isDialableMultiaddr(addr: string): boolean {
+  if (isGlobalIp6Multiaddr(addr)) return true
+  return loopbackAllowEnabled() && isLoopbackIp6Multiaddr(addr)
+}
+
+/** {@link isDialableMultiaddr} as an order-preserving list filter — the
+ * shape the announce construction and bootstrap wiring consume. */
+export function filterDialableAddresses(addrs: readonly string[]): string[] {
+  return addrs.filter(isDialableMultiaddr)
+}
+
 /** The explicit test-flag name (documented in README + probe headers). */
 export const ALLOW_LOOPBACK_ENV = 'SUCCINCTCOIN_ALLOW_LOOPBACK'
+
+/**
+ * Resolve the dev-only ANNOUNCE-side allowance PER CALL (10.3 closeout).
+ * NON-CONSENSUS ingest sites only (gossip receive, invite verify, address-
+ * book ingest, boot-file load): they set `allowLoopbackAddresses` on the
+ * validation context from this value. Consensus paths (block candidates,
+ * block application, introductions production) must never consult it —
+ * they validate strictly, so a `::1` record can never enter a block and
+ * flagged/unflagged node mixes cannot diverge on chain data.
+ */
+export function loopbackAnnounceAllowed(): boolean {
+  return loopbackAllowEnabled()
+}
 
 function loopbackAllowEnabled(): boolean {
   try {

@@ -23,11 +23,11 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (480 tests / 66 files)
+corepack pnpm test        # the full workspace test suite (489 tests / 66 files)
 corepack pnpm typecheck   # core typecheck
 ```
 
-The root `test` runs every package's suite: the core's 430-test suite (57 files) plus the app's 50-test suite (9 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
+The root `test` runs every package's suite: the core's 437-test suite (57 files) plus the app's 52-test suite (9 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
 
 ## Run the desktop app
 
@@ -52,7 +52,7 @@ On boot the app opens the window, loads the bundled renderer, and **auto-starts 
 2. **Send** — pass that line to the joining person any way you like (it is public data, already signed).
 3. **Paste** — on the new machine, paste it into the *JOIN* panel (or write it as one line into `<userData>/invite.txt` before first boot). The app verifies it fully — signature, chain id, and ticket liveness of the inviter against applied blocks — **before dialing anything**, then dials through it and lets the peer-book crawl fill out the rest of the network (bounded: depth ≤ 3, book ≤ 100 entries, ≥3 distinct /64s by design).
 
-A wiped machine with an empty config needs nothing else: one verified invitation is a proven complete join (the amnesiac-invite boot proof runs it headless in CI). For the manual two-machine version see `_bmad-output/initiative-succinctcoin-ai/epic-real-network/dial-manual.mjs` (`invite-new` / `invite-use`); single-machine loopback proofs set `SUCCINCTCOIN_ALLOW_LOOPBACK=1` on both commands — an explicit, default-off dial-only exemption for `::1` that changes nothing else.
+A wiped machine with an empty config needs nothing else: one verified invitation is a proven complete join (the amnesiac-invite boot proof runs it headless in CI). For the manual two-machine version see `_bmad-output/initiative-succinctcoin-ai/epic-real-network/dial-manual.mjs` (`invite-new` / `invite-use`); single-machine loopback proofs set `SUCCINCTCOIN_ALLOW_LOOPBACK=1` on both commands — an explicit, default-off **dev** exemption: with it a machine that has no global IPv6 at all may announce, relay, verify and dial pure-`::1` (everything else — `fe80::`, ULA, IPv4, zones — stays rejected exactly as before). Such an invite is honest but local: a friend dialing `::1` reaches their own machine, never yours, and the app panel says so. Consensus paths ignore the flag entirely — loopback records can never enter a block.
 
 ### Reachability ladder
 

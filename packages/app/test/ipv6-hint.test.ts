@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { describeIpv6 } from '../src/renderer/ipv6-hint.js'
+import { describeIpv6, describeLoopbackInvite } from '../src/renderer/ipv6-hint.js'
 import type { InviteDiagnostics } from '../src/renderer/ipv6-hint.js'
 
 const d = (over: Partial<InviteDiagnostics>): InviteDiagnostics => ({
@@ -45,5 +45,24 @@ describe('post-9.5 — describeIpv6 (the why-no-invite sentence)', () => {
 
   it('HINT_NONE: no IPv6 interfaces at all', () => {
     expect(describeIpv6(d({}))).toMatch(/enable IPv6 first/i)
+  })
+})
+
+// Dev-only announce allowance: an invite beside a machine with NO global
+// IPv6 is only possible under SUCCINCTCOIN_ALLOW_LOOPBACK — the panel must
+// say the invite is loopback-local. With a global, it stays silent (the
+// normal shipped case never sees this warning).
+describe('dev-only announce allowance — describeLoopbackInvite', () => {
+  it('SILENT_WITH_GLOBAL: the honest default ships no warning', () => {
+    expect(describeLoopbackInvite(d({ hasGlobal: true, globalCount: 1 }))).toBeNull()
+  })
+
+  it('WARNS_WITHOUT_GLOBAL: covers BOTH honest readings — dev loopback and stale', () => {
+    const s = describeLoopbackInvite(d({ linkLocalCount: 2 }))
+    expect(s).not.toBeNull()
+    expect(s).toMatch(/no global IPv6/)
+    expect(s).toMatch(/only on this machine/) // dev invite: local-only truth
+    expect(s).toMatch(/stale/) // older invite: the other honest reading
+    expect(s).toMatch(/SUCCINCTCOIN_ALLOW_LOOPBACK/)
   })
 })

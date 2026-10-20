@@ -68,7 +68,7 @@ import type { PeerAnnouncement as PeerAnnouncementMsg } from '../proto/index.js'
 import type { Introduction as IntroductionMsg } from '../proto/index.js'
 import type { NetPort, StorePort } from '../ports.js'
 // 9.1 — announce only policy-valid (global /ip6) addresses.
-import { filterPolicyAddresses } from '../net/address-policy.js'
+import { filterDialableAddresses, loopbackAnnounceAllowed } from '../net/address-policy.js'
 import {
   MAX_MULTIADDRS,
   signIntroduction,
@@ -331,9 +331,12 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
       // At most the per-RECORD multiaddr ceiling travels (a longer record
       // would be invalid everywhere); slicing keeps presence alive where
       // skipping the announce entirely would kill it silently. 9.1: only
-      // policy-valid (global /ip6) addresses are ever announced — a node on
-      // a host with no global v6 face simply announces nothing (yet).
-      const addrs = filterPolicyAddresses(opts.announceAddresses?.() ?? []).slice(
+      // dialable-by-policy addresses are ever announced — a node on a host
+      // with no global v6 face simply announces nothing (yet). The dev-only
+      // announce allowance: `filterDialableAddresses` mirrors the dial law,
+      // so under SUCCINCTCOIN_ALLOW_LOOPBACK=1 a `::1` listener IS announce-
+      // able (loopback dev mesh on one machine); default off ⇒ strict.
+      const addrs = filterDialableAddresses(opts.announceAddresses?.() ?? []).slice(
         0,
         MAX_MULTIADDRS,
       )
@@ -376,6 +379,12 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
         const verdict = validatePeerAnnouncement(rec, {
           currentSlot: slot,
           expectedChainId: opts.chainId,
+          // NOT a consensus context — dev-only loopback records may live in
+          // the known-set/relay/book-feed here under the dev flag; the
+          // candidates pass below and introductions producer validate with
+          // PLAIN contexts, so such a record can never enter a block (it is
+          // deleted from `known` at the candidate gate every window).
+          allowLoopbackAddresses: loopbackAnnounceAllowed(),
         })
         if (!verdict.ok) continue
         const prev = known.get(rec.identityId)

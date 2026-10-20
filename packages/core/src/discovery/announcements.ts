@@ -34,7 +34,11 @@ import { signDigest } from '../identity/index.js'
 import type { IdentityKeypair } from '../identity/index.js'
 // 9.1 IPv6-only policy — direct module import (not the net barrel): this file
 // must not drag libp2p into pure-validator consumers.
-import { isGlobalIp6Multiaddr, parsesMultiaddr } from '../net/address-policy.js'
+import {
+  isGlobalIp6Multiaddr,
+  isLoopbackIp6Multiaddr,
+  parsesMultiaddr,
+} from '../net/address-policy.js'
 
 // ---------------------------------------------------------------------------
 // byte helpers (the established self-contained-module pattern of
@@ -262,6 +266,17 @@ export interface AnnouncementContext {
   currentSlot: number | bigint
   /** This network's genesis `chainId` — records from other chains die here. */
   expectedChainId: string
+  /**
+   * DEV-ONLY (10.3 closeout): accept pure-`::1` addresses in the policy
+   * layer, exactly as the dial side does under `SUCCINCTCOIN_ALLOW_LOOPBACK`
+   * — for LOCAL dev meshes on machines with no global IPv6. NEVER set this
+   * in a consensus context (block candidates, block application, introduc-
+   * tions production): those validate STRICTLY always, so loopback records
+   * can never enter a block and no honest node can diverge on chain data.
+   * Callers resolve the env flag once per ingest (`loopbackAnnounceAllowed`)
+   * and pass it in; the validator itself never reads the environment.
+   */
+  allowLoopbackAddresses?: boolean
 }
 
 /** A multiaddr entry as a SHAPE (genesis rule + no whitespace/control, bounded). */
@@ -310,14 +325,24 @@ export function validatePeerAnnouncement(
     return fail('malformed-observed-addr')
 
   // 9.1 IPv6-only policy (spec constraint 2026-10-18): every address a record
-  // carries must be globally dialable on THIS network — an /ip4 or link-local
+  // carries must be dialable on THIS network — an /ip4 or link-local
   // announcement is rejected whole (deterministic for block validation; nodes
   // only ever announce policy-valid addrs, so mixed records are junk).
-  if (!(r.multiaddrs as string[]).every(isGlobalIp6Multiaddr))
-    return fail('unsupported-address')
+  // STRICT by default. The ONLY relaxation is the explicit dev-only context
+  // flag (10.3 closeout) — a PURE predicate (global, or exactly-`::1` with
+  // no zone): the ctx IS the whole authority, the validator never reads the
+  // environment even indirectly. Consensus contexts never set it, so what
+  // enters a BLOCK is always strictly global — a flagged dev node's `::1`
+  // records live in gossip/books/invites locally and can never fork an
+  // unflagged peer over chain data.
+  const addrPolicyOk =
+    ctx.allowLoopbackAddresses === true
+      ? (addr: string): boolean => isGlobalIp6Multiaddr(addr) || isLoopbackIp6Multiaddr(addr)
+      : isGlobalIp6Multiaddr
+  if (!(r.multiaddrs as string[]).every(addrPolicyOk)) return fail('unsupported-address')
   if (
     r.observedExternalAddr !== undefined &&
-    !isGlobalIp6Multiaddr(r.observedExternalAddr as string)
+    !addrPolicyOk(r.observedExternalAddr as string)
   )
     return fail('unsupported-address')
 

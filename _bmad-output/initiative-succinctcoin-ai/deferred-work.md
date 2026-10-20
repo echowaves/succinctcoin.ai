@@ -162,21 +162,27 @@
      with its own relay/privacy analysis, not a policy tweak. -->
 
 
-<!-- OPEN 2026-10-22 (post-9.5 user report): DEV-ONLY ANNOUNCE ALLOWANCE.
+<!-- SHIPPED 2026-10-20 (post-9.5 user report): DEV-ONLY ANNOUNCE ALLOWANCE.
      The machine that reported "No invite yet forever" has no global IPv6 at
-     all (fe80:: only, no v6 route) — the panel now SAYS so (b6d3679), but
-     such a machine still cannot produce an invite or two-node-test the join
-     flow: 9.5's SUCCINCTCOIN_ALLOW_LOOPBACK=1 relaxes ONLY dialing
-     (assertDialable); announce stays strict by design (filterPolicyAddresses
-     in node-loop). Undecided: whether to make that flag symmetric — under an
-     explicit env allowance, let the app announce ::1 (loopback-only mesh on
-     one machine, dev/test use) without touching default policy. Design bar
-     if built: default-off per-call env read exactly like the dial side; the
-     invite text itself must remain honestly non-routable (a friend dialing
-     ::1 dials themselves — worth a UI warning); announce/ingest/bootstrap
-     rows pin the flag boundary. Origin story plan: epic-ipv6-invite-network/
-     story-invite-panel-tells-you-why-no-invite-ipv6-diagnos-plan.md ("NOT in
-     scope"). -->
+     all (fe80:: only, no v6 route). SUCCINCTCOIN_ALLOW_LOOPBACK=1 is now
+     SYMMETRIC: isDialableMultiaddr/filterDialableAddresses (the boolean twin
+     of assertDialable) drive announce construction + bootstrap filtering, so
+     such a machine announces its ::1 listener and runs the real join flow on
+     ONE box. Consensus-safety invariant (code-review BLOCKER fix): record
+     VALIDATION is context-gated, NOT env-gated — only NON-consensus ingest
+     (gossip receive, invite verify, book ingest, boot-file load) passes
+     ctx.allowLoopbackAddresses from loopbackAnnounceAllowed(); block
+     candidates, apply-block and introductions production validate STRICTLY
+     always, so a ::1 record can never enter a block and flagged/unflagged
+     node mixes cannot fork over chain data. fe80/ULA/v4/zones stay rejected
+     with the flag set (incl. zone-scoped ::1); all-hop-::1 circuits verify
+     only under the dev ctx (same-machine relay shape, pinned). UI honesty:
+     describeLoopbackInvite warns when an invite exists while no global IPv6
+     is present — dev-loopback OR stale, both readings stated. Live proof
+     (invite from the real announce source → full shipped verifyInvite →
+     dial → mutual peers) PASSed on this machine; boundary rows pin every
+     seam. Plan: epic-ipv6-invite-network/
+     story-dev-only-announce-allowance-loopback-dev-mesh-plan.md. -->
 
 
 <!-- DECISION 2026-10-19 (user connectivity review): UPnP PORT MAPPING IS NOT

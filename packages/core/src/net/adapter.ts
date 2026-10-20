@@ -101,7 +101,7 @@ import { TypedEventEmitter } from 'main-event'
 import { multiaddr, CODE_P2P } from '@multiformats/multiaddr'
 import {
   assertDialable,
-  filterPolicyAddresses,
+  filterDialableAddresses,
 } from './address-policy.js'
 import { createLibp2p } from 'libp2p'
 
@@ -459,7 +459,10 @@ function buildPeerDiscovery(config: NetAdapterConfig): Libp2pInit['peerDiscovery
   // Memory keeps the raw list: its fixtures are not real addresses.
   const bootstrapList =
     config.transport === 'tcp'
-      ? filterPolicyAddresses(config.bootstrap ?? [])
+      // Bootstrap entries ARE dialed, so the list obeys the DIAL law —
+      // including the dev-only loopback allowance (a `::1` hint in
+      // bootstrap.txt works exactly when dialing ::1 does; default off).
+      ? filterDialableAddresses(config.bootstrap ?? [])
       : (config.bootstrap ?? [])
   if (bootstrapList.length > 0) {
     discovery.push(bootstrap({ list: bootstrapList }))

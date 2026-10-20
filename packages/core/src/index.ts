@@ -808,7 +808,9 @@ export {
   classifyIp6Address,
   type Ip6AddressClass,
   assertDialable,
+  filterDialableAddresses,
   filterPolicyAddresses,
+  isDialableMultiaddr,
   isGlobalIp6Multiaddr,
   isLoopbackIp6Multiaddr,
 } from './net/index.js'

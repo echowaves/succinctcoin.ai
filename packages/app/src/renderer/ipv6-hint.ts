@@ -35,3 +35,22 @@ export function describeIpv6(d: InviteDiagnostics): string {
     return 'IPv6 addresses present but none usable (no global, link-local, or private class) — an unusual setup; check this machine\'s IPv6 configuration.'
   return 'No active IPv6 interfaces on this machine — enable IPv6 first.'
 }
+
+/**
+ * The honest warning for the OPPOSITE state: an invite EXISTS while the
+ * machine has NO global IPv6 right now. Two truths reach this state: a
+ * dev-mode invite minted under `SUCCINCTCOIN_ALLOW_LOOPBACK=1` (its address
+ * is `::1` — real, but it dials the FRIEND's own machine), or an invite
+ * minted earlier while a global address existed that has since dropped —
+ * stale either way. The warning must cover BOTH readings honestly; shown
+ * beside the invite textarea whenever the paired diagnostics say so (pure
+ * fn; the panel already fetches both in one snapshot).
+ */
+export function describeLoopbackInvite(d: InviteDiagnostics): string | null {
+  if (d.hasGlobal) return null
+  return (
+    'Friends cannot reach this invite right now: this machine has no global IPv6. '
+    + 'A dev-mode invite (SUCCINCTCOIN_ALLOW_LOOPBACK) works only on this machine, '
+    + 'and an older invite may simply be stale — regenerate once a global address is back.'
+  )
+}

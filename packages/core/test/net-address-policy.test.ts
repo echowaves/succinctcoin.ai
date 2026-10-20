@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest'
 import {
   assertDialable,
   classifyIp6Address,
+  filterDialableAddresses,
   filterPolicyAddresses,
+  isDialableMultiaddr,
   isGlobalIp6Multiaddr,
   ip6Slash64,
 } from '../src/net/address-policy.js'
@@ -79,9 +81,15 @@ describe('9.1 — address policy: global /ip6 only', () => {
   })
 })
 
-// 9.5 — the probe-only loopback allowance: DEFAULT OFF, and even when set it
-// admits EXACTLY ::1. These two rows are the "must not weaken the shipped
-// policy" pin for the two-device proof.
+// 9.5 — the loopback allowance: DEFAULT OFF, and even when set it admits
+// EXACTLY ::1. These rows are the "must not weaken the shipped policy" pin.
+// The dev-only ANNOUNCE allowance extends the same flag to the announce /
+// bootstrap sides via isDialableMultiaddr + filterDialableAddresses — the
+// boolean twin of assertDialable — so the boundary rows below pin the SAME
+// law on both spellings (one machine, real join flow over ::1). Record
+// VALIDATION consumes the flag only through the non-consensus context
+// (`allowLoopbackAddresses`); those boundaries are pinned in
+// discovery-announcement.test.ts.
 describe('9.5 — SUCCINCTCOIN_ALLOW_LOOPBACK (explicit test flag)', () => {
   const GLOBAL = '/ip6/2001:db8::9/tcp/9'
   const LOOPBACKS = ['/ip6/::1/tcp/9', '/ip6/0:0:0:0:0:0:0:1/tcp/9', '/ip6/::0:1/tcp/9']
@@ -115,6 +123,72 @@ describe('9.5 — SUCCINCTCOIN_ALLOW_LOOPBACK (explicit test flag)', () => {
     } finally {
       if (had === undefined) delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
       else process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+  })
+
+  it('isDialableMultiaddr is the boolean TWIN of assertDialable (flag unset)', () => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    try {
+      expect(isDialableMultiaddr(GLOBAL)).toBe(true)
+      for (const addr of LOOPBACKS) expect(isDialableMultiaddr(addr)).toBe(false)
+      // Identical verdicts to the throwing twin, everywhere:
+      for (const addr of [GLOBAL, ...LOOPBACKS, '/ip4/1.2.3.4/tcp/9', 'garbage']) {
+        let throws = false
+        try {
+          assertDialable(addr)
+        } catch {
+          throws = true
+        }
+        expect(isDialableMultiaddr(addr), addr).toBe(!throws)
+      }
+    } finally {
+      if (had !== undefined) process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+  })
+
+  it('announce allowance (FLAG SET): ::1 passes the twin + filter; nothing else does', () => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = '1'
+    try {
+      for (const addr of LOOPBACKS) expect(isDialableMultiaddr(addr)).toBe(true)
+      // ONLY pure loopback — the strict families stay rejected WITH the flag:
+      for (const addr of [
+        '/ip4/1.2.3.4/tcp/9',
+        '/ip6/::2/tcp/9',
+        '/ip6/fe80::1/tcp/9',
+        '/ip6/fd00::1/tcp/9',
+        '/ip6/::ffff:1.2.3.4/tcp/9',
+        '/ip6zone/en0/ip6/fe80::1/tcp/1',
+        '/ip6zone/en0/ip6/::1/tcp/1', // zone-scoped loopback is NOT the bare ::1
+        'garbage',
+      ])
+        expect(isDialableMultiaddr(addr), addr).toBe(false)
+      // The list filter the announce/bootstrap seams consume: order kept,
+      // global + loopback survive, junk dies.
+      expect(
+        filterDialableAddresses([
+          '/ip6/fe80::1/tcp/1',
+          GLOBAL,
+          '/ip6/::1/tcp/4001/p2p/PeerA',
+          '/ip4/10.0.0.1/tcp/2',
+        ]),
+      ).toEqual([GLOBAL, '/ip6/::1/tcp/4001/p2p/PeerA'])
+    } finally {
+      if (had === undefined) delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+      else process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+  })
+
+  it('filterDialableAddresses DEFAULT (flag unset) equals filterPolicyAddresses', () => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    try {
+      const list = ['/ip6/::1/tcp/1', '/ip6/2001:db8::1/tcp/1', '/ip4/1.2.3.4/tcp/1']
+      expect(filterDialableAddresses(list)).toEqual(filterPolicyAddresses(list))
+      expect(filterDialableAddresses(list)).toEqual(['/ip6/2001:db8::1/tcp/1'])
+    } finally {
+      if (had !== undefined) process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
     }
   })
 })

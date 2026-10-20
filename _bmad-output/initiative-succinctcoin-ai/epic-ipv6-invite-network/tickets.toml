@@ -62,3 +62,15 @@ after = [3, 4]
 hitl = false
 risk = "low"
 unknown = "k and slot budget constants (reuse 8.5's); probe loopback exemption shape (must not weaken the shipped policy)."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Dev-only announce allowance — symmetric loopback flag (deferred-work OPEN closeout)"
+description = "The 9.5 SUCCINCTCOIN_ALLOW_LOOPBACK flag relaxed DIALING only; a machine with no global IPv6 (the reported dev box: fe80:: + ::1, no v6 route) still announces nothing and cannot produce an invite or two-node-test the join flow — epic 10 cannot help it either (holding a seed is dialing one). Make the flag SYMMETRIC per the OPEN entry's design bar: new boolean twin isDialableMultiaddr (= assertDialable without the throw; global OR pure-::1 under a per-call env read, default OFF) + filterDialableAddresses; adopt it at the three strict boundaries — node-loop announce construction, validatePeerAnnouncement's policy check (invite/ingest), and the adapter bootstrap-list filter. fe80/ULA/v4/zone stay NEVER-dialable flag or no; a loopback record cannot poison the real network (every unflagged node rejects it at validation). UI honesty: when an invite exists but the machine has no global IPv6 (only possible under the allowance), the panel states the invite is LOOPBACK-ONLY and works only on this machine (pure describeLoopbackInvite(d) in ipv6-hint.ts, reusing the paired diag fetch — no new IPC). listenAddresses() already yields /ip6/::1/tcp/<port>/p2p/<self> on such a machine — no synthesis."
+verify = "Policy rows: flag OFF pins today's rejections (::1/fe80 rejected everywhere); flag ON admits ONLY pure ::1 (announce keeps it, validator ok:true incl. observed addr, bootstrap filter keeps it) while fe80::/ULA/v4/zone still reject. App row: describeLoopbackInvite null with global, warning at global===0. Live proof against built dist: invite signed from the REAL announce source under the flag verifies through the FULL shipped verifyInvite (no probe fallback), dials over ::1, both peers() see each other; unflagged verifier still rejects. README loopback paragraph updated; deferred-work OPEN -> SHIPPED; full suites green headless."
+covers = ["R1"]
+after = [5]
+hitl = false
+risk = "low"
+unknown = "None — design recorded in the OPEN entry and met verbatim."

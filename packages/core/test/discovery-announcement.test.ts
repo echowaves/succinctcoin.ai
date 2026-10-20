@@ -140,6 +140,82 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
     ).toEqual({ ok: true })
   })
 
+  // Dev-only announce allowance (deferred-work OPEN closeout): the policy
+  // layer is STRICT by context — loopback verifies ONLY when a NON-consensus
+  // caller sets `allowLoopbackAddresses` (those sites resolve it from
+  // SUCCINCTCOIN_ALLOW_LOOPBACK). Consensus contexts (block candidates,
+  // apply-block, introductions) never set it, so what enters a block is
+  // always strictly global. These rows pin both sides of that boundary.
+  describe('loopback records vs ctx.allowLoopbackAddresses (dev-only)', () => {
+    const CTX_DEV = { ...CTX, allowLoopbackAddresses: true }
+
+    it('STRICT CONTEXT (shipped default): a pure-::1 record rejects unsupported-address', () => {
+      expect(
+        validatePeerAnnouncement(signedAt({ multiaddrs: ['/ip6/::1/tcp/1'] }), CTX),
+      ).toEqual({ ok: false, reason: 'unsupported-address' })
+    })
+
+    it('CONSENSUS PIN: env flag SET but no ctx flag still rejects (blocks are always strict)', () => {
+      // The env flag reaching the PROCESS is not enough — only an explicit
+      // non-consensus context relaxes anything. Block production/application
+      // pass plain contexts, so even a fully flagged miner can never anchor
+      // a ::1 record and unflagged peers can never diverge on chain data.
+      const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+      process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = '1'
+      try {
+        expect(
+          validatePeerAnnouncement(signedAt({ multiaddrs: ['/ip6/::1/tcp/1'] }), CTX),
+        ).toEqual({ ok: false, reason: 'unsupported-address' })
+        expect(
+          validatePeerAnnouncement(
+            signedAt({ multiaddrs: ['/ip6/::1/tcp/1'], observedExternalAddr: '/ip6/::1/tcp/2' }),
+            CTX,
+          ),
+        ).toEqual({ ok: false, reason: 'unsupported-address' })
+      } finally {
+        if (had === undefined) delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+        else process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+      }
+    })
+
+    it('CTX FLAG: ::1 direct, mixed, observed, and all-loopback circuit verify', () => {
+      expect(
+        validatePeerAnnouncement(signedAt({ multiaddrs: ['/ip6/::1/tcp/1'] }), CTX_DEV),
+      ).toEqual({ ok: true })
+      expect(
+        validatePeerAnnouncement(
+          signedAt({
+            multiaddrs: ['/ip6/2001:db8::1/tcp/1', '/ip6/::1/tcp/2'],
+            observedExternalAddr: '/ip6/::1/tcp/3',
+          }),
+          CTX_DEV,
+        ),
+      ).toEqual({ ok: true })
+      // All-hop-::1 circuit: the honest shape of a same-machine relay dev
+      // mesh (every hop IS local) — pinned to verify under the ctx flag.
+      expect(
+        validatePeerAnnouncement(
+          signedAt({ multiaddrs: ['/ip6/::1/tcp/1/p2p/QmRelay/p2p-circuit/ip6/::1/tcp/2'] }),
+          CTX_DEV,
+        ),
+      ).toEqual({ ok: true })
+    })
+
+    it('CTX FLAG: fe80/v4/ULA/zones and half-local circuits NEVER admitted', () => {
+      const bad = [
+        '/ip6/fe80::1/tcp/1',
+        '/ip4/1.2.3.4/tcp/1',
+        '/ip6/fd00::1/tcp/1',
+        '/ip6zone/en0/ip6/::1/tcp/1', // zone-scoped loopback is not the bare ::1
+        '/ip6/::1/tcp/1/p2p/QmRelay/p2p-circuit/ip6/2001:db8::5/tcp/2', // half-local circuit is incoherent
+      ]
+      for (const addr of bad) {
+        const v = validatePeerAnnouncement(signedAt({ multiaddrs: [addr] }), CTX_DEV)
+        expect(v.ok === false ? v.reason : 'ok', addr).toBe('unsupported-address')
+      }
+    })
+  })
+
   it('MIXED_CIRCUIT (10.2): direct + circuit verify; the budget is SHARED across families', () => {
     const direct = '/ip6/2001:db8:c0a8:10a::/tcp/4001'
     const circuit = '/ip6/2001:db8:9::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf'
