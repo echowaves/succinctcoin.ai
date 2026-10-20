@@ -103,6 +103,10 @@ async function boot(): Promise<void> {
       // IPv6-only; SUCCINCTCOIN_MDNS=1 re-enables it on friendly LANs.
       mdns: process.env.SUCCINCTCOIN_MDNS === '1',
       relaySeeds,
+      // 10.3 — volunteer as a circuit relay (the 5.7 server role). Its own
+      // dialable multiaddr + peer id print in the boot log; share that seed
+      // out-of-band and peers behind firewalls hold circuits through it.
+      relayServer: process.env.SUCCINCTCOIN_RELAY_SERVER === '1',
     }),
     onRelaySeed: (event) => {
       console.log(

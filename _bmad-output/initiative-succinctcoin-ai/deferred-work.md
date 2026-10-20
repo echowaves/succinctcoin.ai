@@ -126,19 +126,29 @@
      electron spawn): `packages/app/test/identity-seed.test.ts` (6). -->
 
 
-<!-- PLANNED 2026-10-19 (was OPEN since 9.5; course decided with the user):
-     RELAY TIER → EPIC-reachability-tier. The problem stands as stated:
-     IPv6-only policy + inbound-blocked firewalls mean a peer nobody can
-     reach cannot serve as an entry point. The technical shape is now
-     DECIDED: AutoNAT reachability truth (announce never lies) + volunteer
-     circuit-relay v2 seeds (config list, default EMPTY — the no-operated-
-     infrastructure non-goal holds) + DCUtR punching over live relay
-     connections. The relay hop of any announced/dialed circuit address
-     must itself be a global /ip6 — the IPv6-only invariant survives the
-     tier untouched; IPv4-only peers stay unserved BY DESIGN (see the two
-     DECISION entries below). Stories 10.1–10.3 live in
-     ../epic-reachability-tier/tickets.toml. Operator incentives for
-     volunteers remain an open spec question, not a build blocker. -->
+<!-- SHIPPED 2026-10-20 (epic 10, stories 10.1–10.3): RELAY TIER. Planned
+     2026-10-19 as EPIC-reachability-tier; now built end to end:
+     AutoNAT reachability truth — announce never lies (10.1, announceFilter
+     on the wire path + adapter honesty view); volunteer circuit-relay v2
+     seeds — config list, default EMPTY (10.2: SUCCINCTCOIN_RELAY_SEEDS,
+     bounded holds, loss re-hold, circuit addresses through every policy
+     boundary); DCUtR punching over live relay connections, tcp-only and
+     unconditional (10.3), which also shipped the volunteer server role as
+     config: SUCCINCTCOIN_RELAY_SERVER=1 runs the 5.7 relay. The IPv6-only
+     invariant survived untouched: a circuit address's relay hop must itself
+     be a global /ip6 — HOLDING a seed is dialing one, so an inbound-blocked
+     peer needs outbound v6 and an IPv4-only peer stays unserved BY DESIGN
+     (DECISION entries below — the relay's operator being dual-stack is how
+     such a peer joins, on THEIR side).
+     Proofs: core relay-seeds.test.ts (headless memory) + dial-manual.mjs
+     relay trio (relay-new / node-behind / invite-use-through-relay, live
+     on loopback). README "Reachability ladder" documents it. STILL PARKED
+     here: (a) any OFFICIALLY operated relay endpoint — the network ships
+     zero default seeds; (b) operator INCENTIVES for volunteers (open spec
+     question, not a build blocker); (c) gossip-based RELAY ADVERTISEMENT
+     — how peers learn seeds without out-of-band sharing stays unsolved
+     by design; discovery only ever verifies addresses, never registers
+     relays. -->
 
 <!-- DECISION 2026-10-19 (ticket 9.5): IPv4 IS NOT SUPPORTED — recorded, not
      an oversight. `isGlobalIp6Multiaddr`/`assertDialable` (SC-NET-1) reject

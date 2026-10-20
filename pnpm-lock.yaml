@@ -173,6 +173,9 @@ importers:
 
   .:
     devDependencies:
+      '@libp2p/dcutr':
+        specifier: 3.0.28
+        version: 3.0.28
       big.js:
         specifier: ^7.0.1
         version: 7.0.1
@@ -234,6 +237,9 @@ importers:
       '@libp2p/circuit-relay-v2':
         specifier: 4.2.13
         version: 4.2.13
+      '@libp2p/dcutr':
+        specifier: 3.0.28
+        version: 3.0.28
       '@libp2p/gossipsub':
         specifier: 17.1.2
         version: 17.1.2
@@ -447,6 +453,9 @@ packages:
 
   '@libp2p/crypto@5.2.0':
     resolution: {integrity: sha512-nLKTzyX6PKQoGFrb+OKds4NyFnedBcCgr50jYd5sIwFPVOEiQiCYBeQSdBbqjn9crFFca/l7dxBcFtXQ5qKiVw==}
+
+  '@libp2p/dcutr@3.0.28':
+    resolution: {integrity: sha512-ULbHSdedcLpCzXUB1BGwiKPs+sshaT+TuicDullCWwsdq6nhzpfg3KkGP/BmvzIwkEkNTRGWQ7AScI6rIHBT7g==}
 
   '@libp2p/gossipsub@17.1.2':
     resolution: {integrity: sha512-XWTsNv7txlTNuHeOUfkv69aro6ioj5EKLo7plLtHbQ7NLb2rFurjxMQYgsBZ4zWF9hGRGMx9FqoJoT/zu/apiA==}
@@ -2058,6 +2067,17 @@ snapshots:
       protons-runtime: 7.1.2
       uint8arraylist: 3.0.2
       uint8arrays: 6.1.1
+
+  '@libp2p/dcutr@3.0.28':
+    dependencies:
+      '@libp2p/interface': 3.4.0
+      '@libp2p/interface-internal': 3.1.13
+      '@libp2p/utils': 7.4.5
+      '@multiformats/multiaddr': 13.0.3
+      '@multiformats/multiaddr-matcher': 3.0.2
+      delay: 7.0.0
+      protons-runtime: 7.1.2
+      uint8arraylist: 3.0.2
 
   '@libp2p/gossipsub@17.1.2':
     dependencies:

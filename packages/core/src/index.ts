@@ -794,6 +794,7 @@ export type {
 export {
   autoNatEnabledFor,
   createReachabilityTracker,
+  dcutrEnabledFor,
   filterHonestAddresses,
   isCircuitAddressText,
   normalizeAddressKey,

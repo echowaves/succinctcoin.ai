@@ -72,6 +72,10 @@ export function defaultNetConfig(
     // (no operated infrastructure — the Epic-10 non-goal); when set, the
     // adapter holds reservations and announces circuit addresses.
     relaySeeds: opts.relaySeeds ?? [],
+    // 10.3 — the volunteer-relay role (env SUCCINCTCOIN_RELAY_SERVER=1) is
+    // opt-in AND key-absent when off: default builds stay byte-identical to
+    // pre-10.3 (exact-config pins). `as const` keeps the literal type.
+    ...(opts.relayServer === true ? { relayRole: 'relay' as const } : {}),
     protocolIdentityId,
   }
 }
@@ -92,6 +96,11 @@ export interface NetConfigOptions {
    * Default EMPTY (pinned); the adapter holds reservations on each and
    * advertises `<seed>/p2p-circuit/p2p/<self>` alongside direct addrs. */
   relaySeeds?: readonly string[] | undefined
+  /** 10.3 — serve as a circuit relay (5.7 role; env
+   * SUCCINCTCOIN_RELAY_SERVER=1). Default false (pinned): volunteering is
+   * opt-in. A server bootstraps like any peer and should NOT itself need
+   * seeds — it is the seed. */
+  relayServer?: boolean | undefined
 }
 
 /**

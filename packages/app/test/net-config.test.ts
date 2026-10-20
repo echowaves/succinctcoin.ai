@@ -112,6 +112,27 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     expect(defaultNetConfig(g, 'ae'.repeat(32)).relaySeeds).toEqual([])
   })
 
+  it('RELAY_SERVER (10.3): relayRole key ABSENT by default; ONLY `relayServer: true` sets it', () => {
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    // Default (and explicit false): NO relayRole key at all — the default
+    // config stays byte-identical to pre-10.3 (the exact-config pins above
+    // would catch any drift; this pins the absence directly).
+    expect('relayRole' in defaultNetConfig(g, 'af'.repeat(32))).toBe(false)
+    expect('relayRole' in defaultNetConfig(g, 'af'.repeat(32), { relayServer: false })).toBe(false)
+    // Opt-in: the 5.7 server role, and NOTHING else changes — full shape.
+    const relay = defaultNetConfig(g, 'af'.repeat(32), { relayServer: true })
+    expect(relay).toEqual({
+      transport: 'tcp',
+      listenAddress: '/ip6/::/tcp/0',
+      mdns: false,
+      bootstrap: [],
+      relaySeeds: [],
+      relayRole: 'relay',
+      protocolIdentityId: 'af'.repeat(32),
+    })
+    expect(relay.relaySeeds).toEqual([]) // a server IS a seed, not a seed-user
+  })
+
   it('MDNS_OPT_IN: mdns is OFF by default; ONLY `mdns: true` enables it (9.1)', () => {
     const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
     expect(defaultNetConfig(g, 'ad'.repeat(32)).mdns).toBe(false)

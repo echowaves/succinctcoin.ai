@@ -102,7 +102,6 @@ import { multiaddr, CODE_P2P } from '@multiformats/multiaddr'
 import {
   assertDialable,
   filterPolicyAddresses,
-  isGlobalIp6Multiaddr,
 } from './address-policy.js'
 import { createLibp2p } from 'libp2p'
 
@@ -139,10 +138,12 @@ import type { SyncSource } from './sync.js'
 import {
   autoNatEnabledFor,
   createReachabilityTracker,
+  dcutrEnabledFor,
   filterHonestAddresses,
   isHonestAddressText,
 } from './reachability.js'
 import type { Reachability } from './reachability.js'
+import { dcutr as dcutrService } from '@libp2p/dcutr'
 
 /** The dial bound for `dial()` (D2 — a timeout, never a clock read). */
 const DIAL_TIMEOUT_MS = 10_000
@@ -530,6 +531,12 @@ async function buildNode(
       ...(autoNatEnabledFor(config.transport, config.autoNat)
         ? { autoNatV2: autoNATv2() }
         : {}),
+      // 10.3 — DCUtR hole-punching (tcp only, AD-10): upgrades ALREADY-
+      // RELAYED connections toward direct where firewalls allow (it needs
+      // identify + the always-wired circuitRelayTransport, declares only
+      // identify as a service dependency). Memory never registers it —
+      // `dcutrEnabledFor`.
+      ...(dcutrEnabledFor(config.transport) ? { dcutr: dcutrService() } : {}),
     },
     // 5.3 D2/D3 — the discovery services (real `bootstrap` over the genesis
     // list; the mDNS double over memory / real `mdns()` over tcp). Empty when
@@ -827,10 +834,17 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       return
     }
     // The adapter's OWN dial path obeys the same IPv6-only policy as
-    // operator dials on tcp (seeds are addressing; one family).
-    if (config.transport === 'tcp' && !isGlobalIp6Multiaddr(seed)) {
-      emitSeed(run, { seed, ok: false, error: 'off-policy seed (IPv6-only)' })
-      return
+    // operator dials on tcp (seeds are addressing; one family). 10.3: use
+    // `assertDialable` — the DIAL policy authority — so the loopback dev
+    // flag (dial-only, default off) applies to seed holds exactly like it
+    // does to every other dial; global /ip6 passes, everything else skips.
+    if (config.transport === 'tcp') {
+      try {
+        assertDialable(seed)
+      } catch {
+        emitSeed(run, { seed, ok: false, error: 'off-policy seed (IPv6-only)' })
+        return
+      }
     }
     const retryMs = config.relaySeedRetryMs ?? 5000
     for (let attempt = 1; attempt <= SEED_ATTEMPTS; attempt++) {

@@ -23,11 +23,11 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (478 tests / 66 files)
+corepack pnpm test        # the full workspace test suite (480 tests / 66 files)
 corepack pnpm typecheck   # core typecheck
 ```
 
-The root `test` runs every package's suite: the core's 429-test suite (57 files) plus the app's 49-test suite (9 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
+The root `test` runs every package's suite: the core's 430-test suite (57 files) plus the app's 50-test suite (9 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
 
 ## Run the desktop app
 
@@ -44,7 +44,7 @@ On boot the app opens the window, loads the bundled renderer, and **auto-starts 
 **This network is IPv6-only.** Nodes announce and dial global-unicast `/ip6` addresses over TCP; `/ip4`, ULA (`fd00::/8`) and link-local (`fe80::/…`) addresses are rejected by the address policy at every boundary (announce, dial, ingest). Two practical caveats:
 
 - **Inbound needs a route.** Your node listens on all interfaces, but home routers rarely advertise your global v6 address via NDP and stateful firewalls/NAT64 middleboxes (consumer routers — Norton-class ones in particular) can silently drop *inbound* v6 connections even when outbound works. Outbound joins always work; that is exactly why joining rides an **invitation**, not a public listen port.
-- **No IPv4, no relay (yet).** An IPv4-only peer cannot join directly; a community relay tier is the parked answer (see `deferred-work.md`).
+- **Inbound blocked but outbound works?** The relay tier still carries you: point `SUCCINCTCOIN_RELAY_SEEDS` at any reachable relay and the rest of the network sees you through it — see "Reachability ladder" below. (You still need working outbound global IPv6 yourself; a machine with **no** IPv6 connectivity at all — pure IPv4 — cannot join even through a relay, and that is deliberate.)
 
 ### Join with an invitation (the primary path)
 
@@ -53,6 +53,17 @@ On boot the app opens the window, loads the bundled renderer, and **auto-starts 
 3. **Paste** — on the new machine, paste it into the *JOIN* panel (or write it as one line into `<userData>/invite.txt` before first boot). The app verifies it fully — signature, chain id, and ticket liveness of the inviter against applied blocks — **before dialing anything**, then dials through it and lets the peer-book crawl fill out the rest of the network (bounded: depth ≤ 3, book ≤ 100 entries, ≥3 distinct /64s by design).
 
 A wiped machine with an empty config needs nothing else: one verified invitation is a proven complete join (the amnesiac-invite boot proof runs it headless in CI). For the manual two-machine version see `_bmad-output/initiative-succinctcoin-ai/epic-real-network/dial-manual.mjs` (`invite-new` / `invite-use`); single-machine loopback proofs set `SUCCINCTCOIN_ALLOW_LOOPBACK=1` on both commands — an explicit, default-off dial-only exemption for `::1` that changes nothing else.
+
+### Reachability ladder
+
+Every node climbs the same four rungs, automatically and in order — each one only kicks in where the previous one leaves off:
+
+1. **Direct TCP over global IPv6** — the happy path, what an invitation carries.
+2. **AutoNAT honesty.** A probe tells each node whether it is actually reachable from the outside; a node that learns it is *not* stops advertising the dead address (and re-advertises if reachability returns). Peers never get lied to, so nobody wastes dials on addresses that cannot answer.
+3. **Circuit relay.** A node whose *inbound* is blocked (firewall, router — but whose outbound IPv6 works) holds a relayed connection through a volunteer **relay** and advertises its circuit address alongside — or instead of — its direct one. Set `SUCCINCTCOIN_RELAY_SEEDS` to a comma-separated list of relay seeds (`/ip6/…/tcp/…/p2p/<relayId>`); the node keeps those circuits alive and re-holds them if they drop. The relay hop itself must be global `/ip6`: this is how *unreachable* peers join, not how *IPv4-only* ones do (those stay unserved by design).
+4. **DCUtR hole-punching.** Peers connected only *through* a relay keep trying to punch a direct connection between themselves; where both firewalls allow it, the relayed link silently upgrades to direct. No configuration — it rides the relay connections you already have.
+
+**Running a relay (volunteers).** Start any well-connected node with `SUCCINCTCOIN_RELAY_SERVER=1`. Its boot log prints its dialable multiaddr, peer id included — that whole line **is** the seed. Share it out-of-band (a forum, a group chat) and set it on your hidden nodes' `SUCCINCTCOIN_RELAY_SEEDS`. There is deliberately **no official relay endpoint** and no automatic relay discovery yet: relays are machines someone volunteered, and how peers learn about them stays a human/ops question (see `deferred-work.md`). The end-to-end circuit path has a manual proof: `dial-manual.mjs` modes `relay-new`, `node-behind <seed>`, and `invite-use-through-relay <scinvite>` (one machine under `SUCCINCTCOIN_ALLOW_LOOPBACK=1` is enough).
 
 ### Bootstrap lists (dev tool)
 

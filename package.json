@@ -10,6 +10,7 @@
     "build": "packages/core/node_modules/.bin/protons packages/core/proto/protocol.proto -o packages/core/src/proto/ && node_modules/.bin/tsc -p packages/core/tsconfig.build.json"
   },
   "devDependencies": {
+    "@libp2p/dcutr": "3.0.28",
     "big.js": "^7.0.1",
     "js-sha3": "^0.13.0",
     "typescript": "5.9.2",

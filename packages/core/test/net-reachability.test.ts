@@ -9,6 +9,9 @@
  *                     empty in ⇒ empty out.
  *   AUTONAT_ENABLED   pure config resolution — memory NEVER registers AutoNAT
  *                     (AD-10 pin), tcp defaults on, explicit false opts out.
+ *   DCUTR_ENABLED     10.3 composition gate — the SAME AD-10 shape: memory
+ *                     NEVER registers DCUtR, tcp always does (no opt-out;
+ *                     buildNode registers the service iff this returns true).
  *   ADAPTER_INERT     memory adapter, no seam: reachability() 'unknown'
  *                     before AND after start; listenAddresses() unchanged
  *                     (byte-equal to the raw multiaddrs — pre-10.1 behavior).
@@ -24,6 +27,7 @@ import { createNetAdapter } from '../src/net/adapter.js'
 import {
   autoNatEnabledFor,
   createReachabilityTracker,
+  dcutrEnabledFor,
   filterHonestAddresses,
   isCircuitAddressText,
   normalizeAddressKey,
@@ -104,6 +108,15 @@ describe('10.1 — reachability tracker (pure evidence model)', () => {
     expect(autoNatEnabledFor('tcp', true)).toBe(true)
     expect(autoNatEnabledFor('memory', undefined)).toBe(false)
     expect(autoNatEnabledFor('memory', true)).toBe(false) // AD-10 pin
+  })
+
+  it('DCUTR_ENABLED: memory NEVER (AD-10), tcp always — no opt-out', () => {
+    // buildNode gates the @libp2p/dcutr registration on this function (the
+    // spread itself is manual-proof territory, same precedent as AUTONAT);
+    // the memory pin means no suite node ever runs a punching service over
+    // the in-process transport, so 10.3 changes zero headless behavior.
+    expect(dcutrEnabledFor('tcp')).toBe(true)
+    expect(dcutrEnabledFor('memory')).toBe(false)
   })
 })
 

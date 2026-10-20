@@ -33,6 +33,7 @@ export { ip6Slash64 } from './address-policy.js'
 export {
   autoNatEnabledFor,
   createReachabilityTracker,
+  dcutrEnabledFor,
   filterHonestAddresses,
   isCircuitAddressText,
   isHonestAddressText,

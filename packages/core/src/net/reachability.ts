@@ -119,3 +119,16 @@ export function autoNatEnabledFor(
   if (transport !== 'tcp') return false
   return override !== false
 }
+
+/**
+ * 10.3 — DCUtR hole-punching registration, same AD-10 shape: REAL transports
+ * only (memory NEVER registers it — punching over an in-process fixture is
+ * meaningless). Unconditional on tcp: DCUtR only UPGRADES connections that
+ * already exist via a relay (it needs identify + circuitRelayTransport, both
+ * always wired), so unlike AutoNAT it takes no opt-out — there is nothing to
+ * prove and nothing to lose. Options stay default (timeout/retries; the
+ * 10.3 plan records the call).
+ */
+export function dcutrEnabledFor(transport: 'memory' | 'tcp'): boolean {
+  return transport === 'tcp'
+}
