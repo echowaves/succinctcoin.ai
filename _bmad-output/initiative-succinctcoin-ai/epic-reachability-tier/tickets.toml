@@ -1,0 +1,42 @@
+# tickets.toml — epic-reachability-tier's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names
+# a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its
+# plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "AutoNAT reachability truth: know it, expose it, announce honestly"
+description = "Wire the reachability probe. Add @libp2p/autonat (exact pin alongside the libp2p stack, devDependencies per core's bundling convention) and register the autoNat service ONLY on real (tcp) transport builds — memory transport config untouched (AD-10). Build-time verification first: inspect the installed package + libp2p 3.3.x to learn whether getMultiaddrs() already filters advertised addresses by AutoNAT status; if it does, R1 is native and we only expose status; if not, adapter-level suppression in listenAddresses(): when observed reachability is 'unreachable', drop NON-circuit addresses from the advertised set (circuit reservations stay — that is the point). Either way: a pure mapping module (libp2p status -> our 'unknown' | 'reachable' | 'unreachable' enum, exported for tests + app diagnostics) and a NetAdapter.reachability() surface. unknown (fresh boot, no probe peers yet) changes NOTHING about today's announce behavior. No core/node-loop changes: the announce path keeps calling listenAddresses() and filtering by policy — honesty lives at the source."
+verify = "Mapping rows for every status vector; composition rows: tcp build registers autoNat, memory build does not; adapter row: with reachability forced 'unreachable' (test seam), listenAddresses() yields only circuit addresses while 'unknown' yields today's full set; existing net-adapter + circuit-relay suites green; build + typecheck + full root/app suites green headless."
+covers = ["R1", "E2"]
+after = []
+hitl = false
+risk = "medium"
+unknown = "Native vs adapter-level filtering in the pinned libp2p (inspect at build, pin the call); exact AutoNAT status API shape on @libp2p/autonat 3.x."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Relay seed bootstrap + circuit addresses through every policy boundary"
+description = "The tier's spine. Adapter config gains relaySeeds: string[] (default []): non-empty implies client behavior — at start, dial each seed, ask for a circuit reservation, hold it with bounded retry (reservation loss -> re-reserve; failures never unwind boot); the 5.7 single relayAddress/relayRole operator shape keeps working unchanged. Once reserved, libp2p's getMultiaddrs() includes the node's /…/p2p-circuit/p2p/<self> address — it flows through announce/invite/book/crawl with NO node-loop changes BECAUSE the policy accepts it: extend address-policy so a multiaddr containing /p2p-circuit is valid iff its FIRST /ip6 hop (the relay) is global unicast, no /ip4, no ip6zone anywhere (SC-NET-1 otherwise); isGlobalIp6Multiaddr, assertDialable, filterPolicyAddresses all inherit the rule from one place. The announcement validator keeps its per-record multiaddr budget SHARED across direct + circuit addresses (no doubling). /64 diversity: relayed entries key on the RELAY's /64 (an honest single point of network). App glue: SUCCINCTCOIN_RELAY_SEEDS env (comma-separated multiaddrs) -> net-config -> adapter; boot log lines for reservation success/failure. Tests: memory-transport integration extending 5.7 — relay server + seeded client => client listenAddresses() contains its circuit address => a third node dials it THROUGH the relay and round-trips data; policy unit rows (global-v6 hop accepted; /ip4, fe80::, fd00:: hops rejected; zone rejected; trailing-p2p-only forms unchanged); validator encode->parse->verify over one direct + one circuit record; crawler row: a book entry whose address is a circuit address gets dialed verbatim (mock dial captures the target)."
+verify = "Memory-transport relay integration green (zero real sockets); policy rows pin the relay-hop rule at dial/announce/ingest identically; validator budget row; invite round-trip over circuit address; app env row (net-config parses seeds, empty default pinned); full suites green headless."
+covers = ["R2", "R3", "E1", "E2", "E3"]
+after = [1]
+hitl = false
+risk = "high"
+unknown = "multiaddr 13 getComponents() shape for p2p-circuit chains (verify at build); whether identify over a relayed connection advertises the circuit address to peers automatically; reservation-lost event surface on circuitRelayTransport for the retry loop."
+
+[[entry]]
+id = 3
+type = "story"
+title = "DCUtR punching + operator docs + tier closeout"
+description = "Punch when punching helps. Add @libp2p/dcutr (exact pin) and register the dcutr service on real transport builds only — it needs nothing else (circuitRelayTransport is already always-wired since 5.7 D9); memory transport inert row pinned. Honest-doc the ladder in README's Joining section: direct TCP first, circuit relay when AutoNAT says unreachable, DCUtR upgrading relayed pairs to punched-direct where firewalls allow — plus how a volunteer runs a relay (the 5.7 server role is config, not code) and how peers learn its address (SUCCINCTCOIN_RELAY_SEEDS today; gossip stays parked). dial-manual.mjs gains a relay mode trio (relay-new / node-behind / invite-use-through-relay) runnable on ONE machine under SUCCINCTCOIN_ALLOW_LOOPBACK=1 with all skips disclosed, proving the circuit path end to end against built dist. deferred-work.md: relay-tier PLANNED entry moves to shipped-with-pointer; spec open question narrows to operator incentives only."
+verify = "Composition row: tcp build registers dcutr, memory does not; dial-manual relay modes proven live on loopback (exit 0, DIALED THROUGH RELAY line); README ladder renders for a new operator; full suites green headless; docs cross-references verified."
+covers = ["R4", "E2"]
+after = [2]
+hitl = false
+risk = "low"
+unknown = "DCUtR service options worth pinning on 3.x (timeout caps); whether a loopback three-process proof needs distinct memory-transport namespaces — follow the 9.5 dial-manual pattern."

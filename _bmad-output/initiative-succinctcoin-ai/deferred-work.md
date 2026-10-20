@@ -126,17 +126,19 @@
      electron spawn): `packages/app/test/identity-seed.test.ts` (6). -->
 
 
-<!-- OPEN 2026-10-19 (ticket 9.5, epic-ipv6-invite-network closing): RELAY-TIER
-     OPEN QUESTION. Since 9.1 the policy is IPv6-only global unicast end to
-     end, which structurally excludes (a) IPv4-only peers and (b) v6 peers
-     whose router firewall drops inbound (the common consumer-NAT64 case —
-     outbound joins work, inbound never arrives). The join story absorbs (b)
-     for the JOINER (an invite rides the reachable peer's outbound side), but
-     a peer nobody can reach inbound still cannot SERVE as an entry point.
-     Undecided: whether/when a community relay tier ships (libp2p circuit
-     relay v2 is already in the dependency graph; dial-manual + assertDialable
-     messages name this parking spot). Revisit when real-network field data
-     (epic-real-network) shows inbound-blocked nodes hurting propagation. -->
+<!-- PLANNED 2026-10-19 (was OPEN since 9.5; course decided with the user):
+     RELAY TIER → EPIC-reachability-tier. The problem stands as stated:
+     IPv6-only policy + inbound-blocked firewalls mean a peer nobody can
+     reach cannot serve as an entry point. The technical shape is now
+     DECIDED: AutoNAT reachability truth (announce never lies) + volunteer
+     circuit-relay v2 seeds (config list, default EMPTY — the no-operated-
+     infrastructure non-goal holds) + DCUtR punching over live relay
+     connections. The relay hop of any announced/dialed circuit address
+     must itself be a global /ip6 — the IPv6-only invariant survives the
+     tier untouched; IPv4-only peers stay unserved BY DESIGN (see the two
+     DECISION entries below). Stories 10.1–10.3 live in
+     ../epic-reachability-tier/tickets.toml. Operator incentives for
+     volunteers remain an open spec question, not a build blocker. -->
 
 <!-- DECISION 2026-10-19 (ticket 9.5): IPv4 IS NOT SUPPORTED — recorded, not
      an oversight. `isGlobalIp6Multiaddr`/`assertDialable` (SC-NET-1) reject
@@ -165,3 +167,27 @@
      rows pin the flag boundary. Origin story plan: epic-ipv6-invite-network/
      story-invite-panel-tells-you-why-no-invite-ipv6-diagnos-plan.md ("NOT in
      scope"). -->
+
+
+<!-- DECISION 2026-10-19 (user connectivity review): UPnP PORT MAPPING IS NOT
+     SUPPORTED — recorded, not an oversight. UPnP/IGD port mapping is an
+     IPv4-NAT technology: on IPv6 there is no NAT to map through, and the
+     inbound blocker on consumer routers is the stateful firewall + missing
+     prefix/NDP delegation, which IGD does not manage (v2 "PIN6" exists on
+     paper only). @chainsafe/libp2p-upnp could at best hand us a /ip4
+     address our policy rejects. The clean IPv6 answers to "make me
+     dialable" remain: router firewall setting, relay tier (epic 10), or
+     DCUtR punching. Reversal requires an explicit dual-stack architecture
+     decision — same high bar as the IPv4 decision above. -->
+
+<!-- DECISION 2026-10-19 (user connectivity review): WEBRTC / QUIC /
+     WEBTRANSPORT TRANSPORTS ARE NOT SUPPORTED (yet). Attractive because a
+     WebRTC multiaddr IS its own signalling data (fits invite-over-SMS),
+     but ICE must still get UDP through the same firewalls, and where it
+     cannot, WebRTC's own fallback is TURN — i.e. a relay we would build
+     twice (circuit relay v2 is already shipped + in epic 10). QUIC means
+     WebTransport in js-libp2p (no raw QUIC): same UDP/policy tax (a new
+     address family through assertDialable, /64 floor, lint) for no user-
+     visible win over tcp+relay+punching. Revisit ONLY if epic 10's field
+     data shows DCUtR punch rates disappointing on TCP — then re-evaluate
+     WebRTC-direct as a second transport, not a replacement. -->
