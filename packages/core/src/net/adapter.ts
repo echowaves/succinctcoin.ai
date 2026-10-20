@@ -99,7 +99,11 @@ import { mdns } from '@libp2p/mdns'
 import { peerIdFromString } from '@libp2p/peer-id'
 import { TypedEventEmitter } from 'main-event'
 import { multiaddr, CODE_P2P } from '@multiformats/multiaddr'
-import { assertDialable, filterPolicyAddresses } from './address-policy.js'
+import {
+  assertDialable,
+  filterPolicyAddresses,
+  isGlobalIp6Multiaddr,
+} from './address-policy.js'
 import { createLibp2p } from 'libp2p'
 
 import type { Libp2p, Libp2pInit } from 'libp2p'
@@ -215,6 +219,39 @@ export interface NetAdapterConfig {
   reachabilitySource?:
     | ((report: (addr: string, reachable: boolean) => void) => () => void)
     | undefined
+  /**
+   * 10.2 — RELAY SEEDS (the tier's spine): multiaddrs of circuit-relay
+   * servers to auto-dial at start and HOLD a reservation on (bounded retry;
+   * failures never unwind boot). Each seed MUST carry `/p2p/<relayId>` —
+   * without it the dial target is ambiguous and the seed is skipped with an
+   * `onRelaySeed` failure. Seeds are ADDITIVE: they do not change the 5.7
+   * `relayRole`/`relayAddress` semantics or suppress the direct listener —
+   * a seeded node announces direct + circuit addresses (AutoNAT honesty,
+   * 10.1, prunes the direct ones when they are proven dead). Held
+   * reservations appear in `listenAddresses()` as
+   * `<seed>/p2p-circuit/p2p/<self>` — announce/invite/book inherit them.
+   */
+  relaySeeds?: readonly string[] | undefined
+  /**
+   * 10.2 — one event per seed attempt outcome (success, or each failed /
+   * skipped attempt). The app wires boot-log lines through here; default
+   * silent. Never throws into the adapter.
+   */
+  onRelaySeed?: ((event: RelaySeedEvent) => void) | undefined
+  /**
+   * 10.2 — retry spacing for the seed hold loop (default 5000 ms). Tests
+   * shrink it; `stop()` cancels pending retries.
+   */
+  relaySeedRetryMs?: number | undefined
+}
+
+/** 10.2 — one relay-seed attempt outcome (boot log / tests). */
+export interface RelaySeedEvent {
+  /** The configured seed (verbatim). */
+  seed: string
+  ok: boolean
+  /** Failure reason (present iff `ok` is false). */
+  error?: string
 }
 
 /**
@@ -658,7 +695,7 @@ interface CircuitReservationSeam {
 function reserveCircuitOnRelay(
   node: Libp2p<Services> & NodeWithTransportManager,
   relayPeer: PeerId,
-): void {
+): Promise<boolean> {
   const transport = node.components.transportManager
     .getTransports()
     .find(
@@ -666,10 +703,17 @@ function reserveCircuitOnRelay(
         Object.prototype.toString.call(t) ===
         '[object @libp2p/circuit-relay-v2-transport]',
     ) as unknown as CircuitReservationSeam | undefined
-  if (transport === undefined) return
-  void transport.reservationStore.addRelay(relayPeer, 'configured').catch(() => {
-    /* a failed reservation is a NORMAL outcome (spine) — never a throw. */
-  })
+  if (transport === undefined) return Promise.resolve(false)
+  return transport.reservationStore
+    .addRelay(relayPeer, 'configured')
+    .then(
+      () => true,
+      // A failed reservation is a NORMAL outcome (spine) — never a throw;
+      // it resolves FALSE so the 10.2 hold loop counts the attempt failed
+      // (review F5: `ok:true` must mean the reservation EXISTS, never an
+      // address peers would get NO_RESERVATION on).
+      () => false,
+    )
 }
 
 /**
@@ -729,6 +773,108 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
     return node
   }
 
+  // ── 10.2 — relay seed bootstrap ───────────────────────────────────────────
+  // Held reservations: seed -> OUR circuit address
+  // (`<seed>/p2p-circuit/p2p/<self>`). Grows/shrinks as reservations are
+  // won/lost; `listenAddresses()` appends the values. The epoch invalidates
+  // every in-flight hold loop on stop() (a restart starts fresh).
+  const heldCircuits = new Map<string, string>()
+  // A RUN OBJECT (identity, not a counter — review F1: an integer epoch has
+  // an ABA hole when stop→start lands inside one retry sleep and the stale
+  // loop captures the RESTORED value). Each started node owns a run; loops
+  // capture theirs and die when it is disowned.
+  let holdRun: { alive: boolean } = { alive: false }
+  const SEED_ATTEMPTS = 3
+
+  /** Seed -> relay peer id string (the `/p2p/<id>` component), or null. */
+  function seedRelayPeerId(seed: string): string | null {
+    try {
+      for (const c of multiaddr(seed).getComponents()) {
+        if (c.code === CODE_P2P && typeof c.value === 'string') return c.value
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  const emitSeed = (run: { alive: boolean }, event: RelaySeedEvent): void => {
+    // Post-stop events would be a lie about the (dead) node — drop them.
+    if (!run.alive) return
+    try {
+      config.onRelaySeed?.(event)
+    } catch {
+      /* an observer must never break the spine */
+    }
+  }
+
+  /**
+   * One bounded hold episode for one seed: dial + reserve, up to
+   * `SEED_ATTEMPTS` tries spaced by `relaySeedRetryMs`. Success records the
+   * circuit address; each failure emits an event and (unless last) retries.
+   * NEVER throws — a dead seed is a normal outcome (boot never unwinds).
+   */
+  async function holdSeed(seed: string, run: { alive: boolean }): Promise<void> {
+    // Pre-flight (review F6): shape + policy are DETERMINISTIC — a bad seed
+    // gets exactly one skip event, never three retries of the same throw.
+    const relayPeer = seedRelayPeerId(seed)
+    if (relayPeer === null) {
+      emitSeed(run, {
+        seed,
+        ok: false,
+        error: 'seed must parse as a multiaddr and carry /p2p/<relayId>',
+      })
+      return
+    }
+    // The adapter's OWN dial path obeys the same IPv6-only policy as
+    // operator dials on tcp (seeds are addressing; one family).
+    if (config.transport === 'tcp' && !isGlobalIp6Multiaddr(seed)) {
+      emitSeed(run, { seed, ok: false, error: 'off-policy seed (IPv6-only)' })
+      return
+    }
+    const retryMs = config.relaySeedRetryMs ?? 5000
+    for (let attempt = 1; attempt <= SEED_ATTEMPTS; attempt++) {
+      if (!run.alive) return
+      try {
+        const n = requireNode()
+        await n.dial(multiaddr(seed), { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
+        // `relayPeer` was validated by `seedRelayPeerId` (parses + carries
+        // /p2p), so the string→PeerId rebuild cannot throw here. Review F5:
+        // a REFUSED reservation is an attempt failure — announcing a circuit
+        // address the relay would answer NO_RESERVATION for is a lie.
+        const reserved = await reserveCircuitOnRelay(
+          n as Libp2p<Services> & NodeWithTransportManager,
+          peerIdFromString(relayPeer),
+        )
+        if (!reserved) throw new Error('relay refused the circuit reservation')
+        if (!run.alive) return // stopped mid-dial: reservation is gone with the node
+        heldCircuits.set(seed, `${seed}/p2p-circuit/p2p/${n.peerId.toString()}`)
+        emitSeed(run, { seed, ok: true })
+        return
+      } catch (e) {
+        emitSeed(run, { seed, ok: false, error: String(e) })
+        if (attempt === SEED_ATTEMPTS) return // given up — spine stays alive
+        await new Promise((r) => setTimeout(r, retryMs))
+      }
+    }
+  }
+
+  /** Connection-loss: drop the seed's circuit address, run ONE fresh bounded
+   * episode (the reservation store's native refresh covers everything else). */
+  function wireSeedLoss(n: Libp2p<Services>): void {
+    n.addEventListener('connection:close', (event: Event) => {
+      const remote = (
+        event as CustomEvent<{ remotePeer?: { toString(): string } }>
+      ).detail?.remotePeer?.toString()
+      if (remote === undefined) return
+      for (const [seed, circuit] of [...heldCircuits]) {
+        if (!circuit.includes(`/p2p/${remote}/`)) continue
+        heldCircuits.delete(seed)
+        void holdSeed(seed, holdRun) // the CURRENT run — loss on a dead run no-ops
+      }
+    })
+  }
+
   /**
    * Publish one envelope on its class topic (5.2 D4). Single-shot (D6: the
    * retry / `allowPublishToZeroTopicPeers` decision is DEFERRED to 5.5).
@@ -759,10 +905,23 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // service-event subscription without a matching tracker/node).
       reachTracker = createReachabilityTracker()
       reachabilityUnsub = wireReachability(node)
+      // 10.2 — relay seeds: fire-and-forget bounded hold episodes (a dead
+      // seed NEVER unwinds boot) + the connection-loss watcher that
+      // re-holds. Fresh reservations state AND a fresh run object per
+      // started node — loops from a previous run captured the old object
+      // and can never be revived by this one (review F1).
+      holdRun = { alive: true }
+      heldCircuits.clear()
+      wireSeedLoss(node)
+      for (const seed of config.relaySeeds ?? []) void holdSeed(seed, holdRun)
     },
     async stop() {
       // Idempotent (5.1 test row 1: stop() is called twice, must not throw).
       if (node === null) return
+      // 10.2 — retire every in-flight seed loop FIRST (post-stop attempts
+      // and events are run-dropped); reservations die with the node.
+      holdRun.alive = false
+      heldCircuits.clear()
       // 10.1 — evidence stops flowing (no leak across a restart).
       reachabilityUnsub?.()
       reachabilityUnsub = null
@@ -838,6 +997,7 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       ) {
         // The runtime node is the concrete `Libp2p` class (it carries
         // `components`); the root export is the interface without it.
+        // (10.2: the promise never rejects, so `void` stays leak-free.)
         void reserveCircuitOnRelay(
           requireNode() as Libp2p<Services> & NodeWithTransportManager,
           conn.remotePeer,
@@ -853,10 +1013,17 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // 10.1 — honesty filter: direct addresses PROVEN unreachable by probe
       // evidence drop out (circuit addresses never do); with no evidence the
       // set is byte-identical to pre-10.1.
-      return filterHonestAddresses(
+      // 10.2 — held relay reservations append OUR circuit addresses
+      // (`<seed>/p2p-circuit/p2p/<self>`): announce/invite/book/crawl all
+      // read this ONE surface, so a reserved client advertises itself into
+      // reachability with zero node-loop change (the pinned libp2p only
+      // auto-announces reservations behind a circuit LISTEN — 5.7's design
+      // deliberately has none; see the 10.2 plan).
+      const direct = filterHonestAddresses(
         requireNode().getMultiaddrs().map((ma) => ma.toString()),
         reachTracker.view(),
       )
+      return [...new Set([...direct, ...heldCircuits.values()])]
     },
     reachability() {
       // 10.1 — does NOT require a started node: before start the honest

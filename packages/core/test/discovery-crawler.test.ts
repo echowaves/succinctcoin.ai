@@ -159,6 +159,20 @@ describe('9.4 — crawl dequeue follows local reliability', () => {
     expect(report.stoppedBy).toBe('quiet')
     expect(m.dialed).toEqual([s3.addr, s4.addr])
   })
+
+  it('CIRCUIT_VERBATIM (10.2): a circuit-address book entry is dialed EXACTLY as stored', async () => {
+    const m = buildMesh()
+    const relayed = makeNode(210)
+    // The crawler must not rewrite, decapsulate, or policy-second-guess the
+    // address — the announce boundary already judged it (relay hop global):
+    const circuitAddr =
+      '/ip6/2001:db8:feed::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmRelayed'
+    const report = await runCrawl(m.deps, [
+      { address: circuitAddr, identityId: relayed.kp.identityId },
+    ])
+    expect(m.dialed).toEqual([circuitAddr]) // byte-identical, exactly once
+    expect(report.stoppedBy).toBe('quiet')
+  })
 })
 
 describe('9.3 — bounded BFS crawl (synthetic mesh)', () => {

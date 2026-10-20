@@ -11,6 +11,7 @@ import {
   classifyIp6Address,
   filterPolicyAddresses,
   isGlobalIp6Multiaddr,
+  ip6Slash64,
 } from '../src/net/address-policy.js'
 
 describe('9.1 — address policy: global /ip6 only', () => {
@@ -144,5 +145,45 @@ describe('post-9.5 — classifyIp6Address (diagnostics share policy math)', () =
     // Malformed / zone-bearing → 'other', NEVER a throw:
     for (const bad of ['', 'nope', 'fe80::1%en0', '::1::2', '12345::', '/ip6/::1'])
       expect(classifyIp6Address(bad)).toBe('other')
+  })
+})
+
+describe('10.2 — circuit addresses through the policy (R3: NO special case)', () => {
+  it('CIRCUIT_ROWS: valid iff EVERY /ip6 hop is global — relay first among them', () => {
+    // The general rule (≥1 global /ip6, no /ip4/ip6zone anywhere) is
+    // strictly stronger than "first hop global": the WHOLE chain is judged,
+    // so dial/announce/ingest inherit circuit acceptance from ONE predicate.
+    expect(
+      isGlobalIp6Multiaddr('/ip6/2001:db8::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'),
+    ).toBe(true)
+    // Junk relay hops — every shape the tier must refuse:
+    for (const bad of [
+      '/ip4/1.2.3.4/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer', // v4 relay
+      '/ip6/fe80::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer', // link-local relay
+      '/ip6/fd00::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer', // ULA relay
+      '/ip6/2001:db8::9%en0/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer', // zone
+      '/ip6/2001:db8::9/tcp/4001/p2p/QmRelay/p2p-circuit/ip4/5.6.7.8/p2p/QmPeer', // v4 after circuit
+      '/p2p/QmRelay/p2p-circuit/p2p/QmPeer', // peer-id-only: NO /ip6 at all
+    ])
+      expect(isGlobalIp6Multiaddr(bad)).toBe(false)
+    // assertDialable agrees (same predicate, dial boundary):
+    expect(() =>
+      assertDialable('/ip6/2001:db8::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'),
+    ).not.toThrow()
+    expect(() =>
+      assertDialable('/ip6/fe80::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'),
+    ).toThrowError(/SC-NET-1/)
+  })
+
+  it('SLASH64: a relayed entry keys on the RELAY /64 (honest single point)', () => {
+    expect(
+      ip6Slash64('/ip6/2001:db8:99::5/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'),
+    ).toBe('2001:db8:99:0')
+    // The peer's own addressing after /p2p-circuit changes NOTHING: the
+    // FIRST global /ip6 (the relay) wins, exactly as the book needs it.
+    expect(
+      ip6Slash64('/ip6/2001:db8:99::5/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer') ===
+        ip6Slash64('/ip6/2001:db8:99::5/tcp/4001/p2p/QmRelay'),
+    ).toBe(true)
   })
 })

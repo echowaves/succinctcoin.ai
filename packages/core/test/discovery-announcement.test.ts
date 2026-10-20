@@ -140,6 +140,24 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
     ).toEqual({ ok: true })
   })
 
+  it('MIXED_CIRCUIT (10.2): direct + circuit verify; the budget is SHARED across families', () => {
+    const direct = '/ip6/2001:db8:c0a8:10a::/tcp/4001'
+    const circuit = '/ip6/2001:db8:9::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf'
+    // A relayed node announces BOTH shapes in one honest record (E1):
+    expect(validatePeerAnnouncement(signedAt({ multiaddrs: [direct, circuit] }), CTX)).toEqual({
+      ok: true,
+    })
+    // The 1–8 budget is per RECORD, not per family — circuit entries count
+    // against the SAME cap (no doubling): 1 direct + 8 circuit = 9 ⇒ reject.
+    const eightCircuits = Array.from(
+      { length: 8 },
+      (_, i) => `/ip6/2001:db8:9${i.toString(16)}::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf`,
+    )
+    expect(
+      validatePeerAnnouncement(signedAt({ multiaddrs: [direct, ...eightCircuits] }), CTX),
+    ).toEqual({ ok: false, reason: 'too-many-multiaddrs' })
+  })
+
   it('BAD_SIGNATURE: a flipped bit or another key signing the fields both reject', () => {
     const record = signedAt()
     const flipped = new Uint8Array(record.signature)

@@ -6,15 +6,22 @@
  * drop the IPv4 multicast mDNS is built on, and a join path that needs
  * multicast to survive every firewall is not a join path. One address family
  * end to end: global IPv6 unicast (2000::/3) over TCP is the ONLY shape this
- * network announces, dials, or ingests. IPv4-only peers are not supported —
- * the parked community-relay tier is their future path, and every rejection
- * says so.
+ * network announces, dials, or ingests. IPv4-only peers are not supported
+ * directly — the relay tier (epic 10) reaches them only through a volunteer
+ * relay whose first hop is a global /ip6, and every rejection says so.
  *
  * THE RULES (pinned):
  *  - ACCEPT: a multiaddr containing at least one `/ip6` component whose bytes
  *    are global unicast (2000::/3 — includes the documentation range
  *    2001:db8::/32 used by every test fixture), with any trailing components
  *    (`/tcp/N`, `/p2p/<id>`, `/p2p-circuit/...`).
+ *  - CIRCUIT ADDRESSES (epic 10, ticket 10.2 — no special case needed): a
+ *    `/…/p2p-circuit/p2p/<id>` chain is valid iff EVERY `/ip6` hop — the
+ *    RELAY first among them — is global unicast and no `/ip4`/`ip6zone`
+ *    appears anywhere. The general rule above is strictly stronger than
+ *    "first hop global", so dial/announce/ingest inherit circuit acceptance
+ *    from ONE predicate; `ip6Slash64` keys a relayed entry on the RELAY's
+ *    /64 (an honest single point of network).
  *  - REJECT (any hit): an `/ip4` component; a non-global `/ip6` — loopback
  *    `::1`, unspecified `::`, link-local `fe80::/10` (and any `ip6zone`),
  *    ULA `fc00::/7`, multicast `ff00::/8`; an unparseable string; no `/ip6`
@@ -139,7 +146,8 @@ export function assertDialable(addr: string): void {
     throw Object.assign(
       new Error(
         `${POLICY_ERROR_CODE}: this network is IPv6-only (global unicast over TCP); ` +
-          `"${addr}" is not dialable. IPv4-only peers need the community relay tier (parked).`,
+          `"${addr}" is not dialable. IPv4-only peers need a dual-stack relay ` +
+          'operator (SUCCINCTCOIN_RELAY_SEEDS) on their side.',
       ),
       { code: POLICY_ERROR_CODE },
     )

@@ -42,7 +42,7 @@ import { createCoreHost } from './core-host.js'
 import { loadOrCreateIdentitySeed } from './identity-seed.js'
 import { inviteDiagnostics } from './invite-diagnostics.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
-import { defaultNetConfig, parseBootstrapFile } from './net-config.js'
+import { defaultNetConfig, parseBootstrapFile, parseRelaySeeds } from './net-config.js'
 
 /**
  * The BUNDLED `dist/config/genesis.json` — the ONE genesis source (the
@@ -91,15 +91,27 @@ async function boot(): Promise<void> {
   const extraBootstrap = existsSync(bootstrapFile)
     ? parseBootstrapFile(readFileSync(bootstrapFile, 'utf8'))
     : []
-  const net = createNetAdapter(
-    defaultNetConfig(genesis, identity.identityId, {
+  // 10.2 — relay seeds (comma-separated multiaddrs carrying /p2p/<relayId>):
+  // the reachability tier's operator channel. Empty default; every attempt
+  // outcome logs a [boot] line (hold success, or each bounded-retry failure).
+  const relaySeeds = parseRelaySeeds(process.env.SUCCINCTCOIN_RELAY_SEEDS)
+  const net = createNetAdapter({
+    ...defaultNetConfig(genesis, identity.identityId, {
       listenPort: Number.isNaN(envPort) ? undefined : envPort,
       extraBootstrap,
       // 9.1: LAN multicast is opt-in — middleboxes eat it and the network is
       // IPv6-only; SUCCINCTCOIN_MDNS=1 re-enables it on friendly LANs.
       mdns: process.env.SUCCINCTCOIN_MDNS === '1',
+      relaySeeds,
     }),
-  )
+    onRelaySeed: (event) => {
+      console.log(
+        event.ok
+          ? `[boot] relay HOLD ${event.seed}`
+          : `[boot] relay FAIL ${event.seed}: ${String(event.error)}`,
+      )
+    },
+  })
   const store = new FileChainStore(join(app.getPath('userData'), 'chain'))
   const gate = createOfflineGateVerifier({ acceptedGates: genesis.gates })
 

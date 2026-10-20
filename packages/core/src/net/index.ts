@@ -4,7 +4,12 @@
  * surface so consumers import everything from the package root.
  */
 export { createNetAdapter } from './adapter.js'
-export type { NetAdapterConfig, NetAdapter, ReceivedEnvelope } from './adapter.js'
+export type {
+  NetAdapterConfig,
+  NetAdapter,
+  ReceivedEnvelope,
+  RelaySeedEvent,
+} from './adapter.js'
 export { TOPICS } from './topics.js'
 export type { TopicClass } from './topics.js'
 export { ALLOW_LOOPBACK_ENV, assertDialable, classifyIp6Address, filterPolicyAddresses, isGlobalIp6Multiaddr, isLoopbackIp6Multiaddr } from './address-policy.js'

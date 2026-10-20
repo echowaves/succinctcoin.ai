@@ -782,7 +782,13 @@ export type { ReattestationResult } from './identity/index.js'
 // envelope and publishes on its own topic; 5.3 wired discovery; 5.7 wired
 // the relay transport.
 export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
-export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'
+export type {
+  NetAdapter,
+  NetAdapterConfig,
+  ReceivedEnvelope,
+  RelaySeedEvent,
+  TopicClass,
+} from './net/index.js'
 // 10.1 — AutoNAT reachability truth (pure module; the adapter applies it at
 // both the wire-level announce filter and `listenAddresses()`).
 export {

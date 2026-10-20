@@ -68,6 +68,10 @@ export function defaultNetConfig(
     // Opt in with `mdns: true` (env SUCCINCTCOIN_MDNS=1) on friendly LANs.
     mdns: opts.mdns === true,
     bootstrap,
+    // 10.2 — relay seeds (env SUCCINCTCOIN_RELAY_SEEDS): EMPTY by default
+    // (no operated infrastructure — the Epic-10 non-goal); when set, the
+    // adapter holds reservations and announces circuit addresses.
+    relaySeeds: opts.relaySeeds ?? [],
     protocolIdentityId,
   }
 }
@@ -84,6 +88,25 @@ export interface NetConfigOptions {
   extraBootstrap?: readonly string[] | undefined
   /** Opt INTO LAN mDNS discovery (default OFF since 9.1). */
   mdns?: boolean | undefined
+  /** 10.2 — circuit-relay seeds (multiaddrs carrying /p2p/<relayId>).
+   * Default EMPTY (pinned); the adapter holds reservations on each and
+   * advertises `<seed>/p2p-circuit/p2p/<self>` alongside direct addrs. */
+  relaySeeds?: readonly string[] | undefined
+}
+
+/**
+ * Parse `SUCCINCTCOIN_RELAY_SEEDS` (10.2): comma-separated multiaddrs,
+ * each trimmed, empty entries dropped. Unset/blank ⇒ `[]` — the pinned
+ * default (an install with no seeds behaves exactly like pre-10.2). The
+ * adapter validates shape (parse + `/p2p/<relayId>`) and NEVER throws on a
+ * bad seed; this parser only splits.
+ */
+export function parseRelaySeeds(value: string | undefined): string[] {
+  if (value === undefined) return []
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
 }
 
 /**

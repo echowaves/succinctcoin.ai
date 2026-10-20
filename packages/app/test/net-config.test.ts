@@ -49,7 +49,12 @@ import { describe, expect, it } from 'vitest'
 
 import type { GenesisConfig } from '@succinctcoin/core'
 
-import { LAN_LISTEN_ADDRESS, defaultNetConfig, parseBootstrapFile } from '../src/main/net-config.js'
+import {
+  LAN_LISTEN_ADDRESS,
+  defaultNetConfig,
+  parseBootstrapFile,
+  parseRelaySeeds,
+} from '../src/main/net-config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_DIR = join(here, '..')
@@ -71,12 +76,15 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
 
     const config = defaultNetConfig(genesis, 'ab'.repeat(32))
 
-    // The full config, EXACTLY (no extra keys, no missing keys).
+    // The full config, EXACTLY (no extra keys, no missing keys). 10.2:
+    // relaySeeds is EMPTY by default — an install with no seeds behaves
+    // exactly like pre-10.2 (the no-operated-infrastructure pin, E3).
     expect(config).toEqual({
       transport: 'tcp',
       listenAddress: '/ip6/::/tcp/0',
       mdns: false,
       bootstrap: [],
+      relaySeeds: [],
       protocolIdentityId: 'ab'.repeat(32),
     })
     // The exported constant IS the pinned ephemeral listen address (9.1:
@@ -84,6 +92,24 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     expect(LAN_LISTEN_ADDRESS).toBe('/ip6/::/tcp/0')
     // R1: the isolated transport is NEVER returned from the seam.
     expect(config.transport).not.toBe('memory')
+  })
+
+  it('RELAY_SEEDS (10.2): env parse rows + verbatim passthrough, empty default', () => {
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    // Parser: comma-separated, trimmed, empties dropped, unset ⇒ [].
+    expect(parseRelaySeeds(undefined)).toEqual([])
+    expect(parseRelaySeeds('')).toEqual([])
+    expect(parseRelaySeeds(' , ')).toEqual([])
+    expect(
+      parseRelaySeeds('/ip6/2001:db8::9/tcp/4001/p2p/QmA, /ip6/2001:db8::8/tcp/4001/p2p/QmB '),
+    ).toEqual([
+      '/ip6/2001:db8::9/tcp/4001/p2p/QmA',
+      '/ip6/2001:db8::8/tcp/4001/p2p/QmB',
+    ])
+    // Seam: seeds pass through untouched; absent ⇒ [] (the pinned default).
+    const seeded = defaultNetConfig(g, 'ae'.repeat(32), { relaySeeds: ['/ip6/2001:db8::9/tcp/1/p2p/QmA'] })
+    expect(seeded.relaySeeds).toEqual(['/ip6/2001:db8::9/tcp/1/p2p/QmA'])
+    expect(defaultNetConfig(g, 'ae'.repeat(32)).relaySeeds).toEqual([])
   })
 
   it('MDNS_OPT_IN: mdns is OFF by default; ONLY `mdns: true` enables it (9.1)', () => {
@@ -122,6 +148,9 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
       'listenAddress',
       'mdns',
       'protocolIdentityId',
+      // 10.2: the relay-seed LIST is public addressing info (multiaddrs) —
+      // no key material; the AD-11 pin stands.
+      'relaySeeds',
       'transport',
     ])
   })
