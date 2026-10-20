@@ -1,2 +1,14 @@
 packages:
   - "packages/*"
+# 10.1 — ONE copy of each shared libp2p interface package across the graph
+# (type identity; review F2 on 10.1). All consumers require ^3/^6/^7, so
+# forcing the newest already-satisfied version unifies without semver conflict:
+# libp2p 3.3.11 locks interface-internal 3.1.13, and autonat-v2 2.1.4 is its
+# last release built on that line (2.1.6+ require 3.2.x and break Registrar).
+overrides:
+  "@libp2p/interface-internal": 3.1.13
+  "@libp2p/interface": 3.4.0
+  "@libp2p/peer-id": 6.0.18
+  "@libp2p/utils": 7.4.5
+  "@libp2p/peer-collections": 7.0.32
+minimumReleaseAgeExclude: [ "@libp2p/peer-collections@7.0.32", "@libp2p/utils@7.4.5" ]

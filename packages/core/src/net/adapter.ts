@@ -127,8 +127,18 @@ import { TOPICS } from './topics.js'
 import type { TopicClass } from './topics.js'
 import { PEERBOOK_PROTOCOL, makePeerBookHandler, requestPeerBook } from './peerbook.js'
 import type { PeerBookServed, PeerBookSource } from './peerbook.js'
+import { autoNATv2 } from '@libp2p/autonat-v2'
+import type { AutoNATv2 } from '@libp2p/autonat-v2'
+
 import { SYNC_PROTOCOL, makeSyncHandler, syncFrom } from './sync.js'
 import type { SyncSource } from './sync.js'
+import {
+  autoNatEnabledFor,
+  createReachabilityTracker,
+  filterHonestAddresses,
+  isHonestAddressText,
+} from './reachability.js'
+import type { Reachability } from './reachability.js'
 
 /** The dial bound for `dial()` (D2 — a timeout, never a clock read). */
 const DIAL_TIMEOUT_MS = 10_000
@@ -189,6 +199,22 @@ export interface NetAdapterConfig {
    * that multiaddr explicitly).
    */
   relayAddress?: string
+  /**
+   * 10.1 — the AutoNAT v2 reachability probe. tcp registers `autoNATv2()`
+   * unless this is explicitly `false`; memory NEVER registers it (AD-10) —
+   * resolution lives in the pure `autoNatEnabledFor`.
+   */
+  autoNat?: boolean | undefined
+  /**
+   * 10.1 — TEST SEAM for reachability evidence: subscribe addr→reachable
+   * reports (return an unsubscribe). When present it REPLACES the AutoNAT
+   * event subscription; when absent and the service exists, the adapter
+   * wires the service's `address:reachable`/`address:unreachable` events
+   * into the tracker. Headless rows drive honesty end-to-end through here.
+   */
+  reachabilitySource?:
+    | ((report: (addr: string, reachable: boolean) => void) => () => void)
+    | undefined
 }
 
 /**
@@ -220,6 +246,13 @@ export interface NetAdapter extends NetPort {
    * post-`stop()` like every other node method). NOT on the `NetPort`.
    */
   listenAddresses(): string[]
+  /**
+   * 10.1 — what this node KNOWS about being dialable, from AutoNAT evidence:
+   * 'unknown' until a probe speaks (fresh boot announces everything), then
+   * 'reachable' / 'unreachable'. `listenAddresses()` applies the same truth
+   * (proven-dead direct addresses stop being advertised).
+   */
+  reachability(): Reachability
   /** Publish a `PeerInfoEnvelope` on `TOPICS.peers`. NOT on the `NetPort` —
    *  peer info is the gossip/discovery surface (5.3 drives it); exposed
    *  here so the peers class round-trips in 5.2. */
@@ -298,6 +331,8 @@ type Services = Record<string, unknown> & {
   gossip: GossipSub
   identify: Identify
   circuitRelay?: CircuitRelayService
+  /** 10.1 — AutoNAT v2 probe (real transports only; see `autoNatEnabledFor`). */
+  autoNatV2?: AutoNATv2
 }
 
 /**
@@ -414,13 +449,26 @@ async function buildNode(
   received: Map<TopicClass, ReceivedEnvelope[]>,
   getSource: () => SyncSource | null,
   getPeerBookSource: () => PeerBookSource | null,
+  getReachView: () => ReadonlyMap<string, boolean>,
 ): Promise<Libp2p<Services>> {
   // 5.7 D8 — the client (NATed) role listens on NOTHING: no direct inbound
   // listener (inbound only via the relay), so the config's `listenAddress`
   // is ignored for this role.
   const isClient = config.relayRole === 'client'
   const node = await createLibp2p<Services>({
-    addresses: { listen: isClient ? [] : [config.listenAddress] },
+    addresses: {
+      listen: isClient ? [] : [config.listenAddress],
+      // 10.1 (review F1) — the WIRE-level honesty filter. libp2p's
+      // `addressManager.getAddresses()` applies this after encapsulating
+      // `/p2p/<self>`, and BOTH `libp2p.getMultiaddrs()` and identify /
+      // identify-push read exactly that list — so proven-dead direct
+      // addresses stop reaching peers on the wire, not just in our local
+      // view. Keys normalize away the `/p2p/<self>` suffix (AutoNAT events
+      // report raw listen addrs; see `normalizeAddressKey`). Circuit
+      // addresses never drop (the fallback must survive a dead direct probe).
+      announceFilter: (addrs) =>
+        addrs.filter((ma) => isHonestAddressText(ma.toString(), getReachView())),
+    },
     // 5.7 D9 — `circuitRelayTransport` is ALWAYS wired (after the direct
     // transport): the dial-THROUGH-relay capability a 'none' node needs to
     // reach a relayed peer; inert for a node that never touches a relay.
@@ -439,6 +487,12 @@ async function buildNode(
       // 5.7 D8 — the relay role registers the circuit-relay SERVER (serves
       // hops to reserved clients); 'none'/'client' nodes carry no server.
       ...(config.relayRole === 'relay' ? { circuitRelay: circuitRelayServer() } : {}),
+      // 10.1 — the reachability probe (tcp only, AD-10). Its events feed the
+      // adapter's honesty filter; the service itself declares identify as a
+      // dependency (registered above).
+      ...(autoNatEnabledFor(config.transport, config.autoNat)
+        ? { autoNatV2: autoNATv2() }
+        : {}),
     },
     // 5.3 D2/D3 — the discovery services (real `bootstrap` over the genesis
     // list; the mDNS double over memory / real `mdns()` over tcp). Empty when
@@ -635,6 +689,36 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
   // 9.3 — the peer-book source (server side), same lazy-getter seam.
   let peerBookSource: PeerBookSource | null = null
   const getPeerBookSource = (): PeerBookSource | null => peerBookSource
+  // 10.1 — reachability evidence (fresh tracker per started node: a restart
+  // re-probes from 'unknown'). Fed by the AutoNAT service events, or by the
+  // injected `reachabilitySource` test seam; read by `listenAddresses()`.
+  let reachTracker = createReachabilityTracker()
+  let reachabilityUnsub: (() => void) | null = null
+
+  /** Subscribe the tracker (source seam wins over the service). */
+  function wireReachability(n: Libp2p<Services>): () => void {
+    const report = (addr: string, reachable: boolean): void => {
+      reachTracker.observe(addr, reachable)
+    }
+    if (config.reachabilitySource !== undefined) return config.reachabilitySource(report)
+    const svc = n.services.autoNatV2
+    if (svc === undefined) return () => {}
+    const handler =
+      (reachable: boolean) =>
+      (event: Event): void => {
+        const detail = (event as CustomEvent<{ addr: { toString(): string } }>)
+          .detail
+        report(detail.addr.toString(), reachable)
+      }
+    const onReachable = handler(true)
+    const onUnreachable = handler(false)
+    svc.addEventListener('address:reachable', onReachable)
+    svc.addEventListener('address:unreachable', onUnreachable)
+    return () => {
+      svc.removeEventListener('address:reachable', onReachable)
+      svc.removeEventListener('address:unreachable', onUnreachable)
+    }
+  }
 
   function requireNode(): Libp2p<Services> {
     if (node === null) {
@@ -658,7 +742,9 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // Idempotent: a second start() on a running adapter is a no-op; a
       // start() after stop() re-creates a fresh node.
       if (node !== null) return
-      node = await buildNode(config, received, getSyncSource, getPeerBookSource)
+      node = await buildNode(config, received, getSyncSource, getPeerBookSource, () =>
+        reachTracker.view(),
+      )
       await node.start()
       // 5.2 D4 — subscribe to ALL class topics (the 5.1 scratch topic is
       // gone; six since 8.3's announcements + 8.4's introductions classes).
@@ -668,10 +754,18 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       await node.services.gossip.subscribe(TOPICS.peers)
       await node.services.gossip.subscribe(TOPICS.announcements)
       await node.services.gossip.subscribe(TOPICS.introductions)
+      // 10.1 — evidence flows from here on; a restart starts at 'unknown'
+      // (review F8: wired LAST so a throw mid-start can never leak the
+      // service-event subscription without a matching tracker/node).
+      reachTracker = createReachabilityTracker()
+      reachabilityUnsub = wireReachability(node)
     },
     async stop() {
       // Idempotent (5.1 test row 1: stop() is called twice, must not throw).
       if (node === null) return
+      // 10.1 — evidence stops flowing (no leak across a restart).
+      reachabilityUnsub?.()
+      reachabilityUnsub = null
       await node.stop()
       node = null
     },
@@ -756,7 +850,18 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
     listenAddresses() {
       // 8.5 — the announce-address source for CAP-7 announcements: the
       // node's REAL bound listen addresses (ephemeral `tcp/0` resolved).
-      return requireNode().getMultiaddrs().map((ma) => ma.toString())
+      // 10.1 — honesty filter: direct addresses PROVEN unreachable by probe
+      // evidence drop out (circuit addresses never do); with no evidence the
+      // set is byte-identical to pre-10.1.
+      return filterHonestAddresses(
+        requireNode().getMultiaddrs().map((ma) => ma.toString()),
+        reachTracker.view(),
+      )
+    },
+    reachability() {
+      // 10.1 — does NOT require a started node: before start the honest
+      // answer is 'unknown' (no evidence), never a SC-NET-1 throw.
+      return reachTracker.aggregate()
     },
     // 5.4 — chain sync (D7/D8 — NOT on the 1.2 `NetPort`).
     setSyncSource(source: SyncSource | null) {

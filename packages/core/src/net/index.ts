@@ -23,3 +23,14 @@ export type { PeerBookSource, PeerBookServed } from './peerbook.js'
 
 // 9.3 — the /64 group key (diversity floor), next to the address policy.
 export { ip6Slash64 } from './address-policy.js'
+
+// 10.1 — reachability truth (AutoNAT evidence model + honesty filter).
+export {
+  autoNatEnabledFor,
+  createReachabilityTracker,
+  filterHonestAddresses,
+  isCircuitAddressText,
+  isHonestAddressText,
+  normalizeAddressKey,
+} from './reachability.js'
+export type { Reachability, ReachabilityTracker } from './reachability.js'

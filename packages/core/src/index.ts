@@ -783,6 +783,17 @@ export type { ReattestationResult } from './identity/index.js'
 // the relay transport.
 export { createNetAdapter, SYNC_PROTOCOL, TOPICS } from './net/index.js'
 export type { NetAdapter, NetAdapterConfig, ReceivedEnvelope, TopicClass } from './net/index.js'
+// 10.1 — AutoNAT reachability truth (pure module; the adapter applies it at
+// both the wire-level announce filter and `listenAddresses()`).
+export {
+  autoNatEnabledFor,
+  createReachabilityTracker,
+  filterHonestAddresses,
+  isCircuitAddressText,
+  normalizeAddressKey,
+  type Reachability,
+  type ReachabilityTracker,
+} from './net/reachability.js'
 // 9.1 — the IPv6-only addressing policy (spec constraint 2026-10-18): the ONE
 // predicate for announce/dial/ingest eligibility on real transports.
 export {
