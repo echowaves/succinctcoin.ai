@@ -216,6 +216,88 @@ describe('8.2 — PeerAnnouncement wire + digest contract', () => {
     })
   })
 
+  // 11.1 hop law (amendment 2026-10-21): a /p2p-circuit record is valid iff
+  // its HOP is global scope in EITHER family. These rows run the STRICT
+  // context — the one every consensus path (block candidates, apply-block,
+  // introductions) uses — so they pin what may enter a BLOCK: a global-v4-
+  // hop circuit now ACCEPTS here, while direct /ip4 and every non-global hop
+  // keep rejecting exactly as before.
+  describe('11.1 — relay-hop circuits in STRICT context (consensus boundary)', () => {
+    const V4_HOP = '/ip4/203.0.113.9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf'
+
+    it('V4_HOP_ACCEPTS: a global-v4-hop circuit validates with the strict ctx', () => {
+      expect(validatePeerAnnouncement(signedAt({ multiaddrs: [V4_HOP] }), CTX)).toEqual({
+        ok: true,
+      })
+      // Mixed with the direct families in one honest record:
+      expect(
+        validatePeerAnnouncement(
+          signedAt({
+            multiaddrs: ['/ip6/2001:db8:c0a8:10a::/tcp/4001', V4_HOP],
+            observedExternalAddr: V4_HOP,
+          }),
+          CTX,
+        ),
+      ).toEqual({ ok: true })
+      // The dev loopback ctx does NOT weaken anything hop-side either — it
+      // only ADDS pure-::1 (v4 hops stay strictly global there too):
+      expect(
+        validatePeerAnnouncement(signedAt({ multiaddrs: [V4_HOP] }), {
+          ...CTX,
+          allowLoopbackAddresses: true,
+        }),
+      ).toEqual({ ok: true })
+    })
+
+    it('HOP_REJECTS: direct v4 + every non-global hop + tail IP reject unsupported-address', () => {
+      const bad = [
+        '/ip4/203.0.113.9/tcp/4001', // DIRECT v4 — never, at any boundary
+        '/ip4/10.0.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // RFC1918 hop
+        '/ip4/172.16.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // RFC1918 hop
+        '/ip4/192.168.1.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // RFC1918 hop
+        '/ip4/100.64.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // CGNAT hop
+        '/ip4/127.0.0.1/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // loopback hop
+        '/ip4/169.254.1.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // link-local hop
+        '/ip4/0.0.0.0/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // unspecified hop
+        '/ip4/224.0.0.1/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // multicast hop
+        '/ip6/fd00::9/tcp/4001/p2p/QmR/p2p-circuit/p2p/P', // RFC4193 hop
+        '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/ip4/1.2.3.4/p2p/P', // IP in tail
+        '/ip4/1.1.1.1/ip4/2.2.2.2/tcp/1/p2p/QmR/p2p-circuit/p2p/P', // two IPs in head
+        '/ip6zone/en0/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/p2p/P', // zone
+      ]
+      for (const addr of bad) {
+        const v = validatePeerAnnouncement(signedAt({ multiaddrs: [addr] }), CTX)
+        expect(v.ok === false ? v.reason : 'ok', addr).toBe('unsupported-address')
+      }
+      // The observed-addr side obeys the same law (hop-shaped junk rejects):
+      const observed = validatePeerAnnouncement(
+        signedAt({ observedExternalAddr: '/ip4/100.64.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/P' }),
+        CTX,
+      )
+      expect(observed).toEqual({ ok: false, reason: 'unsupported-address' })
+    })
+
+    it('ROUND_TRIP (11.1): encode → parse → verify over direct-v6 AND v4-hop-circuit', () => {
+      // One record carrying a direct v6 and a v4-hop circuit travels the FULL
+      // wire path: protons encode, decode (bigint slots, Buffer sig), then the
+      // strict validator — no adapter layer in between.
+      const fields = fieldsAt({
+        multiaddrs: ['/ip6/2001:db8:c0a8:10a::/tcp/4001', V4_HOP],
+        observedExternalAddr: V4_HOP,
+      })
+      const record = { ...fields, signature: signPeerAnnouncement(KEYPAIR, fields) }
+      const back = PeerAnnouncement.decode(
+        PeerAnnouncement.encode({
+          ...record,
+          slotStart: BigInt(record.slotStart),
+          slotEnd: BigInt(record.slotEnd),
+        }),
+      )
+      expect(back.multiaddrs).toEqual(fields.multiaddrs)
+      expect(validatePeerAnnouncement(back, CTX)).toEqual({ ok: true })
+    })
+  })
+
   it('MIXED_CIRCUIT (10.2): direct + circuit verify; the budget is SHARED across families', () => {
     const direct = '/ip6/2001:db8:c0a8:10a::/tcp/4001'
     const circuit = '/ip6/2001:db8:9::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf'

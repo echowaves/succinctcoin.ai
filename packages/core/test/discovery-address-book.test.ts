@@ -44,6 +44,7 @@ import {
   createAddressBook,
   deriveIdentityKeypair,
   emptyPeerHistory,
+  hopNetworkKey,
   ip6Slash64,
   scorePeer,
   signIntroduction,
@@ -538,6 +539,90 @@ describe('9.3 — /64 diversity floor (MAX_ENTRIES_PER_64 = 32)', () => {
     expect(ids).not.toContain(others[0]!.identityId) // the global weakest (other-group, 50) was evicted…
     expect(ids).toContain(group[0]!.identityId) // …every crowded-group member survived
     expect(book.size()).toBe(35)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 11.1 — the hop law at the book boundary (amendment 2026-10-21): block-
+// grade ingest ACCEPTS a global-v4-hop circuit, and the diversity floor
+// groups a relay's /24 exactly like a v6 /64.
+// ---------------------------------------------------------------------------
+describe('11.1 — v4-hop circuits in the book (block-grade ingest + /24 floor)', () => {
+  const kps = (n: number, base: number) =>
+    Array.from({ length: n }, (_, i) => deriveIdentityKeypair(new Uint8Array(32).fill(base + i)))
+  function annAt(kp: (typeof KEYPAIRS)[number], slotEnd: number, addrs: string[]) {
+    const fields = { identityId: kp.identityId, multiaddrs: addrs, slotStart: 0, slotEnd, chainId: TEST_CHAIN }
+    return { ...fields, signature: signPeerAnnouncement(kp, fields) }
+  }
+
+  it('BLOCK_V4_HOP_INGESTS: a v4-hop circuit enters at block grade and dials', () => {
+    const book = createAddressBook()
+    const addr = `/ip4/203.0.113.9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/${A.identityId.slice(0, 8)}`
+    expect(book.ingestAnnouncement(annAt(A, 100, [addr]), blockCtx(HASH_1))).toEqual({ ok: true })
+    expect(book.size()).toBe(1)
+    const [entry] = book.entries()
+    expect(entry?.multiaddrs).toEqual([addr]) // stored verbatim
+    expect(book.dialEligible(5).map((t) => t.identityId)).toEqual([A.identityId])
+    // A NON-global hop still cannot enter — the validator inside ingest is
+    // the same strict law (block ctx), so a CGNAT hop is rejected outright.
+    const book2 = createAddressBook()
+    const cgnat = `/ip4/100.64.0.9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/${B.identityId.slice(0, 8)}`
+    expect(book2.ingestAnnouncement(annAt(B, 100, [cgnat]), blockCtx(HASH_2))).toEqual({
+      ok: false,
+      reason: 'unsupported-address',
+    })
+    expect(book2.size()).toBe(0)
+    // Neither does a DIRECT v4 (the direct law is unchanged at this boundary):
+    expect(book2.ingestAnnouncement(annAt(B, 100, ['/ip4/203.0.113.9/tcp/4001']), blockCtx(HASH_2))).toEqual({
+      ok: false,
+      reason: 'unsupported-address',
+    })
+    expect(book2.size()).toBe(0)
+  })
+
+  it('SLASH24_FLOOR: a crowded relay /24 binds exactly like a crowded /64', () => {
+    // Same book shape as FLOOR_BELOW_CAP (9.3), one family swap: 32 records
+    // in ONE relay /24 install, the 33rd — fresher than every member, no
+    // capacity pressure — is dropped by the floor.
+    const book = createAddressBook({ maxEntries: 40 })
+    const ctx = classCtx('log')
+    const group = kps(33, 0x30)
+    group
+      .slice(0, 32)
+      .forEach((kp, i) =>
+        expect(book.ingestAnnouncement(annAt(kp, 101 + i, [`/ip4/203.0.113.${i + 1}/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf`]), ctx)).toEqual({ ok: true }),
+      )
+    expect(book.size()).toBe(32)
+    expect(book.ingestAnnouncement(annAt(group[32]!, 500, ['/ip4/203.0.113.200/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf']), ctx)).toEqual({ ok: true })
+    expect(book.size()).toBe(32)
+    expect(book.entries().some((e) => e.identityId === group[32]!.identityId)).toBe(false)
+    // The group key is the /24, family-tagged — and a DIFFERENT /24 is a
+    // different group (the floor binds per network, exactly like /64s):
+    const groups = new Map<string, number>()
+    for (const e of book.entries()) {
+      const g = hopNetworkKey(e.multiaddrs[0] ?? '')
+      expect(g).toBe('4:203.0.113.0')
+      groups.set(g ?? 'null', (groups.get(g ?? 'null') ?? 0) + 1)
+    }
+    expect(groups.size).toBe(1)
+    expect(hopNetworkKey('/ip4/203.0.114.1/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf')).toBe('4:203.0.114.0')
+  })
+
+  it('MIXED_FAMILY_GROUPS: v6 /64 and v4 /24 keys never collide or cross-bind', () => {
+    const book = createAddressBook({ maxEntries: 40 })
+    const ctx = classCtx('log')
+    // One v6 record and one v4-hop record whose raw group strings could
+    // alias if the family tag were missing — they must coexist freely.
+    expect(book.ingestAnnouncement(annAt(A, 100, ['/ip6/2001:db8::1/tcp/4001']), ctx)).toEqual({ ok: true })
+    expect(
+      book.ingestAnnouncement(
+        annAt(B, 100, ['/ip4/203.0.113.9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmSelf']),
+        ctx,
+      ),
+    ).toEqual({ ok: true })
+    expect(book.size()).toBe(2)
+    const keys = book.entries().map((e) => hopNetworkKey(e.multiaddrs[0] ?? ''))
+    expect(new Set(keys).size).toBe(2)
   })
 })
 

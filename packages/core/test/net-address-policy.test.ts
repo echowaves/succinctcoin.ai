@@ -11,8 +11,12 @@ import {
   classifyIp6Address,
   filterDialableAddresses,
   filterPolicyAddresses,
+  hopNetworkKey,
+  isAddressableMultiaddr,
   isDialableMultiaddr,
+  isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
+  isRelayHopCircuitMultiaddr,
   ip6Slash64,
 } from '../src/net/address-policy.js'
 
@@ -259,5 +263,183 @@ describe('10.2 — circuit addresses through the policy (R3: NO special case)', 
       ip6Slash64('/ip6/2001:db8:99::5/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer') ===
         ip6Slash64('/ip6/2001:db8:99::5/tcp/4001/p2p/QmRelay'),
     ).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 11.1 — the HOP LAW (amendment 2026-10-21): a /p2p-circuit address is only
+// ever as public as its hop — global scope in EITHER family. The tables below
+// ARE the law; every boundary consumes these predicates.
+// ---------------------------------------------------------------------------
+describe('11.1 — relay-hop address policy (one predicate, every boundary)', () => {
+  const V4_HOP = '/ip4/203.0.113.9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'
+  const V6_HOP = '/ip6/2001:db8::1/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'
+
+  it('HOP_ROWS: isGlobalHopMultiaddr — circuit-shaped with a global-scope FIRST IP', () => {
+    // A v6 twin of the SAME /64 groups identically (family-tagged keys).
+    expect(isGlobalHopMultiaddr(V4_HOP)).toBe(true)
+    expect(isGlobalHopMultiaddr(V6_HOP)).toBe(true)
+    // Any p2p-circuit with a global first IP passes the HOP predicate — even
+    // shapes the strict CIRCUIT validator below rejects (multi-hop, tail IPs).
+    // The hop predicate alone never decides acceptance; isAddressable does.
+    expect(isGlobalHopMultiaddr('/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/ip4/1.2.3.4/p2p/QmP')).toBe(true)
+    expect(
+      isGlobalHopMultiaddr(
+        '/ip6/2001:db8::1/tcp/1/p2p/QmA/p2p-circuit/ip6/2001:db8::2/tcp/2/p2p/QmB/p2p-circuit/p2p/QmC',
+      ),
+    ).toBe(true)
+    // No circuit, no hop story (direct addresses are the DIRECT law's job):
+    for (const direct of ['/ip4/203.0.113.9/tcp/4001', '/ip6/2001:db8::1/tcp/4001'])
+      expect(isGlobalHopMultiaddr(direct), direct).toBe(false)
+    // TWO IPs before the first separator are junk, not a hop (frozen matrix):
+    expect(isGlobalHopMultiaddr('/ip4/1.1.1.1/ip4/2.2.2.2/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(false)
+    // ANY ip6zone rejects, head OR tail (frozen: "any ip6zone rejects"):
+    expect(isGlobalHopMultiaddr('/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/ip6zone/en0/p2p/P')).toBe(false)
+    // Every non-global hop family rejects (the frozen reject list):
+    for (const hop of [
+      '/ip4/10.0.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC1918 10/8
+      '/ip4/172.16.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC1918 172.16/12
+      '/ip4/192.168.1.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC1918 192.168/16
+      '/ip4/100.64.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // CGNAT 100.64/10
+      '/ip4/100.127.255.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // CGNAT top edge
+      '/ip4/127.0.0.1/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // loopback
+      '/ip4/169.254.1.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // link-local
+      '/ip4/0.0.0.0/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // this-network/bind
+      '/ip4/224.0.0.1/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // multicast
+      '/ip4/240.0.0.1/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // reserved >= 224/4
+      '/ip6/fd00::9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC4193 ULA
+      '/ip6/fe80::9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // v6 link-local
+      '/ip6zone/en0/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // ANY zone
+      '/p2p/QmR/p2p-circuit/p2p/QmP', // no IP at all
+      'garbage',
+      '',
+    ])
+      expect(isGlobalHopMultiaddr(hop), hop).toBe(false)
+    // CGNAT / 172.16 boundary arithmetic: just OUTSIDE still global.
+    expect(isGlobalHopMultiaddr('/ip4/100.63.255.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(true)
+    expect(isGlobalHopMultiaddr('/ip4/100.128.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(true)
+    expect(isGlobalHopMultiaddr('/ip4/172.15.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(true)
+    expect(isGlobalHopMultiaddr('/ip4/172.32.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(true)
+    expect(isGlobalHopMultiaddr('/ip4/1.1.1.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(true)
+    expect(isGlobalHopMultiaddr('/ip4/223.255.255.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(true)
+  })
+
+  it('CIRCUIT_ROWS: isRelayHopCircuitMultiaddr — one global hop, NO IP in the tail', () => {
+    expect(isRelayHopCircuitMultiaddr(V4_HOP)).toBe(true)
+    expect(isRelayHopCircuitMultiaddr(V6_HOP)).toBe(true) // v6-hop regression: still valid
+    for (const bad of [
+      '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/ip4/1.2.3.4/p2p/QmP', // IP in tail
+      '/ip4/1.1.1.1/ip4/2.2.2.2/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // TWO IPs in head
+      '/ip4/10.0.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // non-global hop
+      '/ip6/fd00::9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC4193 hop
+      '/ip6zone/en0/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // zone
+      '/p2p/QmR/p2p-circuit/p2p/QmP', // no IP at all
+      // Multi-hop chained circuits are NOT this shape — they stay accepted
+      // via the DIRECT all-/ip6 rule, never through here.
+      '/ip6/2001:db8::1/tcp/1/p2p/QmA/p2p-circuit/ip6/2001:db8::2/tcp/2/p2p/QmB/p2p-circuit/p2p/QmC',
+      // Direct addresses are the direct law's job — false by shape:
+      '/ip4/203.0.113.9/tcp/4001',
+      '/ip6/2001:db8::1/tcp/4001',
+      'garbage',
+    ])
+      expect(isRelayHopCircuitMultiaddr(bad), bad).toBe(false)
+  })
+
+  it('COMBINED_ROWS: isAddressableMultiaddr = direct global /ip6 OR valid hop circuit', () => {
+    // ACCEPT both families of the widened law:
+    for (const ok of [
+      '/ip6/2001:db8::1/tcp/4001', // direct v6 (unchanged)
+      V6_HOP, // v6-hop circuit (unchanged verdict — passed via direct before)
+      V4_HOP, // v4-hop circuit (NEW)
+      '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit', // tail may end AT the separator
+      '/ip6/2001:db8::1/tcp/1/p2p/QmA/p2p-circuit/ip6/2001:db8::2/tcp/2/p2p/QmB/p2p-circuit/p2p/QmC', // multi-hop all-v6 — direct branch, NO accept→reject flip
+    ])
+      expect(isAddressableMultiaddr(ok), ok).toBe(true)
+    // REJECT everything the strict law rejected, plus every hop violation:
+    for (const bad of [
+      '/ip4/203.0.113.9/tcp/4001', // DIRECT v4 stays rejected — always
+      '/ip4/10.0.0.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC1918 hop
+      '/ip4/100.64.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // CGNAT hop
+      '/ip4/127.0.0.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // loopback hop
+      '/ip4/169.254.1.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // link-local hop
+      '/ip4/0.0.0.0/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // unspecified hop
+      '/ip4/224.0.0.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // multicast hop
+      '/ip6/fd00::9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // RFC4193 hop
+      '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/ip4/1.2.3.4/p2p/QmP', // IP in tail
+      '/ip4/1.1.1.1/ip4/2.2.2.2/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // two IPs in head
+      '/ip6zone/en0/ip6/fe80::1/tcp/1', // zone
+      '/dns4/example.com/tcp/443/wss', // not an address this network routes
+      '/memory/app',
+      'garbage',
+      '',
+    ])
+      expect(isAddressableMultiaddr(bad), bad).toBe(false)
+  })
+
+  it('NO FLIP: every 9.1/10.2 accepted shape still passes the direct predicate', () => {
+    // The pinned widening guarantee: isGlobalIp6Multiaddr is byte-identical,
+    // so anything accepted before is still accepted by the combined law.
+    for (const addr of [
+      '/ip6/2001:db8::1/tcp/4001',
+      '/ip6/2001:db8:c0a8:1::/tcp/4001/p2p/12D3A/p2p-circuit/p2p/12D3B',
+      '/ip6/2001:db8::9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer',
+    ]) {
+      expect(isGlobalIp6Multiaddr(addr), addr).toBe(true)
+      expect(isAddressableMultiaddr(addr), addr).toBe(true)
+    }
+  })
+
+  it('HOP_NETWORK_KEY: "6:<"/64>" and "4:a.b.c.0" group relays like networks', () => {
+    expect(hopNetworkKey(V4_HOP)).toBe('4:203.0.113.0')
+    // Same relay /24, different hosts/ports → ONE group (the book floor's pin):
+    expect(
+      hopNetworkKey('/ip4/203.0.113.77/tcp/9/p2p/QmOther/p2p-circuit/p2p/QmSelf'),
+    ).toBe('4:203.0.113.0')
+    // Different /24 → different group:
+    expect(
+      hopNetworkKey('/ip4/203.0.114.9/tcp/4001/p2p/QmRelay/p2p-circuit/p2p/QmPeer'),
+    ).toBe('4:203.0.114.0')
+    // v6 reuses the existing /64 math, family-tagged (never collides with v4):
+    expect(hopNetworkKey(V6_HOP)).toBe('6:2001:db8:0:0')
+    expect(hopNetworkKey('/ip6/2001:db8:99::5/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(
+      '6:2001:db8:99:0',
+    )
+    // The v6 key is exactly ip6Slash64 with the family tag:
+    const slash = ip6Slash64(V6_HOP)
+    expect(slash === null ? slash : `6:${slash}`).toBe(hopNetworkKey(V6_HOP))
+    // Defensive nulls (the book groups these ungrouped, as today):
+    for (const nulled of [
+      '/ip4/10.0.0.1/tcp/1',
+      '/ip6/fe80::1/tcp/1',
+      '/dns4/example.com/tcp/1',
+      '/p2p/QmR/p2p-circuit/p2p/QmP',
+      '/ip6zone/en0/ip6/2001:db8::1/tcp/1',
+      'garbage',
+      '',
+    ])
+      expect(hopNetworkKey(nulled), nulled).toBeNull()
+    // The FIRST IP decides, even off-policy later: a v4-hop circuit's tail IP
+    // never re-keys it (the tail shape is the CIRCUIT validator's job).
+    expect(
+      hopNetworkKey('/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/ip4/10.0.0.1/p2p/QmP'),
+    ).toBe('4:203.0.113.0')
+  })
+
+  it('SC-NET-1 (11.1): the message now NAMES the hop rule; relay + code pins hold', () => {
+    try {
+      assertDialable('/ip4/1.2.3.4/tcp/9')
+      expect.unreachable()
+    } catch (e) {
+      const err = e as Error & { code?: string }
+      expect(err.code).toBe('SC-NET-1')
+      expect(err.message).toMatch(/SC-NET-1/)
+      expect(err.message).toMatch(/relay/i)
+      expect(err.message).toMatch(/p2p-circuit/) // the hop rule is named
+      expect(err.message).toMatch(/global-scope hop/)
+    }
+    // Dial law UNCHANGED: direct v6 dials, direct v4 never does. (Holding a
+    // seed IS dialing a v4 hop — that switch is story 11.2's adapter work.)
+    expect(() => assertDialable('/ip6/2001:db8::9/tcp/9')).not.toThrow()
+    expect(() => assertDialable('/ip4/1.2.3.4/tcp/9')).toThrowError(/SC-NET-1/)
   })
 })

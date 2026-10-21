@@ -31,7 +31,7 @@
  * method takes `currentSlot` as a parameter. This module decides who is
  * SAFE TO DIAL; the dialing itself is 8.5's fallback ladder.
  */
-import { ip6Slash64, loopbackAnnounceAllowed } from '../net/address-policy.js'
+import { hopNetworkKey, loopbackAnnounceAllowed } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import { emptyPeerHistory, ewmaUpdate, scorePeer, STABILITY_WINDOW_SLOTS } from './peer-score.js'
 import type { PeerHistory } from './peer-score.js'
@@ -73,10 +73,12 @@ export const DEFAULT_QUARANTINE_SLOTS = 32n
  * 9.3: 64 → 100 — the spec's "other nodes up to 100 total" fill target. */
 export const MAX_BOOK_ENTRIES = 100
 
-/** /64 diversity floor (9.3): at most this many entries may share one IPv6
- * /64. At cap it forces ≥ 4 distinct prefixes — a single provider's address
- * block can never monopolise the dial surface (the crawl's eviction honours
- * it; the group is taken from each entry's first policy-valid /ip6). */
+/** Network diversity floor (9.3, per-family since the 2026-10-21 hop law):
+ * at most this many entries may share one network group — an IPv6 /64 or, for
+ * a v4 relay hop, a /24. At cap it forces ≥ 4 distinct prefixes — a single
+ * provider's address block can never monopolise the dial surface (the crawl's
+ * eviction honours it; the group is taken from each entry's first policy-
+ * valid IP component via `hopNetworkKey`). */
 export const MAX_ENTRIES_PER_64 = 32
 
 /** Distinct vouches retained per subject (entry OR parked) — the memory
@@ -379,12 +381,14 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
     entriesById.delete(id)
   }
 
-  /** The /64 group key of an entry's addresses (9.3 floor): first address
-   * whose /ip6 yields a group; null when none does (defensive — validated
-   * records always carry a policy-valid /ip6). */
-  function slash64Of(multiaddrs: readonly string[]): string | null {
+  /** The NETWORK group key of an entry's addresses (9.3 floor, per-family
+   * since the 2026-10-21 hop law): first address whose first IP component is
+   * global scope, keyed `"6:…"` on its /64 or `"4:…"` on its /24 — a relay's
+   * v4 space groups exactly like a v6 /64. Null when none qualifies
+   * (defensive — validated records always carry a policy-valid IP). */
+  function networkGroupOf(multiaddrs: readonly string[]): string | null {
     for (const a of multiaddrs) {
-      const g = ip6Slash64(a)
+      const g = hopNetworkKey(a)
       if (g !== null) return g
     }
     return null
@@ -480,15 +484,17 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
         return { ok: true }
       }
 
-      // Capacity + diversity (9.2 contest, 9.3 floor). The rules compose:
-      //   (/64 FLOOR) installing must never push the incoming record's /64
+      // Capacity + diversity (9.2 contest, 9.3 floor; 11.1: groups are
+      // per-family — a v6 /64 or a relay's /24 via hopNetworkKey). The rules
+      // compose:
+      //   (GROUP FLOOR) installing must never push the incoming record's
       //     group past MAX_ENTRIES_PER_64. When its group is already full:
       //       - book NOT full ⇒ DROP — there is room in the book, but not in
-      //         this /64; the floor never churn-evicts inside a quiet book;
+      //         this group; the floor never churn-evicts inside a quiet book;
       //       - book full ⇒ the victim MUST come from that same group (a
-      //         member it strictly beats), else drop. A crowded /64 can never
-      //         grow by evicting a different-prefix seat — and pruning that
-      //         frees a slot does NOT bypass this (9.3 review finding 7).
+      //         member it strictly beats), else drop. A crowded group can
+      //         never grow by evicting a different-prefix seat — and pruning
+      //         that frees a slot does NOT bypass this (9.3 review finding 7).
       //   (class/slot contest) when the book is full and the floor does not
       //     bind, the incoming record installs only if strictly better than
       //     the weakest entry under the (class, score, slotEnd, firstSeen,
@@ -510,11 +516,11 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
       // 9.4: the challenger was observed THIS slot too — stamp before any
       // seat contest so stability never stacks the deck against it.
       stampSlot(challenger.history, currentSlot)
-      const incomingGroup = slash64Of(r.multiaddrs)
+      const incomingGroup = networkGroupOf(r.multiaddrs)
       let inGroup = 0
       if (incomingGroup !== null) {
         for (const e of entriesById.values())
-          if (slash64Of(e.multiaddrs) === incomingGroup) inGroup += 1
+          if (networkGroupOf(e.multiaddrs) === incomingGroup) inGroup += 1
       }
 
       if (entriesById.size < maxEntries) {
@@ -528,7 +534,7 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
           let victim: MutableEntry | undefined
           for (const e of entriesById.values()) {
             if (incomingGroup !== null && inGroup >= MAX_ENTRIES_PER_64) {
-              if (slash64Of(e.multiaddrs) !== incomingGroup) continue
+              if (networkGroupOf(e.multiaddrs) !== incomingGroup) continue
               victim = victim === undefined ? e : worseReliability(victim, e)
             } else {
               victim = victim === undefined ? e : worseReliability(victim, e)
@@ -539,7 +545,7 @@ export function createAddressBook(opts: AddressBookOptions = {}): AddressBook {
           }
           dropEntry(victim.identityId)
         } else if (incomingGroup !== null && inGroup >= MAX_ENTRIES_PER_64) {
-          return { ok: true } // pruning made room overall — the /64 stays full
+          return { ok: true } // pruning made room overall — the group stays full
         }
       }
       install(r.identityId, slotStart, slotEnd, new Map(), currentSlot)

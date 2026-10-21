@@ -18,9 +18,13 @@ export {
   classifyIp6Address,
   filterDialableAddresses,
   filterPolicyAddresses,
+  hopNetworkKey,
+  isAddressableMultiaddr,
   isDialableMultiaddr,
+  isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
   isLoopbackIp6Multiaddr,
+  isRelayHopCircuitMultiaddr,
   loopbackAnnounceAllowed,
 } from './address-policy.js'
 export type { Ip6AddressClass } from './address-policy.js'

@@ -32,10 +32,11 @@ import { createHash, createPublicKey, verify } from 'node:crypto'
 
 import { signDigest } from '../identity/index.js'
 import type { IdentityKeypair } from '../identity/index.js'
-// 9.1 IPv6-only policy — direct module import (not the net barrel): this file
-// must not drag libp2p into pure-validator consumers.
+// 9.1 addressing policy (amended 2026-10-21 for the relay-hop law) — direct
+// module import (not the net barrel): this file must not drag libp2p into
+// pure-validator consumers.
 import {
-  isGlobalIp6Multiaddr,
+  isAddressableMultiaddr,
   isLoopbackIp6Multiaddr,
   parsesMultiaddr,
 } from '../net/address-policy.js'
@@ -324,21 +325,27 @@ export function validatePeerAnnouncement(
   if (r.observedExternalAddr !== undefined && !parsesMultiaddr(r.observedExternalAddr as string))
     return fail('malformed-observed-addr')
 
-  // 9.1 IPv6-only policy (spec constraint 2026-10-18): every address a record
-  // carries must be dialable on THIS network — an /ip4 or link-local
-  // announcement is rejected whole (deterministic for block validation; nodes
-  // only ever announce policy-valid addrs, so mixed records are junk).
+  // Addressing law (9.1, amended 2026-10-21 with the relay-hop rule): every
+  // address a record carries must be dialable on THIS network — direct `/ip4`
+  // or link-local announcements are rejected whole (deterministic for block
+  // validation; nodes only ever announce policy-valid addrs, so mixed records
+  // are junk). A CIRCUIT address is judged by the hop law: exactly one
+  // global-scope IP hop (either family) before the first p2p-circuit, no IP
+  // in the tail — so an IPv4-only node's `/ip4/<relay>/…/p2p-circuit/…`
+  // invite verifies at EVERY boundary, block data included, while a direct
+  // v4 or a private/CGNAT/loopback/link-local/mcast hop never does.
   // STRICT by default. The ONLY relaxation is the explicit dev-only context
-  // flag (10.3 closeout) — a PURE predicate (global, or exactly-`::1` with
-  // no zone): the ctx IS the whole authority, the validator never reads the
-  // environment even indirectly. Consensus contexts never set it, so what
-  // enters a BLOCK is always strictly global — a flagged dev node's `::1`
-  // records live in gossip/books/invites locally and can never fork an
-  // unflagged peer over chain data.
+  // flag (10.3 closeout) — a PURE predicate (addressable, or exactly-`::1`
+  // with no zone): the ctx IS the whole authority, the validator never reads
+  // the environment even indirectly. Consensus contexts never set it, so what
+  // enters a BLOCK is always strictly global-or-global-hop — a flagged dev
+  // node's `::1` records live in gossip/books/invites locally and can never
+  // fork an unflagged peer over chain data.
   const addrPolicyOk =
     ctx.allowLoopbackAddresses === true
-      ? (addr: string): boolean => isGlobalIp6Multiaddr(addr) || isLoopbackIp6Multiaddr(addr)
-      : isGlobalIp6Multiaddr
+      ? (addr: string): boolean =>
+          isAddressableMultiaddr(addr) || isLoopbackIp6Multiaddr(addr)
+      : isAddressableMultiaddr
   if (!(r.multiaddrs as string[]).every(addrPolicyOk)) return fail('unsupported-address')
   if (
     r.observedExternalAddr !== undefined &&

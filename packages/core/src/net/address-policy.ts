@@ -1,31 +1,46 @@
 /**
- * `core/net/address-policy` — the IPv6-only addressing policy (ticket 9.1,
- * spec constraint 2026-10-18: "IPv6-only with no dual-stack fallback").
+ * `core/net/address-policy` — the addressing policy: direct IPv6-only + the
+ * relay-hop law (ticket 9.1, spec constraint 2026-10-18 "IPv6-only with no
+ * dual-stack fallback", amended 2026-10-21 for CAP-8's hop exception).
  *
  * Field rationale (`change-ipv6-invitation-join`): middleboxes in real LANs
  * drop the IPv4 multicast mDNS is built on, and a join path that needs
  * multicast to survive every firewall is not a join path. One address family
- * end to end: global IPv6 unicast (2000::/3) over TCP is the ONLY shape this
- * network announces, dials, or ingests. IPv4-only peers are not supported
- * directly — the relay tier (epic 10) reaches them only through a volunteer
- * relay whose first hop is a global /ip6, and every rejection says so.
+ * for DIRECT addresses: global IPv6 unicast (2000::/3) over TCP is the ONLY
+ * shape this network announces or dials directly. IPv4-only peers are never
+ * served DIRECTLY — the relay tier reaches them THROUGH a volunteer relay,
+ * whose hop is a global /ip6 and, since the 2026-10-21 amendment, may also
+ * be a global /ip4; every rejection says so.
  *
  * THE RULES (pinned):
- *  - ACCEPT: a multiaddr containing at least one `/ip6` component whose bytes
- *    are global unicast (2000::/3 — includes the documentation range
- *    2001:db8::/32 used by every test fixture), with any trailing components
- *    (`/tcp/N`, `/p2p/<id>`, `/p2p-circuit/...`).
- *  - CIRCUIT ADDRESSES (epic 10, ticket 10.2 — no special case needed): a
- *    `/…/p2p-circuit/p2p/<id>` chain is valid iff EVERY `/ip6` hop — the
- *    RELAY first among them — is global unicast and no `/ip4`/`ip6zone`
- *    appears anywhere. The general rule above is strictly stronger than
- *    "first hop global", so dial/announce/ingest inherit circuit acceptance
- *    from ONE predicate; `ip6Slash64` keys a relayed entry on the RELAY's
- *    /64 (an honest single point of network).
- *  - REJECT (any hit): an `/ip4` component; a non-global `/ip6` — loopback
- *    `::1`, unspecified `::`, link-local `fe80::/10` (and any `ip6zone`),
- *    ULA `fc00::/7`, multicast `ff00::/8`; an unparseable string; no `/ip6`
+ *  - DIRECT ADDRESSES — ACCEPT: a multiaddr containing at least one `/ip6`
+ *    component whose bytes are global unicast (2000::/3 — includes the
+ *    documentation range 2001:db8::/32 used by every test fixture), with any
+ *    trailing components (`/tcp/N`, `/p2p/<id>`, `/p2p-circuit/...`). REJECT
+ *    (any hit): an `/ip4` component; a non-global `/ip6` — loopback `::1`,
+ *    unspecified `::`, link-local `fe80::/10` (and any `ip6zone`), ULA
+ *    `fc00::/7`, multicast `ff00::/8`; an unparseable string; no `/ip6`
  *    component at all (dns/uni/etc. are not addresses this network routes).
+ *    This is {@link isGlobalIp6Multiaddr}, byte-identical since 9.1 — the
+ *    IPv4-only peer is never SERVED as a direct address, only THROUGH a hop.
+ *  - HOP LAW (amendment 2026-10-21, epic 11): a CIRCUIT-SHAPED address —
+ *    everything before the first `p2p-circuit` is the HEAD, everything after
+ *    the TAIL — is addressable iff the head carries EXACTLY ONE IP component
+ *    (a `/ip4` or `/ip6`, global-scope) and the tail carries NO IP/zone
+ *    components at all. A circuit address is only ever as public as its hop:
+ *    global scope means NOT RFC1918, NOT CGNAT `100.64.0.0/10`, NOT loopback,
+ *    NOT link-local, NOT `0.0.0.0/8`, NOT multicast/reserved `>= 224.0.0.0/4`
+ *    (v4); the v6 side reuses the global-unicast math above. Any `ip6zone`
+ *    rejects. {@link isGlobalHopMultiaddr} judges the hop alone,
+ *    {@link isRelayHopCircuitMultiaddr} the whole circuit shape, and
+ *    {@link isAddressableMultiaddr} is the combined law (direct OR circuit)
+ *    every ingest/consensus boundary consumes. A multi-hop all-`/ip6` chain
+ *    (no v4 anywhere) stays accepted through the DIRECT rule above — no
+ *    accept→reject flip anywhere in this widening.
+ *  - NETWORK GROUPING: {@link hopNetworkKey} keys an address on its FIRST IP
+ *    component — `"6:h0:h1:h2:h3"` (the /64 math of {@link ip6Slash64}) or
+ *    `"4:a.b.c.0"` (per-/24) — so the book's diversity floor counts a relay
+ *    /24 like a /64. Non-global first IP → null (defensive).
  *
  * Pure — zero deps beyond the multiaddr parser, no clock/net/fs (AD-3/AD-10).
  * The memory transport is policy-free by design: `/memory/...` fixtures are
@@ -33,10 +48,12 @@
  */
 import { multiaddr } from '@multiformats/multiaddr'
 
-// Multiaddr component codes (multicodec): ip4=4, ip6=41, ip6zone=42.
+// Multiaddr component codes (multicodec): ip4=4, ip6=41, ip6zone=42,
+// p2p-circuit=290 (no value — the separator of the circuit head from the tail).
 const CODE_IP4 = 4
 const CODE_IP6 = 41
 const CODE_IP6ZONE = 42
+const CODE_P2P_CIRCUIT = 290
 
 /**
  * Is this IPv6 text global unicast — 2000::/3 (RFC 4291 top-3-bits rule)?
@@ -82,6 +99,32 @@ function ip6IsGlobalUnicast(text: string): boolean {
   if (dd === -1 ? total !== 8 : total > 8) return false
   const first = hextets[0] ?? 0 // unreachable-empty: "" and "::" died above
   return (first & 0xe000) === 0x2000
+}
+
+/**
+ * Is this IPv4 DOTTED-QUAD text global scope — the v4 twin of
+ * {@link ip6IsGlobalUnicast}, for the relay-HOP law only (amendment
+ * 2026-10-21). Rejects malformed text and every non-global family: RFC1918
+ * (`10/8`, `172.16/12`, `192.168/16`), CGNAT `100.64.0.0/10`, loopback
+ * `127/8`, link-local `169.254.0.0/16`, `0.0.0.0/8` (this-network/bind), and
+ * multicast/reserved `>= 224.0.0.0/4`. Everything else — including TEST-NET
+ * documentation ranges used by fixtures — is global scope: a hop only has to
+ * be PUBLIC, it is dialed by anyone who can route to it. Pure string math;
+ * the multiaddr parser already guaranteed quad well-formedness upstream.
+ */
+function ip4IsGlobalScope(text: string): boolean {
+  const oct = text.split('.')
+  if (oct.length !== 4 || !oct.every((o) => /^\d{1,3}$/.test(o))) return false
+  const n = oct.map(Number)
+  if (n.some((x) => x > 255)) return false
+  const [a, b] = n as [number, number, number, number]
+  if (a === 0 || a === 127 || a >= 224) return false // this-net / loopback / mcast+reserved
+  if (a === 10) return false // RFC1918
+  if (a === 172 && b >= 16 && b <= 31) return false // RFC1918
+  if (a === 192 && b === 168) return false // RFC1918
+  if (a === 169 && b === 254) return false // link-local
+  if (a === 100 && b >= 64 && b <= 127) return false // CGNAT 100.64.0.0/10
+  return true
 }
 
 /** True when the string parses as a multiaddr at all (shape, not policy). */
@@ -146,9 +189,11 @@ export function assertDialable(addr: string): void {
   if (!isDialableMultiaddr(addr)) {
     throw Object.assign(
       new Error(
-        `${POLICY_ERROR_CODE}: this network is IPv6-only (global unicast over TCP); ` +
-          `"${addr}" is not dialable. IPv4-only peers need a dual-stack relay ` +
-          'operator (SUCCINCTCOIN_RELAY_SEEDS) on their side.',
+        `${POLICY_ERROR_CODE}: direct addresses must be global IPv6 unicast over TCP; ` +
+          `a /p2p-circuit address carries exactly one global-scope hop (/ip4 or /ip6) ` +
+          `before its separator — that shape is ANNOUNCE/INGEST-valid, but DIALING stays ` +
+          `direct-only until relay seeding lands (SUCCINCTCOIN_RELAY_SEEDS). "${addr}" is ` +
+          'not dialable. IPv4-only peers need a dual-stack relay operator on their side.',
       ),
       { code: POLICY_ERROR_CODE },
     )
@@ -326,4 +371,134 @@ export function ip6Slash64(addr: string): string | null {
       .join(':')
   }
   return null
+}
+
+// ---------------------------------------------------------------------------
+// Hop law (amendment 2026-10-21, epic 11): a `/p2p-circuit` address is only
+// ever as public as its HOP — global scope in EITHER family. One module owns
+// every boundary: `isAddressableMultiaddr` below is the combined law the
+// announcement validator (and through it book ingest, invitation verify,
+// boot files, candidates/apply-block/introductions) consumes.
+// ---------------------------------------------------------------------------
+
+/**
+ * The network key of an address's FIRST IP component — the single point of
+ * network a record claims: `"6:h0:h1:h2:h3"` for a global `/ip6` (the exact
+ * /64 math of {@link ip6Slash64}), `"4:a.b.c.0"` for a global `/ip4` (per-
+ * /24, so a relay's address space groups like a v6 /64 for the book's
+ * diversity floor). Null when there is no IP component, an `ip6zone`
+ * appears, or the first IP is not global scope — the caller decides what
+ * null means (the book groups such entries ungrouped, defensively: records
+ * reaching it are already policy-valid). Pure.
+ */
+export function hopNetworkKey(addr: string): string | null {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return null
+  }
+  if (components.some((c) => c.code === CODE_IP6ZONE)) return null
+  for (const component of components) {
+    if (component.code === CODE_IP4 && typeof component.value === 'string')
+      return ip4IsGlobalScope(component.value)
+        ? `4:${component.value.split('.').slice(0, 3).join('.')}.0`
+        : null
+    if (component.code === CODE_IP6 && typeof component.value === 'string') {
+      if (!ip6IsGlobalUnicast(component.value)) return null
+      const h = expandHextets(component.value)
+      if (h === null) return null
+      return `6:${h
+        .slice(0, 4)
+        .map((x) => x.toString(16))
+        .join(':')}`
+    }
+  }
+  return null
+}
+
+/**
+ * The HEAD rule of the hop law, shared by both hop predicates: the head —
+ * everything before the FIRST `p2p-circuit` separator (absent separator:
+ * everything) — carries EXACTLY ONE IP component and that component is
+ * global scope (`/ip4` public per {@link ip4IsGlobalScope}, or global-unicast
+ * `/ip6`), with no `ip6zone` anywhere in the head. Two IPs before the first
+ * separator are junk: one address, one hop. Pure over parsed components.
+ */
+function hopHeadIsSingleGlobalIp(components: Array<{ code: number, value?: string }>): boolean {
+  const sep = components.findIndex((c) => c.code === CODE_P2P_CIRCUIT)
+  const head = sep === -1 ? components : components.slice(0, sep)
+  let ipCount = 0
+  for (const component of head) {
+    if (component.code === CODE_IP6ZONE) return false
+    if (component.code !== CODE_IP4 && component.code !== CODE_IP6) continue
+    ipCount += 1
+    if (ipCount > 1) return false
+    if (typeof component.value !== 'string') return false
+    const global =
+      component.code === CODE_IP4
+        ? ip4IsGlobalScope(component.value)
+        : ip6IsGlobalUnicast(component.value)
+    if (!global) return false
+  }
+  return ipCount === 1
+}
+
+/**
+ * The HOP predicate, judged from the HEAD ALONE: true iff `addr` parses,
+ * contains at least one `p2p-circuit`, and its head passes {@link
+ * hopHeadIsSingleGlobalIp} — exactly one global-scope IP before the first
+ * separator (two IPs in one head are junk, not a hop). Deliberately never
+ * judges what comes AFTER the hop (multi-hop chains, tail addressing):
+ * acceptance of a full circuit SHAPE is {@link isRelayHopCircuitMultiaddr};
+ * nothing decides addressability from this predicate alone. Never throws;
+ * junk is `false`.
+ */
+export function isGlobalHopMultiaddr(addr: string): boolean {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return false
+  }
+  // ANY ip6zone rejects — head or tail (zones are link-local semantics,
+  // never globally dialable; the frozen hop law admits no zone anywhere).
+  if (components.some((c) => c.code === CODE_IP6ZONE)) return false
+  if (!components.some((c) => c.code === CODE_P2P_CIRCUIT)) return false
+  return hopHeadIsSingleGlobalIp(components)
+}
+
+/**
+ * The full CIRCUIT validator of the hop law: the head passes {@link
+ * hopHeadIsSingleGlobalIp} (exactly one global-scope IP before the FIRST
+ * `p2p-circuit`), AND the tail after that separator carries no IP/zone
+ * components — the dial ends at `/p2p/<id>`, it never re-addresses. Direct
+ * (circuit-less) addresses are `false` here by shape; they stay governed by
+ * {@link isGlobalIp6Multiaddr}.
+ */
+export function isRelayHopCircuitMultiaddr(addr: string): boolean {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return false
+  }
+  const sep = components.findIndex((c) => c.code === CODE_P2P_CIRCUIT)
+  if (sep === -1) return false
+  if (components.slice(sep + 1).some((c) => c.code === CODE_IP4 || c.code === CODE_IP6 || c.code === CODE_IP6ZONE))
+    return false
+  return hopHeadIsSingleGlobalIp(components)
+}
+
+/**
+ * The COMBINED addressing law (every ingest/consensus boundary consumes
+ * THIS): `true` iff `addr` is a strict direct global-`/ip6` address
+ * ({@link isGlobalIp6Multiaddr}, byte-identical rules — direct `/ip4` never
+ * passes) OR a valid relay-hop circuit ({@link isRelayHopCircuitMultiaddr}
+ * — a global-scope hop, either family). No environment reads: the loopback
+ * dev allowance stays in {@link isDialableMultiaddr} (dial side) and the
+ * validation CONTEXT (record side), exactly as before. Pure.
+ */
+export function isAddressableMultiaddr(addr: string): boolean {
+  return isGlobalIp6Multiaddr(addr) || isRelayHopCircuitMultiaddr(addr)
 }

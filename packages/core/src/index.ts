@@ -810,8 +810,10 @@ export {
   type Reachability,
   type ReachabilityTracker,
 } from './net/reachability.js'
-// 9.1 — the IPv6-only addressing policy (spec constraint 2026-10-18): the ONE
-// predicate for announce/dial/ingest eligibility on real transports.
+// 9.1 — the addressing policy (spec constraint 2026-10-18, amended
+// 2026-10-21 with the relay-hop law): the ONE module behind announce/dial/
+// ingest eligibility on real transports. Direct stays global-IPv6-only; a
+// /p2p-circuit address is valid iff its hop is global scope (either family).
 export {
   ALLOW_LOOPBACK_ENV,
   classifyIp6Address,
@@ -819,9 +821,13 @@ export {
   assertDialable,
   filterDialableAddresses,
   filterPolicyAddresses,
+  hopNetworkKey,
+  isAddressableMultiaddr,
   isDialableMultiaddr,
+  isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
   isLoopbackIp6Multiaddr,
+  isRelayHopCircuitMultiaddr,
 } from './net/index.js'
 
 // Peer-book exchange (epic 9 — ticket 9.3): the `/succinctcoin/peerbook/1`
