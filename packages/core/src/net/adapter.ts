@@ -104,8 +104,9 @@ import { peerIdFromString } from '@libp2p/peer-id'
 import { TypedEventEmitter } from 'main-event'
 import { multiaddr, CODE_P2P } from '@multiformats/multiaddr'
 import {
-  assertDialable,
+  assertDialableTarget,
   filterDialableAddresses,
+  isDialableSeedMultiaddr,
 } from './address-policy.js'
 import { createLibp2p } from 'libp2p'
 
@@ -281,6 +282,16 @@ export interface RelaySeedEvent {
   /** Failure reason (present iff `ok` is false). */
   error?: string
 }
+
+/**
+ * The skip event an off-policy seed emits (11.2, review F4). Exported so
+ * the shape law it states stays pinned even though AD-10 forbids a tcp
+ * `start()` headless — the constant IS the observable surface.
+ */
+export const SEED_POLICY_SKIP_ERROR =
+  'off-policy seed: needs /p2p/<relayId> and a direct global /ip6 or a ' +
+  'global-scope /ip4 or /ip6 endpoint (loopback-family first IP only with ' +
+  'SUCCINCTCOIN_ALLOW_LOOPBACK=1)'
 
 /**
  * One decoded envelope received on a class topic (5.2 D5).
@@ -893,16 +904,16 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       })
       return false
     }
-    // The adapter's OWN dial path obeys the same IPv6-only policy as
-    // operator dials on tcp (seeds are addressing; one family). 10.3: use
-    // `assertDialable` — the DIAL policy authority — so the loopback dev
-    // flag (dial-only, default off) applies to seed holds exactly like it
-    // does to every other dial; global /ip6 passes, everything else skips.
+    // Seeds obey the purpose-built SEED law (11.2), not the direct law: a
+    // relay endpoint is holdable when it carries /p2p/<relayId> and its first
+    // IP is a global /ip6 (as before) or a GLOBAL-SCOPE /ip4 or /ip6 — an
+    // IPv4-only machine can finally reach a dual-stack relay. Under the
+    // loopback dev flag (dial-side only, default off) a loopback-family
+    // first IP of EITHER family (`::1` or `127/8`) also passes; everything
+    // else skips once, and the skip event names the rule.
     if (config.transport === 'tcp') {
-      try {
-        assertDialable(seed)
-      } catch {
-        emitSeed(run, { seed, ok: false, error: 'off-policy seed (IPv6-only)' })
+      if (!isDialableSeedMultiaddr(seed)) {
+        emitSeed(run, { seed, ok: false, error: SEED_POLICY_SKIP_ERROR })
         return false
       }
     }
@@ -1186,13 +1197,17 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       return requireNode().getPeers().map((p) => p.toString())
     },
     async dial(address: string) {
-      // 9.1 IPv6-only policy: on the real transport our OWN dials pass the
-      // address policy before a socket exists (memory transport stays
-      // policy-free — /memory fixtures are scaffolding, not addressing).
-      // NOT a completeness claim: libp2p internals (identify-pushed addrs,
-      // opt-in mDNS) can dial without coming through here; a connection-
-      // gater closing those paths is recorded as deferred work (9.5).
-      if (config.transport === 'tcp') assertDialable(address)
+      // 9.1 policy on the real transport, 11.2 circuit-aware: our OWN dial
+      // targets pass the DIAL-TARGET law before a socket exists — direct
+      // addresses obey the old law exactly (global /ip6, pure `::1` under the
+      // dev flag, direct /ip4 never), `/p2p-circuit` targets obey the hop law
+      // (a global-scope hop of either family; loopback-family hops under the
+      // flag). Memory transport stays policy-free — /memory fixtures are
+      // scaffolding, not addressing. NOT a completeness claim: libp2p
+      // internals (identify-pushed addrs, opt-in mDNS) can dial without coming
+      // through here; a connection-gater closing those paths is recorded as
+      // deferred work (9.5).
+      if (config.transport === 'tcp') assertDialableTarget(address)
       const ma = multiaddr(address)
       const conn = await requireNode().dial(ma, { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
       // 5.7 D8 — client role: dialing the CONFIGURED relay registers a

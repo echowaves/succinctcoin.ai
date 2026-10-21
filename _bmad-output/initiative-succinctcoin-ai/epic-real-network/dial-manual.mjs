@@ -49,6 +49,18 @@
 // PASS = terminal 3 prints `DIALED THROUGH RELAY` + PEERS, and terminals
 // 1–2 each see a peer. This is the manual proof of the ticket-10.3 tier;
 // the headless hold/announce/dial mechanics live in core relay-seeds.test.ts.
+//
+// ── MODE 3b: the v4 TRIO (11.2 — IPv4 hops through the seed/target laws) ────
+// Same trio on ONE machine, but the relay binds loopback IPv4 instead of v6
+// (all three commands with SUCCINCTCOIN_ALLOW_LOOPBACK=1):
+//   1. node .../dial-manual.mjs relay-new-v4
+//      → volunteer relay bound to /ip4/127.0.0.1/tcp/0; prints its SEED line
+//        (/ip4/127.0.0.1/tcp/<port>/p2p/<relayId>) — no address-policy filter,
+//        the v4 endpoint IS the point (the 11.2 seed law admits a loopback-
+//        family first IP under the flag, dial side only).
+//   2./3. exactly as MODE 3: node-behind holds THROUGH the v4 seed, the
+//        outsider dials the v4-hop circuit invite. This is the proof an
+//        IPv4-only machine can hold + be dialed through a relay hop.
 import { webcrypto } from 'node:crypto'
 
 const mode = process.argv[2] ?? 'A'
@@ -249,11 +261,66 @@ if (mode === 'relay-new') {
   process.exit(ok ? 0 : 3)
 }
 
+// ── MODE 3b: the v4 TRIO (11.2) ────────────────────────────────────────
+if (mode === 'relay-new-v4') {
+  // The loopback IPv4 volunteer relay for the one-machine v4 proof: identical
+  // to relay-new except the BIND (/ip4/127.0.0.1/tcp/0). No net-config change:
+  // the probe overrides listenAddress directly — production keeps /ip6/::.
+  if (process.env.SUCCINCTCOIN_ALLOW_LOOPBACK !== '1') {
+    console.error('[relay-new-v4] set SUCCINCTCOIN_ALLOW_LOOPBACK=1 for all three trio commands (loopback-family seeds are dial-side-flag-only)')
+    process.exit(2)
+  }
+  const cfg = {
+    ...defaultNetConfig({ bootstrap: [] }, 'relay-server-v4', { relayServer: true }),
+    listenAddress: '/ip4/127.0.0.1/tcp/0', // ephemeral port on loopback v4
+  }
+  const r = createNetAdapter(cfg)
+  await r.start()
+  const listening = r.listenAddresses().map(String)
+  console.log(`[relay-new-v4] listening: ${JSON.stringify(listening)}`)
+  // NO filterPolicyAddresses here — a v4 seed is the whole point. The SEED
+  // line is built from the BOUND address (tcp/0 resolved) + the peer id.
+  const direct = listening.find((a) => !isCircuitAddr(a))
+  if (direct === undefined || !direct.startsWith('/ip4/127.')) {
+    console.error(`[relay-new-v4] expected a /ip4/127.x bound listen address, got ${JSON.stringify(listening)}`)
+    await r.stop()
+    process.exit(2)
+  }
+  const seed = direct.includes('/p2p/') ? direct : `${direct}/p2p/${r.peerId()}`
+  console.log(`[relay-new-v4] circuit address advertised: ${listening.some(isCircuitAddr)}`)
+  console.log('---8<--- this v4 SEED is what hidden peers put in SUCCINCTCOIN_RELAY_SEEDS ---8<---')
+  console.log(`SEED ${seed}`)
+  console.log(`[relay-new-v4] then: node .../dial-manual.mjs node-behind '${seed}'`)
+  // SERVED poll identical to relay-new: PASS = two distinct peers (hold +
+  // circuit dial), cumulative so an early leaver still counts.
+  console.log('[relay-new-v4] serving up to 600s; PASS = served two distinct peers (hold + circuit dial)…')
+  const served = new Set()
+  let ok = false
+  const relayDeadline = Date.now() + 600_000
+  while (Date.now() < relayDeadline && !ok) {
+    for (const p of await r.peers()) served.add(p)
+    if (served.size >= 2) {
+      console.log(`[relay-new-v4] SERVED ${[...served].join(', ')}`)
+      ok = true
+    } else await sleep(1500)
+  }
+  if (!ok) console.log('[relay-new-v4] FAIL — did not serve both peers in time')
+  // Settle window (v4-mode hardening of the 10.3 teardown race): exiting on
+  // SERVED tears the circuit down before node-behind's next 1.5s poll can
+  // observe the arrival, so its PASS never fires. Same rationale as the
+  // outsider's 15s settle below — the hidden peer must SEE the connection
+  // that both PASS lines already prove exists.
+  if (ok) await sleep(20_000)
+  await r.stop()
+  process.exit(ok ? 0 : 3)
+}
+
 if (mode === 'node-behind') {
   // The hidden peer: relay seed in, circuit-carried invite out. Stays alive
-  // so the third command can actually dial THROUGH it.
+  // so the third command can actually dial THROUGH it. Seeds may be EITHER
+  // family (11.2: a global or loopback-flagged /ip4 relay endpoint works).
   if (arg === undefined) {
-    console.error('usage: dial-manual.mjs node-behind <seed /ip6/…/tcp/…/p2p/<relayId>>')
+    console.error('usage: dial-manual.mjs node-behind <seed (/ip6/… or /ip4/…)/tcp/…/p2p/<relayId>>')
     process.exit(2)
   }
   const cfg = {

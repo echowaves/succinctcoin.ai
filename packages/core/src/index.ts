@@ -824,10 +824,15 @@ export {
   hopNetworkKey,
   isAddressableMultiaddr,
   isDialableMultiaddr,
+  isDialableSeedMultiaddr,
+  isDialableTargetMultiaddr,
+  isAnnounceableMultiaddr,
+  filterAnnounceAddresses,
   isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
   isLoopbackIp6Multiaddr,
   isRelayHopCircuitMultiaddr,
+  isRelaySeedMultiaddr,
 } from './net/index.js'
 
 // Peer-book exchange (epic 9 — ticket 9.3): the `/succinctcoin/peerbook/1`

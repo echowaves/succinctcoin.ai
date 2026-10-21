@@ -21,10 +21,15 @@ export {
   hopNetworkKey,
   isAddressableMultiaddr,
   isDialableMultiaddr,
+  isDialableSeedMultiaddr,
+  isDialableTargetMultiaddr,
+  isAnnounceableMultiaddr,
+  filterAnnounceAddresses,
   isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
   isLoopbackIp6Multiaddr,
   isRelayHopCircuitMultiaddr,
+  isRelaySeedMultiaddr,
   loopbackAnnounceAllowed,
 } from './address-policy.js'
 export type { Ip6AddressClass } from './address-policy.js'

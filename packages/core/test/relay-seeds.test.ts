@@ -23,6 +23,9 @@
  *   DEAD_SEED_BOUNDED  relay absent ⇒ exactly SEED_ATTEMPTS=3 failures then
  *                    silence; no throw; stop() mid-retry cancels (no events
  *                    after stop).
+ *   MEMORY_POLICY_FREE  (11.2) the seed law is tcp-only: a v4-shaped seed on
+ *                    memory reaches dispatch (dial-failure retries), proving
+ *                    the preflight never consults policy on memory.
  *   LOSS_DETECT      held reservation's relay stops ⇒ the circuit address
  *                    LEAVES listenAddresses() (connection:close) and re-hold
  *                    attempts are bounded. (Success-after-restart needs a
@@ -32,6 +35,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
+import { SEED_POLICY_SKIP_ERROR } from '../src/net/adapter.js'
 import { createNetAdapter, deriveIdentityKeypair } from '../src/index.js'
 import type { NetAdapter, RelaySeedEvent } from '../src/index.js'
 
@@ -233,6 +237,55 @@ describe('10.2 — relay seed bootstrap (memory, headless)', () => {
     const afterStop = events.length
     await sleep(10 * FAST_RETRY_MS + 50)
     expect(events.length).toBe(afterStop)
+  })
+
+  it('MEMORY_POLICY_FREE: seed policy is tcp-only — a v4-shaped seed dispatches on memory, never pre-skipped', async () => {
+    // 11.2 pins the SEED law to tcp call sites (preflight stays tcp-only,
+    // memory transport stays policy-free). A global-v4 seed — off-shape for
+    // the OLD direct law but ON-shape for the seed law and unreachable here
+    // either way — must reach DISPATCH on memory: SEED_ATTEMPTS dial failures
+    // (retry events carrying dial errors), NOT the single tcp skip event.
+    const ghost = createNetAdapter({
+      transport: TRANSPORT,
+      listenAddress: '/memory/rs-ghost-v4',
+      protocolIdentityId: identity(9),
+    })
+    await ghost.start()
+    const ghostId = ghost.peerId()
+    await ghost.stop()
+
+    const events: RelaySeedEvent[] = []
+    const client = createNetAdapter({
+      transport: TRANSPORT,
+      listenAddress: CLIENT_ADDRESS,
+      protocolIdentityId: identity(10),
+      relaySeeds: [`/ip4/203.0.113.9/tcp/4001/p2p/${ghostId}`],
+      onRelaySeed: (e) => events.push(e),
+      relaySeedRetryMs: FAST_RETRY_MS,
+    })
+    await client.start()
+    try {
+      for (let i = 0; i < MAX_POLLS && events.length < SEED_ATTEMPTS; i += 1) {
+        await sleep(SLEEP_MS)
+      }
+      expect(events.length).toBe(SEED_ATTEMPTS) // dispatched + retried, like DEAD_SEED_BOUNDED
+      expect(events.every((e) => !e.ok)).toBe(true)
+      // The failures are DIAL outcomes — never the tcp pre-flight's skip text
+      // (the exported constant: AD-10 keeps a real tcp `start()` headless,
+      // so the constant IS the pinned surface for the skip law).
+      expect(events.every((e) => !String(e.error ?? '').includes(SEED_POLICY_SKIP_ERROR))).toBe(true)
+    } finally {
+      await client.stop()
+    }
+  })
+
+  it('SEED_POLICY_SKIP_ERROR states the 11.2 seed law (pinned; review F4)', () => {
+    // Shape: /p2p/<relayId> required; direct global /ip6 OR a global-scope
+    // hop of EITHER family; loopback-family only under the dev flag.
+    expect(SEED_POLICY_SKIP_ERROR).toMatch(/off-policy seed/)
+    expect(SEED_POLICY_SKIP_ERROR).toMatch(/\/p2p\/<relayId>/)
+    expect(SEED_POLICY_SKIP_ERROR).toMatch(/global \/ip6 or a global-scope \/ip4 or \/ip6/)
+    expect(SEED_POLICY_SKIP_ERROR).toMatch(/SUCCINCTCOIN_ALLOW_LOOPBACK=1/)
   })
 
   it('LOSS_DETECT: relay stops ⇒ circuit address leaves the announce set; re-hold is bounded', async () => {

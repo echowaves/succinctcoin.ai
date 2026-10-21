@@ -41,6 +41,18 @@
  *    component — `"6:h0:h1:h2:h3"` (the /64 math of {@link ip6Slash64}) or
  *    `"4:a.b.c.0"` (per-/24) — so the book's diversity floor counts a relay
  *    /24 like a /64. Non-global first IP → null (defensive).
+ *  - DIAL-SIDE LAWS (story 11.2, epic 11): the ADAPTER consumes two purpose
+ *    built predicates instead of the record law. A relay SEED is a direct
+ *    endpoint to hold through — {@link isRelaySeedMultiaddr} (pure) wants a
+ *    parseable address with no zone, no `p2p-circuit`, a `/p2p` component and
+ *    a FIRST IP of global scope (either family); {@link
+ *    isDialableSeedMultiaddr} adds the dev-flag loopback-family first IP
+ *    (`127/8` OR `::1`). A dial TARGET obeys {@link
+ *    isDialableTargetMultiaddr}: circuit-shaped addresses take the hop law
+ *    (or all-loopback-family hops under the flag), direct addresses stay
+ *    EXACTLY {@link isDialableMultiaddr}. Neither law is ever consulted by
+ *    ingest/consensus, and announce construction keeps
+ *    `filterDialableAddresses` byte-identically.
  *
  * Pure — zero deps beyond the multiaddr parser, no clock/net/fs (AD-3/AD-10).
  * The memory transport is policy-free by design: `/memory/...` fixtures are
@@ -48,11 +60,12 @@
  */
 import { multiaddr } from '@multiformats/multiaddr'
 
-// Multiaddr component codes (multicodec): ip4=4, ip6=41, ip6zone=42,
+// Multiaddr component codes (multicodec): ip4=4, ip6=41, ip6zone=42, p2p=421,
 // p2p-circuit=290 (no value — the separator of the circuit head from the tail).
 const CODE_IP4 = 4
 const CODE_IP6 = 41
 const CODE_IP6ZONE = 42
+const CODE_P2P = 421
 const CODE_P2P_CIRCUIT = 290
 
 /**
@@ -186,18 +199,25 @@ const POLICY_ERROR_CODE = 'SC-NET-1'
  * every unflagged node, so it cannot reach a real network.
  */
 export function assertDialable(addr: string): void {
-  if (!isDialableMultiaddr(addr)) {
-    throw Object.assign(
-      new Error(
-        `${POLICY_ERROR_CODE}: direct addresses must be global IPv6 unicast over TCP; ` +
-          `a /p2p-circuit address carries exactly one global-scope hop (/ip4 or /ip6) ` +
-          `before its separator — that shape is ANNOUNCE/INGEST-valid, but DIALING stays ` +
-          `direct-only until relay seeding lands (SUCCINCTCOIN_RELAY_SEEDS). "${addr}" is ` +
-          'not dialable. IPv4-only peers need a dual-stack relay operator on their side.',
-      ),
-      { code: POLICY_ERROR_CODE },
-    )
-  }
+  if (!isDialableMultiaddr(addr)) throw dialPolicyError(addr)
+}
+
+/**
+ * The pinned SC-NET-1 rejection, built in ONE place so {@link assertDialable}
+ * and the 11.2 target twin ({@link assertDialableTarget}) can never drift
+ * apart on code or message.
+ */
+function dialPolicyError(addr: string): Error & { code: string } {
+  return Object.assign(
+    new Error(
+      `${POLICY_ERROR_CODE}: direct addresses must be global IPv6 unicast over TCP; ` +
+        `a /p2p-circuit target needs one global-scope hop (/ip4 or /ip6) before its ` +
+        `separator (loopback-family hops only with SUCCINCTCOIN_ALLOW_LOOPBACK=1). ` +
+        `"${addr}" is not dialable. IPv4-only peers are served through a dual-stack ` +
+        'relay (SUCCINCTCOIN_RELAY_SEEDS) on their side.',
+    ),
+    { code: POLICY_ERROR_CODE },
+  )
 }
 
 /**
@@ -501,4 +521,173 @@ export function isRelayHopCircuitMultiaddr(addr: string): boolean {
  */
 export function isAddressableMultiaddr(addr: string): boolean {
   return isGlobalIp6Multiaddr(addr) || isRelayHopCircuitMultiaddr(addr)
+}
+
+// ---------------------------------------------------------------------------
+// DIAL-side laws (story 11.2, epic 11): the two purposes for which the
+// adapter opens a socket — HOLDING a relay seed (a direct endpoint to reserve
+// through) and DIALING a target address (direct or circuit). Deliberately NOT
+// the record law: ingest/consensus never consult these, `isDialableMultiaddr`
+// / `filterDialableAddresses` (announce + bootstrap construction) stay
+// byte-identical, and direct `/ip4` targets stay rejected WITH AND WITHOUT
+// the dev flag. The flag extends both laws to loopback-family endpoints of
+// EITHER family (`::1` AND `127/8`) on the dial side only — same per-call env
+// read ({@link loopbackAnnounceAllowed} discipline), never ingest.
+// ---------------------------------------------------------------------------
+
+/** Parsed components or null (unparseable — shape, not policy). */
+type Components = ReadonlyArray<{ code: number, value?: string }>
+
+function parseComponents(addr: string): Components | null {
+  try {
+    // v13 API: getComponents() (the tuples API of older majors is gone).
+    return multiaddr(addr).getComponents()
+  } catch {
+    return null
+  }
+}
+
+/** Is this IPv4 dotted-quad text LOOPBACK family — `127.0.0.0/8`? Any host
+ * part counts (`127.1.2.3` is loopback on every OS). Malformed text rejects.
+ * Dial-side flag-gated laws ONLY — never record validation (10.3 gating). */
+function ip4IsLoopback(text: string): boolean {
+  const oct = text.split('.')
+  if (oct.length !== 4 || !oct.every((o) => /^\d{1,3}$/.test(o))) return false
+  return Number(oct[0]) === 127 && oct.every((o) => Number(o) <= 255)
+}
+
+/** Is this IPv6 text EXACTLY the loopback `::1` (any compression:
+ * `0:0:0:0:0:0:0:1`, `::0:1`)? Zones reject — same strictness as
+ * {@link isLoopbackIp6Multiaddr}'s per-component check. */
+function ip6IsLoopback(text: string): boolean {
+  const h = expandHextets(text)
+  return h !== null && h.length === 8 && h[7] === 1 && h.slice(0, 7).every((x) => x === 0)
+}
+
+/** The FIRST IP component (either family) is GLOBAL scope; no IP at all, a
+ * zone anywhere, or malformed text → false. Callers pre-check zones. */
+function firstIpIsGlobalScope(components: Components): boolean {
+  if (components.some((c) => c.code === CODE_IP6ZONE)) return false
+  const first = components.find((c) => c.code === CODE_IP4 || c.code === CODE_IP6)
+  if (first === undefined || typeof first.value !== 'string') return false
+  return first.code === CODE_IP4
+    ? ip4IsGlobalScope(first.value)
+    : ip6IsGlobalUnicast(first.value)
+}
+
+
+
+/** At least one IP component and EVERY IP component (either family) is
+ * loopback-family; any `ip6zone` → false. The flag branch of the target law:
+ * a dev loopback circuit may re-address only within the loopback family. */
+function allIpsLoopbackFamily(components: Components): boolean {
+  let sawIp = false
+  for (const component of components) {
+    if (component.code === CODE_IP6ZONE) return false
+    if (component.code !== CODE_IP4 && component.code !== CODE_IP6) continue
+    if (typeof component.value !== 'string') return false
+    const loopback =
+      component.code === CODE_IP4 ? ip4IsLoopback(component.value) : ip6IsLoopback(component.value)
+    if (!loopback) return false
+    sawIp = true
+  }
+  return sawIp
+}
+
+/**
+ * The PURE relay-SEED shape (no env reads): a seed is the direct endpoint of
+ * a volunteer relay, held so others can dial US through it. Accepts iff the
+ * string parses, carries NO `ip6zone` and NO `p2p-circuit` (a seed is dialed
+ * DIRECTLY — a circuit inside one is junk), carries a `/p2p/<relayId>`
+ * component (the hold must know which relay it reserves on), and its FIRST
+ * IP component is global scope in EITHER family (`/ip4` public per {@link
+ * ip4IsGlobalScope} — the 11.2 amendment — or global-unicast `/ip6`). Never
+ * throws; junk is `false`. The record law never consumes this; neither does
+ * announce construction — seeds are dial-side addressing only.
+ */
+export function isRelaySeedMultiaddr(addr: string): boolean {
+  return seedShapeOk(addr, false)
+}
+
+/**
+ * The env-aware SEED law the adapter's `holdSeed` pre-flight consumes: {@link
+ * isRelaySeedMultiaddr} OR — under {@link ALLOW_LOOPBACK_ENV} set to `1`,
+ * read per call — the same shape whose first IP is loopback-family (`::1` or
+ * `127/8`) so ONE machine can run the whole hold/announce/invite flow over
+ * loopback in either family. Default off; every other rejection (RFC1918,
+ * CGNAT, link-local, ULA, zone, no `/p2p`, circuit-in-seed) stands WITH the
+ * flag. Dial side ONLY — ingest never consults any seed law.
+ */
+export function isDialableSeedMultiaddr(addr: string): boolean {
+  if (seedShapeOk(addr, false)) return true
+  return loopbackAllowEnabled() && seedShapeOk(addr, true)
+}
+
+/** Seed shape shared by both seed predicates: parse, no zone, no circuit,
+ * carries /p2p; the first IP must be global scope, or — when `loopbackOk` —
+ * EVERY IP loopback-family (the dev branch admits a pure loopback endpoint,
+ * never a loopback head hiding a public secondary IP — same discipline as
+ * the target law's flag branch). */
+function seedShapeOk(addr: string, loopbackOk: boolean): boolean {
+  const components = parseComponents(addr)
+  if (components === null) return false
+  if (components.some((c) => c.code === CODE_IP6ZONE || c.code === CODE_P2P_CIRCUIT))
+    return false
+  if (!components.some((c) => c.code === CODE_P2P)) return false
+  if (firstIpIsGlobalScope(components)) return true
+  return loopbackOk && allIpsLoopbackFamily(components)
+}
+
+/**
+ * The circuit-aware DIAL-TARGET law the adapter's `dial()` consumes. A
+ * DIRECT (circuit-less) target is judged by EXACTLY {@link
+ * isDialableMultiaddr} — global `/ip6`, pure `::1` under the flag, direct
+ * `/ip4` never, WITH OR WITHOUT the flag. A CIRCUIT-shaped target dials when
+ * ANY pre-existing law accepts it — NO accept→reject flip: the old direct
+ * rule ({@link isGlobalIp6Multiaddr}, every `/ip6` global and no `/ip4`/zone
+ * anywhere — covers multi-hop and tail-addressed all-v6 chains dialed before
+ * this story), OR the new hop law ({@link isRelayHopCircuitMultiaddr}: one
+ * global-scope hop, either family), OR — under the dev flag — every IP
+ * component loopback-family (at least one, `::1` and/or `127/8`), the 9.5
+ * loopback allowance extended to both families. Nothing else dials.
+ */
+export function isDialableTargetMultiaddr(addr: string): boolean {
+  if (isDialableMultiaddr(addr)) return true // direct law, byte-identical verdicts
+  if (isRelayHopCircuitMultiaddr(addr)) return true // hop law (global hop, either family)
+  const components = parseComponents(addr)
+  if (components === null) return false
+  // The dev loopback branch is CIRCUIT-ONLY: a DIRECT loopback IPv4 never
+  // dials, flag or no flag (the frozen direct law admits only `::1`).
+  if (!components.some((c) => c.code === CODE_P2P_CIRCUIT)) return false
+  return loopbackAllowEnabled() && allIpsLoopbackFamily(components)
+}
+
+/**
+ * The ANNOUNCE law (11.2): what a node may put in its OWN signed records —
+ * exactly the shapes every validator already accepts: the combined record
+ * law ({@link isAddressableMultiaddr}: direct global `/ip6` OR a valid
+ * relay-hop circuit, either family) OR, under {@link ALLOW_LOOPBACK_ENV},
+ * the pure-`::1` forms the DEV-ONLY ANNOUNCE ALLOWANCE has admitted since
+ * 9.5 (the same pair the validation CONTEXT consumes — strict, or global +
+ * `::1` flagged; a `127/8` hop NEVER enters a record, flag or no flag).
+ * Order-preserving {@link filterAnnounceAddresses} is the shape announce
+ * construction and self-invite building consume, so a HELD v4-hop circuit
+ * finally reaches gossip, books and invites (CAP-8 R3 flow-through) while
+ * direct `/ip4` never does.
+ */
+export function isAnnounceableMultiaddr(addr: string): boolean {
+  if (isAddressableMultiaddr(addr)) return true
+  return loopbackAllowEnabled() && isLoopbackIp6Multiaddr(addr)
+}
+
+/** {@link isAnnounceableMultiaddr} as an order-preserving list filter. */
+export function filterAnnounceAddresses(addrs: readonly string[]): string[] {
+  return addrs.filter(isAnnounceableMultiaddr)
+}
+
+/** {@link isDialableTargetMultiaddr} as the pinned throw (same SC-NET-1 and
+ * message as {@link assertDialable} — one error factory, {@link
+ * dialPolicyError}, so the two gates cannot drift). */
+export function assertDialableTarget(addr: string): void {
+  if (!isDialableTargetMultiaddr(addr)) throw dialPolicyError(addr)
 }

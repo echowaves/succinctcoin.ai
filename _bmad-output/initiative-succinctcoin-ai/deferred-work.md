@@ -257,3 +257,14 @@
      would strangle circuits already riding it), and held auto circuits are
      not force-released when reachability returns (the reservation store has
      no release API; TTLs expire them). -->
+
+<!-- OPEN 2026-10-21 (story 11.2, PCL-1): MANUAL TRIO TEARDOWN RACE (v6).
+     dial-manual.mjs `relay-new` exits the moment it counts two peers, which
+     tears the circuit down before `node-behind`'s next 1.5 s poll can observe
+     the arrival — an automated trio driver lost that race 12/12 on THIS
+     machine for both the classic v6 trio and the new v4 trio. The v4 mode
+     (`relay-new-v4`) gained a 20 s post-SERVED settle and passes reliably;
+     `relay-new` was left untouched (frozen manual surface). Fix = same settle
+     in `relay-new` (or make node-behind print arrival synchronously), then
+     the driver can prove both trios unattended. Manual runs with human-paced
+     polling never hit it. -->

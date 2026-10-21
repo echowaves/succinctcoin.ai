@@ -68,7 +68,7 @@ import type { PeerAnnouncement as PeerAnnouncementMsg } from '../proto/index.js'
 import type { Introduction as IntroductionMsg } from '../proto/index.js'
 import type { NetPort, StorePort } from '../ports.js'
 // 9.1 — announce only policy-valid (global /ip6) addresses.
-import { filterDialableAddresses, loopbackAnnounceAllowed } from '../net/address-policy.js'
+import { filterAnnounceAddresses, loopbackAnnounceAllowed } from '../net/address-policy.js'
 import {
   MAX_MULTIADDRS,
   signIntroduction,
@@ -332,11 +332,13 @@ export function createNodeLoop(opts: NodeLoopOptions): { stop(): void } {
       // would be invalid everywhere); slicing keeps presence alive where
       // skipping the announce entirely would kill it silently. 9.1: only
       // dialable-by-policy addresses are ever announced — a node on a host
-      // with no global v6 face simply announces nothing (yet). The dev-only
-      // announce allowance: `filterDialableAddresses` mirrors the dial law,
-      // so under SUCCINCTCOIN_ALLOW_LOOPBACK=1 a `::1` listener IS announce-
-      // able (loopback dev mesh on one machine); default off ⇒ strict.
-      const addrs = filterDialableAddresses(opts.announceAddresses?.() ?? []).slice(
+      // with no global v6 face simply announces nothing (yet). 11.2: the
+      // filter is the ANNOUNCE law (`filterAnnounceAddresses` = record law
+      // + `::1` under the dev flag), so a HELD relay-hop circuit — v4 or v6
+      // — reaches gossip/invites while direct /ip4 never does. The dev-only
+      // allowance stands: under SUCCINCTCOIN_ALLOW_LOOPBACK=1 a `::1`
+      // listener IS announce-able (loopback dev mesh on one machine).
+      const addrs = filterAnnounceAddresses(opts.announceAddresses?.() ?? []).slice(
         0,
         MAX_MULTIADDRS,
       )

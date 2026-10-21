@@ -8,15 +8,21 @@ import { describe, expect, it } from 'vitest'
 
 import {
   assertDialable,
+  assertDialableTarget,
   classifyIp6Address,
+  filterAnnounceAddresses,
   filterDialableAddresses,
+  isAnnounceableMultiaddr,
   filterPolicyAddresses,
   hopNetworkKey,
   isAddressableMultiaddr,
   isDialableMultiaddr,
+  isDialableSeedMultiaddr,
+  isDialableTargetMultiaddr,
   isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
   isRelayHopCircuitMultiaddr,
+  isRelaySeedMultiaddr,
   ip6Slash64,
 } from '../src/net/address-policy.js'
 
@@ -441,5 +447,246 @@ describe('11.1 — relay-hop address policy (one predicate, every boundary)', ()
     // seed IS dialing a v4 hop — that switch is story 11.2's adapter work.)
     expect(() => assertDialable('/ip6/2001:db8::9/tcp/9')).not.toThrow()
     expect(() => assertDialable('/ip4/1.2.3.4/tcp/9')).toThrowError(/SC-NET-1/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 11.2 — the DIAL-SIDE laws the adapter consumes: the SEED pre-flight (a
+// direct relay endpoint, global either family) and the circuit-aware TARGET
+// law (direct targets byte-identical to isDialableMultiaddr; circuit targets
+// obey the hop law). The dev flag extends BOTH to loopback-family endpoints
+// of either family (`::1` AND `127/8`), dial side only. These tables are the
+// frozen I/O matrix; announce construction (filterDialableAddresses) and the
+// record law (isAddressableMultiaddr) are pinned above and untouched here.
+// ---------------------------------------------------------------------------
+describe('11.2 — seed & dial-target laws (the adapter switches to these)', () => {
+  /** Run `fn` with the loopback dev flag forced on/off, restoring after. */
+  const withFlag = (on: boolean, fn: () => void): void => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    if (on) process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = '1'
+    else delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    try {
+      fn()
+    } finally {
+      if (had !== undefined) process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+  }
+
+  it('SEED_ROWS (flag unset): global v4 or v6 endpoint with /p2p passes', () => {
+    withFlag(false, () => {
+      // The matrix row that started the story: a global-v4 relay seed is
+      // pre-flight-valid and reaches dispatch (the 11.1 hop law, dial side).
+      for (const ok of [
+        '/ip4/203.0.113.9/tcp/4001/p2p/QmRelay', // global v4 endpoint (NEW)
+        '/ip6/2001:db8::1/tcp/4001/p2p/QmRelay', // direct global v6 (as today)
+        '/ip4/1.1.1.1/tcp/1/p2p/QmR', // global v4 edge
+        '/ip4/203.0.113.9/tcp/4001/p2p/QmRelay/tcp/2', // trailing components fine
+      ])
+        expect(isDialableSeedMultiaddr(ok), ok).toBe(true)
+      // Seed-shape junk: skipped deterministically (one event, no retries).
+      for (const bad of [
+        '/ip4/203.0.113.9/tcp/4001', // no /p2p relay id
+        '/ip6/2001:db8::1/tcp/4001', // no /p2p relay id (v6 too)
+        '/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // circuit in seed
+        '/ip6zone/en0/ip6/2001:db8::1/tcp/1/p2p/QmR', // zone
+        '/dns4/example.com/tcp/443/p2p/QmR', // no IP at all
+        '/p2p/QmR', // no IP at all
+        '/ip4/10.0.0.9/tcp/1/p2p/QmR', // RFC1918 first IP
+        '/ip4/100.64.0.9/tcp/1/p2p/QmR', // CGNAT first IP
+        '/ip4/169.254.1.9/tcp/1/p2p/QmR', // link-local v4
+        '/ip4/0.0.0.0/tcp/1/p2p/QmR', // this-network/bind
+        '/ip4/224.0.0.1/tcp/1/p2p/QmR', // multicast
+        '/ip6/fe80::1/tcp/1/p2p/QmR', // v6 link-local
+        '/ip6/fd00::1/tcp/1/p2p/QmR', // ULA
+        'garbage',
+        '',
+      ])
+        expect(isDialableSeedMultiaddr(bad), bad).toBe(false)
+      // Loopback families need the flag (both spellings):
+      for (const off of [
+        '/ip4/127.0.0.1/tcp/9/p2p/QmR',
+        '/ip6/::1/tcp/9/p2p/QmR',
+      ])
+        expect(isDialableSeedMultiaddr(off), off).toBe(false)
+    })
+  })
+
+  it('SEED_ROWS (flag set): loopback-family seeds of EITHER family pass', () => {
+    withFlag(true, () => {
+      for (const ok of [
+        '/ip4/127.0.0.1/tcp/9/p2p/QmR', // v4 loopback (the 127.0.0.1 trio)
+        '/ip4/127.9.9.9/tcp/9/p2p/QmR', // whole 127/8 is loopback family
+        '/ip6/::1/tcp/9/p2p/QmR', // v6 loopback (the 9.5 form)
+        '/ip4/203.0.113.9/tcp/4001/p2p/QmRelay', // globals unaffected
+      ])
+        expect(isDialableSeedMultiaddr(ok), ok).toBe(true)
+      // The flag admits EXACTLY the loopback family — nothing else:
+      for (const bad of [
+        '/ip4/10.0.0.9/tcp/1/p2p/QmR', // RFC1918
+        '/ip4/100.64.0.9/tcp/1/p2p/QmR', // CGNAT
+        '/ip6/fe80::1/tcp/1/p2p/QmR', // link-local
+        '/ip6/fd00::1/tcp/1/p2p/QmR', // ULA
+        '/ip6zone/en0/ip6/::1/tcp/1/p2p/QmR', // zone-scoped loopback is NOT ::1
+        '/ip4/127.0.0.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // circuit in seed
+        // Every IP must be loopback-family under the flag (review F5) — a
+        // junk seed smuggling a public IP behind a loopback first IP never
+        // holds, whatever its dial verdict would be.
+        '/ip4/127.0.0.1/tcp/1/ip4/8.8.8.8/p2p/QmR',
+        '/ip4/127.0.0.1/tcp/9', // still needs /p2p/<relayId>
+        'garbage',
+      ])
+        expect(isDialableSeedMultiaddr(bad), bad).toBe(false)
+    })
+  })
+
+  it('isRelaySeedMultiaddr is PURE: env never moves the pure seed law', () => {
+    const globalV4 = '/ip4/203.0.113.9/tcp/4001/p2p/QmR'
+    const loopV4 = '/ip4/127.0.0.1/tcp/9/p2p/QmR'
+    for (const on of [false, true]) {
+      withFlag(on, () => {
+        expect(isRelaySeedMultiaddr(globalV4)).toBe(true)
+        expect(isRelaySeedMultiaddr(loopV4)).toBe(false) // loopback NEVER pure-valid
+        expect(isRelaySeedMultiaddr('/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).toBe(false)
+        expect(isRelaySeedMultiaddr('garbage')).toBe(false)
+      })
+    }
+  })
+
+  it('TARGET_ROWS (flag unset): circuits obey the hop law; direct stays exact', () => {
+    withFlag(false, () => {
+      for (const ok of [
+        '/ip6/2001:db8::9/tcp/9', // direct global v6 (old law)
+        '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // v4-hop circuit (NEW dial)
+        '/ip6/2001:db8::1/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // v6-hop circuit
+        // NO accept→reject flip (review F2): what the pre-11.2 direct law
+        // dialed, the target law still dials — tail-/p2p-only and full
+        // multi-hop all-v6 chains included.
+        '/ip6/2001:db8::1/tcp/4001/p2p/QmR/p2p-circuit/ip6/2001:db8::2/p2p/QmP', // tail /p2p only
+        '/ip6/2001:db8::1/tcp/4001/p2p/QmR/p2p-circuit/ip6/2001:db8::2/tcp/4002/p2p/QmS/p2p-circuit/p2p/QmP', // 2-hop chain
+      ])
+        expect(isDialableTargetMultiaddr(ok), ok).toBe(true)
+      for (const bad of [
+        '/ip4/1.2.3.4/tcp/9', // DIRECT v4 — rejects with AND without the flag
+        '/ip6/2001:db8::1/tcp/4001/p2p/QmR/p2p-circuit/ip4/8.8.8.8/p2p/QmP', // v6 head + v4 tail (mixed family)
+        '/ip4/127.0.0.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // loopback hop, no flag
+        '/ip6/::1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP',
+        '/ip4/10.0.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // RFC1918 hop
+        '/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/ip4/8.8.8.8/p2p/QmP', // IP in tail
+        '/ip6zone/en0/ip6/::1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // zone
+        '/ip6/fe80::1/tcp/9', // off-policy direct
+        'garbage',
+        '',
+      ])
+        expect(isDialableTargetMultiaddr(bad), bad).toBe(false)
+    })
+  })
+
+  it('TARGET_ROWS (flag set): loopback hops of BOTH families dial; v4 direct never', () => {
+    withFlag(true, () => {
+      for (const ok of [
+        '/ip4/127.0.0.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // v4 loopback hop
+        '/ip6/::1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // v6 loopback hop (9.5 pin)
+        '/ip6/::1/tcp/1/p2p/QmA/p2p-circuit/ip6/0:0:0:0:0:0:0:1/tcp/2/p2p/QmB/p2p-circuit/p2p/QmC', // all-::1 chain still ACCEPTS
+        '/ip4/127.9.9.9/tcp/1/p2p/QmA/p2p-circuit/ip4/127.0.0.2/p2p/QmP', // both loopback-ish, tail included
+        '/ip6/2001:db8::9/tcp/9', // direct global v6 (old law)
+        '/ip6/::1/tcp/9', // pure ::1 direct (9.5 allowance)
+        '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmP', // global v4 hop
+      ])
+        expect(isDialableTargetMultiaddr(ok), ok).toBe(true)
+      for (const bad of [
+        '/ip4/1.2.3.4/tcp/9', // DIRECT v4 — the frozen never, flag set
+        '/ip4/127.0.0.1/tcp/9', // DIRECT loopback v4 — the loopback branch is CIRCUIT-only
+        '/ip4/10.0.0.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // RFC1918 hop, not loopback
+        '/ip4/127.0.0.1/tcp/1/p2p/QmA/p2p-circuit/ip4/8.8.8.8/p2p/QmP', // non-loopback tail
+        '/ip6zone/en0/ip6/::1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP', // zone never
+        '/ip6/fe80::1/tcp/9', // link-local direct
+      ])
+        expect(isDialableTargetMultiaddr(bad), bad).toBe(false)
+    })
+  })
+
+  it('twin equality: for every NON-circuit target, isDialableTarget = isDialable', () => {
+    const nonCircuit = [
+      '/ip6/2001:db8::9/tcp/9',
+      '/ip6/::1/tcp/9',
+      '/ip6/0:0:0:0:0:0:0:1/tcp/9',
+      '/ip4/1.2.3.4/tcp/9',
+      '/ip4/127.0.0.1/tcp/9',
+      '/ip6/fe80::1/tcp/9',
+      '/dns4/example.com/tcp/443/wss',
+      '/memory/app',
+      'garbage',
+      '',
+    ]
+    for (const on of [false, true]) {
+      withFlag(on, () => {
+        for (const addr of nonCircuit) {
+          expect(isDialableTargetMultiaddr(addr), addr).toBe(isDialableMultiaddr(addr))
+        }
+      })
+    }
+  })
+
+  it('assertDialableTarget: the throwing twin reuses SC-NET-1 + the 11.1 message', () => {
+    withFlag(false, () => {
+      expect(() => assertDialableTarget('/ip4/203.0.113.9/tcp/1/p2p/QmR/p2p-circuit/p2p/QmP')).not.toThrow()
+      try {
+        assertDialableTarget('/ip4/1.2.3.4/tcp/9')
+        expect.unreachable()
+      } catch (e) {
+        const err = e as Error & { code?: string }
+        expect(err.code).toBe('SC-NET-1')
+        expect(err.message).toMatch(/global-scope hop/) // the shared 11.1 message
+      }
+      // One error factory: the two gates emit byte-identical messages.
+      const grab = (fn: () => void): string => {
+        try {
+          fn()
+          return ''
+        } catch (e) {
+          return (e as Error).message
+        }
+      }
+      expect(grab(() => assertDialableTarget('/ip4/1.2.3.4/tcp/9'))).toBe(
+        grab(() => assertDialable('/ip4/1.2.3.4/tcp/9')),
+      )
+    })
+  })
+
+  // Announce construction (F1, epic R3 flow-through): what the node puts
+  // INTO its own announcements/invite = record law + `::1` under the dev
+  // flag — exactly what a validator accepts. A held v4-hop circuit must
+  // reach gossip (else "dial me through the relay" never propagates);
+  // direct /ip4 and loopback-v4 NEVER do.
+  it('ANNOUNCE law: global-hop circuits of either family announce; direct v4 never; ::1 flag-only', () => {
+    const V4_CIRCUIT = '/ip4/203.0.113.9/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmSelf'
+    const V6_CIRCUIT = '/ip6/2001:db8::1/tcp/4001/p2p/QmR/p2p-circuit/p2p/QmSelf'
+    const inMesh = [
+      '/ip6/2001:db8::5/tcp/4001',
+      V4_CIRCUIT,
+      V6_CIRCUIT,
+      '/ip4/1.2.3.4/tcp/9', // direct v4 — filtered at construction… (validator's
+      '/ip4/127.0.0.1/tcp/1/p2p/QmR/p2p-circuit/p2p/QmSelf', // …and validator: never announced
+    ]
+    withFlag(false, () => {
+      expect(filterAnnounceAddresses(inMesh)).toEqual([
+        '/ip6/2001:db8::5/tcp/4001',
+        V4_CIRCUIT,
+        V6_CIRCUIT,
+      ])
+      expect(isAnnounceableMultiaddr('/ip6/::1/tcp/9')).toBe(false) // flag off ⇒ strict
+    })
+    withFlag(true, () => {
+      // Flag: `::1` joins (the 9.5 allowance); direct v4 and loopback-v4 —
+      // direct OR hop — still never announce.
+      expect(
+        filterAnnounceAddresses([...inMesh, '/ip6/::1/tcp/9', '/ip4/127.0.0.1/tcp/9']),
+      ).toEqual([
+        '/ip6/2001:db8::5/tcp/4001',
+        V4_CIRCUIT,
+        V6_CIRCUIT,
+        '/ip6/::1/tcp/9',
+      ])
+    })
   })
 })
