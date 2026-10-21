@@ -25,6 +25,7 @@ import type {
   AutoRelayMode,
   GenesisConfig,
   NetAdapterConfig,
+  RelaySeedEvent,
 } from '@succinctcoin/core'
 
 /**
@@ -36,6 +37,61 @@ import type {
  * machine; the public multiaddr is read back from the started node.
  */
 export const LAN_LISTEN_ADDRESS = '/ip6/::/tcp/0'
+
+/**
+ * 11.3 — the SHIPPED default relay seeds: EMPTY today, and that is the pin.
+ * This is a provisioned constant, not an absence: 11.5's flip replaces this
+ * empty list with pinned dual-stack seed multiaddrs once 11.4 lands, and a
+ * config test pins the empty constant itself (an install without the env
+ * var must keep behaving exactly like pre-seam until then). Merged BEFORE
+ * the operator's `SUCCINCTCOIN_RELAY_SEEDS` via {@link mergeRelaySeeds}.
+ */
+export const DEFAULT_RELAY_SEEDS: readonly string[] = []
+
+/**
+ * 11.3 — merge shipped defaults with env-configured seeds: defaults FIRST,
+ * env additive, deduped by exact string (the same shape as the bootstrap
+ * merge in {@link defaultNetConfig}). Pure. With `DEFAULT_RELAY_SEEDS` empty
+ * today every env list passes through unchanged, order included.
+ */
+export function mergeRelaySeeds(
+  defaults: readonly string[],
+  envSeeds: readonly string[],
+): string[] {
+  return [...new Set([...defaults, ...envSeeds])]
+}
+
+/**
+ * 11.3 — the hop family a seed is dialed through, derived from its FIRST IP
+ * component wherever it sits (`/ip4/` ⇒ `'v4'`, `/ip6/` ⇒ `'v6'`; `null`
+ * only when the seed carries no IP at all — a dns-named or malformed seed;
+ * pure string shape, NO DNS). "First IP component" deliberately matches
+ * core's seed law (`firstIpIsGlobalScope` scans components in order), so
+ * the boot line and the adapter agree on what family a seed is. Both boot
+ * paths tag their relay HOLD/FAIL lines via {@link relaySeedLine}.
+ */
+export function seedHopFamily(seed: string): 'v4' | 'v6' | null {
+  const first = seed.match(/\/ip(4|6)\//)
+  if (first?.[1] === '4') return 'v4'
+  if (first?.[1] === '6') return 'v6'
+  return null
+}
+
+/**
+ * 11.3 — THE boot line for one relay-seed event, shared by both boot paths
+ * (electron `index.ts` and the headless runner): family-tagged HOLD/FAIL,
+ * FAIL keeps the error. One formatter means one tested truth — the electron
+ * path has no headless log-injection harness, so what it prints IS this
+ * pure function's output at its call site (pinned by source pin + live pins
+ * here).
+ */
+export function relaySeedLine(event: RelaySeedEvent): string {
+  const family = seedHopFamily(event.seed)
+  const tag = family === null ? '' : ` (${family})`
+  return event.ok
+    ? `[boot] relay HOLD${tag} ${event.seed}`
+    : `[boot] relay FAIL${tag} ${event.seed}: ${String(event.error)}`
+}
 
 /**
  * The boot-time net config (7.2 R1): tcp + mDNS + genesis bootstrap.
@@ -72,10 +128,13 @@ export function defaultNetConfig(
     // Opt in with `mdns: true` (env SUCCINCTCOIN_MDNS=1) on friendly LANs.
     mdns: opts.mdns === true,
     bootstrap,
-    // 10.2 — relay seeds (env SUCCINCTCOIN_RELAY_SEEDS): EMPTY by default
-    // (no operated infrastructure — the Epic-10 non-goal); when set, the
-    // adapter holds reservations and announces circuit addresses.
-    relaySeeds: opts.relaySeeds ?? [],
+    // 10.2/11.3 — relay seeds: the shipped defaults (DEFAULT_RELAY_SEEDS,
+    // EMPTY today — 11.5's flip provisions it) merged BEFORE the env seeds
+    // (SUCCINCTCOIN_RELAY_SEEDS): defaults first, env additive, deduped by
+    // exact string. Empty + empty ⇒ [] — byte-identical to the pre-seam
+    // default (the exact-config pins); when set, the adapter holds
+    // reservations and announces circuit addresses.
+    relaySeeds: mergeRelaySeeds(DEFAULT_RELAY_SEEDS, opts.relaySeeds ?? []),
     // 10.3 — the volunteer-relay role (env SUCCINCTCOIN_RELAY_SERVER=1) is
     // opt-in AND key-absent when off: default builds stay byte-identical to
     // pre-10.3 (exact-config pins). `as const` keeps the literal type.
@@ -113,9 +172,12 @@ export interface NetConfigOptions {
   extraBootstrap?: readonly string[] | undefined
   /** Opt INTO LAN mDNS discovery (default OFF since 9.1). */
   mdns?: boolean | undefined
-  /** 10.2 — circuit-relay seeds (multiaddrs carrying /p2p/<relayId>).
-   * Default EMPTY (pinned); the adapter holds reservations on each and
-   * advertises `<seed>/p2p-circuit/p2p/<self>` alongside direct addrs. */
+  /** 10.2 — circuit-relay seeds (multiaddrs carrying /p2p/<relayId>),
+   * env SUCCINCTCOIN_RELAY_SEEDS. Merged additive AFTER
+   * `DEFAULT_RELAY_SEEDS` (defaults first, deduped by exact string); with
+   * the shipped defaults empty today this is the operator's only channel.
+   * The adapter holds reservations on each and advertises
+   * `<seed>/p2p-circuit/p2p/<self>` alongside direct addrs. */
   relaySeeds?: readonly string[] | undefined
   /** 10.3 — serve as a circuit relay (5.7 role; env
    * SUCCINCTCOIN_RELAY_SERVER=1). Default false (pinned): volunteering is

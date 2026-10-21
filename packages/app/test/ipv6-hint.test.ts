@@ -50,6 +50,20 @@ describe('post-9.5 — describeIpv6 (the why-no-invite sentence)', () => {
   it('HINT_NONE: no IPv6 interfaces at all', () => {
     expect(describeIpv6(d({}))).toMatch(/enable IPv6 first/i)
   })
+
+  it('HINT_RELAY_PATH (11.3): the no-global rows name the honest second path', () => {
+    for (const [what, s] of [
+      ['overlay', describeIpv6(d({ uniqueLocalCount: 2 }))],
+      ['link-local', describeIpv6(d({ linkLocalCount: 2 }))],
+      ['none', describeIpv6(d({}))],
+    ] as const) {
+      expect(s, what).toMatch(/relay hop/i)
+      expect(s, what).toMatch(/SUCCINCTCOIN_RELAY_SEEDS/)
+      expect(s, what).toMatch(/\/p2p-circuit/) // the invite shape it produces
+    }
+    // The hopeful global row stays about WAITING — no relay lecture there.
+    expect(describeIpv6(d({ hasGlobal: true, globalCount: 1 }))).not.toMatch(/relay hop/i)
+  })
 })
 
 // Dev-only announce allowance: an invite beside a machine with NO global

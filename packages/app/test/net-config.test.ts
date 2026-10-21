@@ -50,11 +50,15 @@ import { describe, expect, it } from 'vitest'
 import type { GenesisConfig } from '@succinctcoin/core'
 
 import {
+  DEFAULT_RELAY_SEEDS,
   LAN_LISTEN_ADDRESS,
   defaultNetConfig,
+  mergeRelaySeeds,
   parseBootstrapFile,
   parseRelaySeeds,
+  relaySeedLine,
   resolveRelayAuto,
+  seedHopFamily,
 } from '../src/main/net-config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -111,6 +115,59 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     const seeded = defaultNetConfig(g, 'ae'.repeat(32), { relaySeeds: ['/ip6/2001:db8::9/tcp/1/p2p/QmA'] })
     expect(seeded.relaySeeds).toEqual(['/ip6/2001:db8::9/tcp/1/p2p/QmA'])
     expect(defaultNetConfig(g, 'ae'.repeat(32)).relaySeeds).toEqual([])
+  })
+
+  it('DEFAULT_RELAY_SEEDS (11.3): the exported constant is pinned EMPTY — provisioning is 11.5\'s flip', () => {
+    // Absence of seeds ≠ pinned empty: the CONSTANT itself is the contract,
+    // so 11.5's flip is a visible diff against this row, not a silent one.
+    expect(DEFAULT_RELAY_SEEDS).toEqual([])
+    // And the default config keeps building `relaySeeds: []` through the
+    // merge (byte-identical to the exact-config pins above).
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    expect(defaultNetConfig(g, 'ad'.repeat(32)).relaySeeds).toEqual([])
+  })
+
+  it('MERGE_RELAY_SEEDS (11.3): defaults first, env additive, deduped by exact string', () => {
+    // Synthetic merge math (the frozen matrix row): [A,B] + [B,C] ⇒ [A,B,C].
+    expect(mergeRelaySeeds(['A', 'B'], ['B', 'C'])).toEqual(['A', 'B', 'C'])
+    expect(mergeRelaySeeds(['A'], ['A'])).toEqual(['A'])
+    expect(mergeRelaySeeds([], ['X'])).toEqual(['X']) // today's reality
+    expect(mergeRelaySeeds([], [])).toEqual([])
+    // Seam: with the empty constant, env seeds arrive additive AFTER the
+    // defaults, order preserved (the matrix's `env seeds [X] ⇒ [X]` row).
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    expect(defaultNetConfig(g, 'ad'.repeat(32), { relaySeeds: ['X'] }).relaySeeds).toEqual(['X'])
+  })
+
+  it('SEED_HOP_FAMILY (11.3): FIRST IP component wherever it sits; no IP ⇒ null', () => {
+    expect(seedHopFamily('/ip4/192.0.2.7/tcp/4001/p2p/R')).toBe('v4')
+    expect(seedHopFamily('/ip6/2001:db8::9/tcp/4001/p2p/R')).toBe('v6')
+    // A circuit tail changes nothing — only the FIRST (hop) component counts.
+    expect(seedHopFamily('/ip6/2001:db8::9/tcp/1/p2p/R/p2p-circuit/p2p/Self')).toBe('v6')
+    // Definition parity with core's seed law (firstIpIsGlobalScope scans
+    // components in order): a first IP BEHIND a dns prefix still has family.
+    expect(seedHopFamily('/dns/work.relay.example/ip4/203.0.113.7/tcp/4001/p2p/R')).toBe('v4')
+    // Whichever family comes FIRST wins.
+    expect(seedHopFamily('/ip6/2001:db8::1/tcp/1/ip4/1.2.3.4/p2p/R')).toBe('v6')
+    // No IP at all ⇒ no family (dns-named or malformed seed — pure shape, no DNS).
+    expect(seedHopFamily('/dns/work.relay.example/tcp/4001/p2p/R')).toBeNull()
+    expect(seedHopFamily('')).toBeNull()
+  })
+
+  it('RELAY_SEED_LINE (11.3): the ONE boot-line formatter both paths share', () => {
+    // Live pins for what BOTH boot paths print — the electron path has no
+    // headless log-injection harness, so this pure function plus the call-
+    // site pin (run-node.test.ts) is its functional coverage.
+    expect(relaySeedLine({ seed: '/ip4/192.0.2.7/tcp/1/p2p/R', ok: true })).toBe(
+      '[boot] relay HOLD (v4) /ip4/192.0.2.7/tcp/1/p2p/R',
+    )
+    expect(
+      relaySeedLine({ seed: '/ip6/2001:db8::9/tcp/1/p2p/Bad', ok: false, error: 'no route' }),
+    ).toBe('[boot] relay FAIL (v6) /ip6/2001:db8::9/tcp/1/p2p/Bad: no route')
+    // dns-named seed ⇒ untagged, line still prints.
+    expect(
+      relaySeedLine({ seed: '/dns/work.relay.example/tcp/1/p2p/R', ok: true }),
+    ).toBe('[boot] relay HOLD /dns/work.relay.example/tcp/1/p2p/R')
   })
 
   it('RELAY_SERVER (10.3): relayRole key ABSENT by default; ONLY `relayServer: true` sets it', () => {

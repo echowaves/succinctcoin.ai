@@ -254,6 +254,16 @@ describe('6.3 — the React renderer (headless-safe)', () => {
     }
   })
 
+  it('11.3 — the no-invite copy names BOTH paths (global IPv6 or a held relay hop)', () => {
+    // The post-11.2 truth: global IPv6 is no longer the only way in, and
+    // the panel copy must not imply otherwise (AD-1: still no core import —
+    // RENDERER_THIN_CLIENT above keeps that guard).
+    const app = rendererSources()['App.tsx'] as string
+    expect(app).toMatch(
+      /global IPv6 address or holds a circuit\s*\n?\s*through a relay hop/,
+    )
+  })
+
   it('RENDERER_AD11_NO_KEYS: no key material in the renderer source (AD-11, AC4)', () => {
     const sources = rendererSources()
     const KEY_MATERIAL_RE = /keypair|\.secret\b|deriveIdentityKeypair|privateKey|secretKey/i

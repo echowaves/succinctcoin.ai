@@ -24,7 +24,9 @@
  *                               surface the real tcp adapter yields.)
  *   RELAY_SEED_FEEDBACK       the adapter's seed hold/fail events (the only
  *                               feedback a hidden-node operator gets) reach the
- *                               injected log.
+ *                               injected log, TAGGED with the hop family
+ *                               dialed (11.3): `(v4)` / `(v6)` from the seed's
+ *                               first IP component, no tag when it has none.
  *   BOOT_FAILURE_CLEANUP      a contended data dir (`SC-STORE-1`, thrown after
  *                               the adapter is built) rejects AND leaves no
  *                               transport open behind the rejection.
@@ -40,7 +42,7 @@
  *   (Journal hygiene is pinned inside BOOTS_AND_MINES: mining logs are a
  *   heartbeat — the first block, then every 25th — never one line per block.)
  */
-import { mkdtempSync, statSync } from 'node:fs'
+import { mkdtempSync, readFileSync, statSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -252,24 +254,50 @@ describe('ticket 8 — the headless node runner', () => {
     }
   }, 30_000)
 
-  it('RELAY_SEED_FEEDBACK: hold/fail events reach the operator log', async () => {
+  it('RELAY_SEED_FEEDBACK: hold/fail events reach the operator log, family-tagged (11.3)', async () => {
     const seed = '/ip6/2001:db8:c0a8:10b::/tcp/4001/p2p/12D3KooSeed'
     const h = await bootRunner({ env: { SUCCINCTCOIN_RELAY_SEEDS: seed } })
     try {
       // The adapter never throws for a seed — these lines are the ONLY
-      // feedback a hidden-node operator gets that relaying works.
+      // feedback a hidden-node operator gets that relaying works, and since
+      // 11.2 a hop may be v4, so each line NAMES THE FAMILY dialed.
       const onRelaySeed = h.configs[0]?.onRelaySeed
       expect(onRelaySeed, 'the runner wires onRelaySeed into the net config').toBeDefined()
       onRelaySeed?.({ seed, ok: true })
+      expect(h.logs).toContain(`[boot] relay HOLD (v6) ${seed}`)
+      // A v4-hop seed (legal chain data since 11.2) prints its family.
+      const v4 = '/ip4/192.0.2.7/tcp/4001/p2p/12D3KooV4Seed'
+      onRelaySeed?.({ seed: v4, ok: true })
+      expect(h.logs).toContain(`[boot] relay HOLD (v4) ${v4}`)
+      // A non-IP (dns-named, future) seed has no family ⇒ NO tag, the line
+      // still prints.
+      const dns = '/dns/work.relay.example/tcp/4001/p2p/12D3KooDns'
+      onRelaySeed?.({ seed: dns, ok: true })
+      expect(h.logs).toContain(`[boot] relay HOLD ${dns}`)
+      // FAIL keeps the error AND carries the tag.
       onRelaySeed?.({ seed: '/ip6/2001:db8:c0a8:10b::/tcp/1/p2p/Bad', ok: false, error: 'no route' })
-      expect(h.logs).toContain(`[boot] relay HOLD ${seed}`)
-      expect(h.logs.some((l) => l.startsWith('[boot] relay FAIL') && l.includes('no route'))).toBe(
-        true,
-      )
+      expect(
+        h.logs.some((l) => l.startsWith('[boot] relay FAIL (v6)') && l.includes('no route')),
+      ).toBe(true)
     } finally {
       await h.handle.stop()
     }
   }, 30_000)
+
+  it('BOTH boot paths print THE shared formatter\u2019s line (source pin)', () => {
+    // The electron app path has no headless log-injection harness — what it
+    // prints IS relaySeedLine's output, pinned live in net-config.test.ts;
+    // this row pins that BOTH call sites route through that one function
+    // (no divergent copies), and the runner's wiring is pinned live by
+    // RELAY_SEED_FEEDBACK above.
+    const mainDir = join(import.meta.dirname, '..', 'src', 'main')
+    for (const file of ['index.ts', 'run-node.ts']) {
+      const code = readFileSync(join(mainDir, file), 'utf8')
+      expect(code, `${file} prints relay seed events through the shared formatter`).toContain(
+        'relaySeedLine(event)',
+      )
+    }
+  })
 
   it('BOOT_FAILURE_CLEANUP: a contended data dir fails loudly AND closes its transport', async () => {
     // The realistic boot failure: another process holds the store lock (taken

@@ -187,7 +187,8 @@ function InvitePanel() {
       <h2>Invitations</h2>
       {invite === null ? (
         <p>
-          No invite yet — this node announces once it has a global IPv6 address.{' '}
+          No invite yet — this node announces once it has a global IPv6 address or holds a circuit
+          through a relay hop.{' '}
           <button onClick={refresh}>Refresh</button>
           {diag !== null && <span> {describeIpv6(diag)}</span>}
         </p>

@@ -9,7 +9,12 @@
  * fixtures (fake addresses are their purpose), docs/epic artifacts, and
  * generated `dist/` + `src/proto/`. 9.1 IPv6-only policy: NO `/ip4`
  * address literal of ANY kind survives in shipped code — not even the old
- * `/ip4/0.0.0.0` bind (the sanctioned bind is now `/ip6/::`).
+ * `/ip4/0.0.0.0` bind (the sanctioned bind is now `/ip6/::`). 11.3 hop-
+ * awareness: EXACTLY ONE file — the seed-config seam
+ * `packages/app/src/main/net-config.ts` — may carry `/ip4` literals, the
+ * position where shipped default relay seeds (hop addresses, legal since
+ * the 11.2 dual-stack-hop amendment) will be provisioned by 11.5's flip.
+ * Every other pattern and every other path keep the hard ban.
  *
  * E3 (ticket 8.5): signing and key derivation are MAIN/CORE concerns — the
  * PRELOAD and RENDERER sources must contain zero occurrences of the key
@@ -49,6 +54,22 @@ const PATTERNS: ScanPattern[] = [
   { name: 'seed-endpoint', re: /seed\.succinctcoin/g },
 ]
 
+/**
+ * 11.3 — the ONE hop/seed-config position exempt from `hardwired-ip4`: the
+ * net-config seam is where shipped default relay seeds live, and a seed's
+ * hop may be a global `/ip4` (11.2 hop law). The exemption is POSITION-
+ * scoped, not file-scoped: ONLY the `DEFAULT_RELAY_SEEDS` array literal —
+ * the region 11.5's flip provisions seeds into — reads clean; every other
+ * line of the same file (the bind construction above all) keeps the hard
+ * ban, and so do `hardwired-dns4`, `ipfs-peer-id`, `seed-endpoint` here and
+ * `/ip4` in every other file.
+ */
+const SEED_CONFIG_PATH = 'packages/app/src/main/net-config.ts'
+/** The exempt region: the DEFAULT_RELAY_SEEDS declaration, brackets incl.
+ * (past the `readonly string[]` annotation: from the `=` to the array's
+ * closing bracket — seed literals never contain `]`). */
+const SEED_REGION_RE = /export const DEFAULT_RELAY_SEEDS[^=]*=[^\]]*\]/
+
 /** Paths never scanned (fixtures, docs, build output, generated code). */
 function isExcluded(relPath: string): boolean {
   const p = relPath.split(sep).join('/')
@@ -72,10 +93,18 @@ function isExcluded(relPath: string): boolean {
 /** Pure scanner: findings per (path, text). */
 export function scanForHardwiredEndpoints(path: string, text: string): LintFinding[] {
   if (isExcluded(path)) return []
+  const rel = path.split(sep).join('/')
   const findings: LintFinding[] = []
   for (const { name, re } of PATTERNS) {
+    // 11.3 hop-awareness: /ip4 is legal ONLY inside the seed-config seam's
+    // DEFAULT_RELAY_SEEDS region (the hop position); every other (path,
+    // pattern, line) triple stays hard — including a v4 BIND in this file.
+    let scanText = text
+    if (name === 'hardwired-ip4' && rel === SEED_CONFIG_PATH) {
+      scanText = text.replace(SEED_REGION_RE, 'export const DEFAULT_RELAY_SEEDS []')
+    }
     re.lastIndex = 0
-    if (re.test(text)) findings.push({ path, pattern: name })
+    if (re.test(scanText)) findings.push({ path, pattern: name })
   }
   return findings
 }
@@ -121,16 +150,47 @@ describe('8.5 T6 — discovery lint (repo-wide hardwired-endpoint scan)', () => 
     )
   })
 
-  it('9.1: EVERY /ip4 literal fires in shipped code — bind and loopback included; tests are excluded', () => {
+  it('9.1 + 11.3: /ip4 fires EVERYWHERE except the seed-config seam; tests are excluded', () => {
+    // The direct-v4 ban stands in every other shipped file — the adapter
+    // (the dialing code) is the canonical planted fixture.
     expect(
-      scanForHardwiredEndpoints('packages/app/src/main/net-config.ts', "const A = '/ip4/0.0.0.0/tcp/0'"),
-    ).toEqual([{ path: 'packages/app/src/main/net-config.ts', pattern: 'hardwired-ip4' }])
+      scanForHardwiredEndpoints('packages/core/src/net/adapter.ts', "const A = '/ip4/1.2.3.4/tcp/9/p2p/QmR'"),
+    ).toEqual([{ path: 'packages/core/src/net/adapter.ts', pattern: 'hardwired-ip4' }])
     expect(
-      scanForHardwiredEndpoints('packages/app/src/main/net-config.ts', "const A = '/ip6/::/tcp/0'"),
-    ).toEqual([]) // the sanctioned 9.1 bind is v6
+      scanForHardwiredEndpoints('packages/app/src/main/index.ts', "const A = '/ip4/0.0.0.0/tcp/0'"),
+    ).toEqual([{ path: 'packages/app/src/main/index.ts', pattern: 'hardwired-ip4' }]) // bind included
     expect(
       scanForHardwiredEndpoints('packages/core/test/fake.ts', "const A = '/ip4/10.0.0.1/tcp/1'"),
     ).toEqual([]) // test files are the sanctioned fixtures
+  })
+
+  it('11.3 hop position: /ip4 is clean ONLY inside the DEFAULT_RELAY_SEEDS region; elsewhere — same file included — it fires', () => {
+    // The exempt position, shaped like the shipped constant (11.5's flip
+    // provisions dual-stack hops exactly here):
+    expect(
+      scanForHardwiredEndpoints(
+        SEED_CONFIG_PATH,
+        "export const DEFAULT_RELAY_SEEDS: readonly string[] = [\n  '/ip4/1.2.3.4/tcp/9/p2p/QmR',\n]",
+      ),
+    ).toEqual([])
+    // A v4 BIND planted in the SAME file (the deleted 9.1 row, restored):
+    // position-scoped exemption keeps the bind law guarded where the bind
+    // is constructed.
+    expect(
+      scanForHardwiredEndpoints(SEED_CONFIG_PATH, "const A = '/ip4/0.0.0.0/tcp/0'"),
+    ).toEqual([{ path: SEED_CONFIG_PATH, pattern: 'hardwired-ip4' }])
+    // Same hop literal, one directory over ⇒ hard finding.
+    expect(
+      scanForHardwiredEndpoints('packages/app/src/main/index.ts', "const SEED = '/ip4/1.2.3.4/tcp/9/p2p/QmR'"),
+    ).toEqual([{ path: 'packages/app/src/main/index.ts', pattern: 'hardwired-ip4' }])
+    // The exemption does not soften the OTHER patterns in net-config.
+    expect(
+      scanForHardwiredEndpoints(SEED_CONFIG_PATH, "const S = '/dns4/relay.example/tcp/1'"),
+    ).toEqual([{ path: SEED_CONFIG_PATH, pattern: 'hardwired-dns4' }])
+    // The sanctioned v6 bind stays clean in the exempt file too.
+    expect(
+      scanForHardwiredEndpoints(SEED_CONFIG_PATH, "const A = '/ip6/::/tcp/0'"),
+    ).toEqual([])
   })
 
   it('the collector actually collects (scan is not vacuously empty)', () => {

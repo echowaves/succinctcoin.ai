@@ -46,6 +46,7 @@ import {
   defaultNetConfig,
   parseBootstrapFile,
   parseRelaySeeds,
+  relaySeedLine,
   resolveRelayAuto,
 } from './net-config.js'
 
@@ -117,12 +118,10 @@ async function boot(): Promise<void> {
       // once proven-unreachable. SUCCINCTCOIN_RELAY_AUTO=0 ⇒ explicit-only.
       relayAuto: resolveRelayAuto(process.env),
     }),
+    // 11.3 — one shared formatter (relaySeedLine) for both boot paths:
+    // family-tagged HOLD/FAIL, dns-named seeds untagged.
     onRelaySeed: (event) => {
-      console.log(
-        event.ok
-          ? `[boot] relay HOLD ${event.seed}`
-          : `[boot] relay FAIL ${event.seed}: ${String(event.error)}`,
-      )
+      console.log(relaySeedLine(event))
     },
   })
   const store = new FileChainStore(join(app.getPath('userData'), 'chain'))

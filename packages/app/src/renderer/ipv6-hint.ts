@@ -22,18 +22,21 @@ export interface InviteDiagnostics {
  * a global address means WAIT (announce re-reads interfaces every window —
  * no restart needed); an overlay `fd00::` gets its own row because VPN
  * IPv6 is the classic false hope (reachable by friends? no.); link-local
- * only is the plain "your network has no IPv6" case.
+ * only is the plain "your network has no IPv6" case. Since 11.3 the three
+ * no-global rows also name the honest SECOND path: a relay hop (global
+ * IPv6 is no longer the only way to reach the network — an invite can run
+ * `/ip4/…` or `/ip6/…` through `/p2p-circuit`).
  */
 export function describeIpv6(d: InviteDiagnostics): string {
   if (d.hasGlobal)
     return 'Global IPv6 detected — your invite appears at the next announce window (no restart needed).'
   if (d.uniqueLocalCount > 0)
-    return 'Only private/overlay IPv6 found (e.g. a VPN mesh fd00:: address) — friends on the internet cannot reach it, so it is never announced. Enable real IPv6 (2xxx:) on your router/ISP.'
+    return 'Only private/overlay IPv6 found (e.g. a VPN mesh fd00:: address) — friends on the internet cannot reach it, so it is never announced. Enable real IPv6 (2xxx:) on your router/ISP, or reach the network through a relay hop — pin a dual-stack relay in SUCCINCTCOIN_RELAY_SEEDS; your invite then runs /ip4/… or /ip6/… through /p2p-circuit.'
   if (d.linkLocalCount > 0)
-    return 'Only link-local (fe80::) addresses found — this machine has no global IPv6. Check the router/ISP IPv6 setting; a VPN/Tailscale IPv6 does not count.'
+    return 'Only link-local (fe80::) addresses found — this machine has no global IPv6. Check the router/ISP IPv6 setting; a VPN/Tailscale IPv6 does not count. Or reach the network through a relay hop — pin a dual-stack relay in SUCCINCTCOIN_RELAY_SEEDS; your invite then runs /ip4/… or /ip6/… through /p2p-circuit.'
   if (d.otherCount > 0)
     return 'IPv6 addresses present but none usable (no global, link-local, or private class) — an unusual setup; check this machine\'s IPv6 configuration.'
-  return 'No active IPv6 interfaces on this machine — enable IPv6 first.'
+  return 'No active IPv6 interfaces on this machine — enable IPv6 first, or reach the network through a relay hop: pin a dual-stack relay in SUCCINCTCOIN_RELAY_SEEDS and your invite runs /ip4/… or /ip6/… through /p2p-circuit.'
 }
 
 /**

@@ -54,6 +54,7 @@ import {
   defaultNetConfig,
   parseBootstrapFile,
   parseRelaySeeds,
+  relaySeedLine,
   resolveRelayAuto,
 } from './net-config.js'
 
@@ -154,12 +155,10 @@ export async function runNode(opts: RunNodeOptions): Promise<NodeRunHandle> {
       relayServer,
       relayAuto,
     }),
+    // 11.3 — one shared formatter (relaySeedLine) for both boot paths:
+    // family-tagged HOLD/FAIL, dns-named seeds untagged.
     onRelaySeed: (event) => {
-      log(
-        event.ok
-          ? `[boot] relay HOLD ${event.seed}`
-          : `[boot] relay FAIL ${event.seed}: ${String(event.error)}`,
-      )
+      log(relaySeedLine(event))
     },
   }
   const net = makeNet(netConfig)
