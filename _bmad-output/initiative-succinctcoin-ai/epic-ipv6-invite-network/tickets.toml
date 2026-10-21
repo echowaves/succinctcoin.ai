@@ -74,3 +74,15 @@ after = [5]
 hitl = false
 risk = "low"
 unknown = "None — design recorded in the OPEN entry and met verbatim."
+
+[[entry]]
+id = 7
+type = "story"
+title = "Auto-relay — zero-config reachability on every node"
+description = "Operator has no router control and asked for the most reliable ZERO-CONFIG way to end up with a globally dialable address. Answer: make the relay tier self-organising instead of opt-in, which REVERSES two recorded decisions (SUCCINCTCOIN_RELAY_SERVER=1 opt-in serving; the 'deliberately no automatic relay discovery' ops decision). Pure policy module net/auto-relay.ts: autoServeEnabled (auto + not proven-unreachable), autoHoldWanted (auto + PROVEN unreachable — the ladder rule, rung 3 starts where rung 1 leaves off), pickRelayCandidates (direct-connected only, self-excluded, deduped, sorted, cap 3). Adapter: register circuitRelayServer under the serve policy (explicit relayRole stays a force-on override) and, when holding is wanted, run the EXISTING bounded hold episode against up to 3 hop-advertising direct peers — one code path, so circuit announce/events/loss-recovery match manual seeds. App glue resolves SUCCINCTCOIN_RELAY_AUTO=0 as the kill switch restoring explicit-only. UI: an invite whose address is a circuit says it rides a relay (distinct from the dev-loopback warning). Residual dependency stated in docs: somebody must still have inbound-open global IPv6 — auto-relay removes operator configuration, not that need."
+verify = "Policy rows: serve/hold matrices over reachable|unknown|unreachable × mode (incl. kill switch) + candidate determinism/self-exclusion/direct-only/cap. Adapter rows on memory transport with injected reachability: proven-unreachable node + hop-capable direct peer => circuit address announced and a third node dials through it; reachable node holds nothing; explicit-only is byte-identical to today. Existing 10.2/10.3 seed + trio rows stay green. README/deferred-work record the reversal + kill switch + residual dependency."
+covers = ["R1", "R4"]
+after = [6]
+hitl = false
+risk = "medium"
+unknown = "Whether to release held circuits once a probe later proves direct reachability (upstream reservation API has no explicit release; TTL expiry covers it) — decide during implementation and pin the choice."

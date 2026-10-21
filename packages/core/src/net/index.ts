@@ -39,6 +39,15 @@ export type { PeerBookSource, PeerBookServed } from './peerbook.js'
 // 9.3 — the /64 group key (diversity floor), next to the address policy.
 export { ip6Slash64 } from './address-policy.js'
 
+// Auto-relay policy (pure): who serves, who holds, whom to ask.
+export {
+  autoHoldWanted,
+  type AutoRelayMode,
+  autoServeEnabled,
+  MAX_AUTO_RELAYS,
+  pickRelayCandidates,
+  type RelayCandidate,
+} from './auto-relay.js'
 // 10.1 — reachability truth (AutoNAT evidence model + honesty filter).
 export {
   autoNatEnabledFor,

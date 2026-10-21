@@ -789,6 +789,15 @@ export type {
   RelaySeedEvent,
   TopicClass,
 } from './net/index.js'
+// Auto-relay policy (pure): serve/hold/candidate rules over reachability truth.
+export {
+  autoHoldWanted,
+  type AutoRelayMode,
+  autoServeEnabled,
+  MAX_AUTO_RELAYS,
+  pickRelayCandidates,
+  type RelayCandidate,
+} from './net/auto-relay.js'
 // 10.1 — AutoNAT reachability truth (pure module; the adapter applies it at
 // both the wire-level announce filter and `listenAddresses()`).
 export {
