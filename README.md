@@ -23,21 +23,72 @@ SuccinctCoin is a small, self-contained cryptocurrency: a TypeScript consensus +
 ```sh
 corepack pnpm install     # installs the workspace (+ the Electron binary)
 corepack pnpm build       # builds the core (regenerates the protocol code, then tsc)
-corepack pnpm test        # the full workspace test suite (489 tests / 66 files)
+corepack pnpm test        # the full workspace test suite (506 tests / 68 files)
 corepack pnpm typecheck   # core typecheck
 ```
 
-The root `test` runs every package's suite: the core's 437-test suite (57 files) plus the app's 52-test suite (9 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
+The root `test` runs every package's suite: the core's 445-test suite (58 files) plus the app's 61-test suite (10 files). The app's packaged-boot rows are self-sufficient — they build what they scan — so a fresh `install → build → test` is all that's needed.
 
 ## Run the desktop app
 
 ```sh
 cd packages/app
-corepack pnpm build       # clean → typecheck → renderer → main bundle → preload bundle → genesis copy
+corepack pnpm build       # clean → typecheck → renderer → main bundle → preload bundle → node runner → genesis copy
 corepack pnpm exec electron .
 ```
 
 On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory. The node runs on the real network stack (tcp + noise + yamux, IPv6-only); joining rides invitations, not multicast — see "Joining a network" below.
+
+## Run a node without the app (headless / VPS)
+
+The same node, minus Electron. `dist/node/run-node.js` is a plain-Node bundle of the **real** boot path — `createCoreHost`, the tcp/noise/yamux transport, the discovery ladder, the file chain store — and nothing else: no Electron import anywhere in it (the packaged-boot suite pins that bundle too, and holds it to a stricter rule than the app's own bundles — node builtins only). It exists for machines that are always on and dialable, which in practice means an IPv6 VPS: a home box cannot be dialed (see "Joining a network"), so the machine that holds the line for a group belongs in a datacentre.
+
+```sh
+cd packages/app
+corepack pnpm build                       # also emits dist/node/run-node.js
+node dist/node/run-node.js --data-dir /srv/succinctcoin
+#   --listen-port <n>            override SUCCINCTCOIN_LISTEN_PORT
+#   --genesis <path/genesis.json> default: bundle's own dist/config/genesis.json
+#   --relay / --no-relay         volunteer as a circuit relay, or refuse to
+#                                (else SUCCINCTCOIN_RELAY_SERVER=1)
+#   --no-mine                    apply blocks only, never race for one
+```
+
+The log is the operator interface, and it is honest about reachability — on a machine without a global address it says so rather than pretending:
+
+```
+[boot] identity 084269cd… data-dir /srv/succinctcoin
+[boot] dial me: /ip6/2001:db8:…/tcp/4001/p2p/12D3Koo…   ← what hidden nodes dial through
+[boot] reachability unknown                              ← AutoNAT has not probed yet; "dial me" is the fact
+[discovery-ladder] {"mdns":false,…}                      ← how this node found its way
+[mined] 1 blocks, head slot 1 winner 084269cd…           ← heartbeat: first block, then every 25th
+[boot] to invite a friend, send them exactly:
+scinvite:v1:…                                            ← THE invitation to hand out, printed once
+```
+
+Two lines are easy to confuse: `dial me:` is a raw multiaddr — the **relay seed** you share with firewalled nodes (`SUCCINCTCOIN_RELAY_SEEDS`); `scinvite:v1:…` is the signed **invitation** a new node joins with. Reachability prints `unknown` at boot because AutoNAT has had no time to probe yet; it is not a claim that the machine is unreachable — the listen addresses above it are.
+
+(No global address → `[boot] no dialable (global IPv6) listen address yet` plus the v6 interface classification. Mining is throttled to one line per 25 blocks so a server journal stays readable; `SIGINT`/`SIGTERM` stops the core and exits cleanly, and a second signal exits immediately.)
+
+**Keeping it running** (`systemd`; the unit restarts on crash, and an address change after a VPS reboot only needs a restart — the identity survives):
+
+```ini
+# /etc/systemd/system/succinctcoin-node.service
+[Unit]
+Description=SuccinctCoin node
+After=network-online.target
+[Service]
+User=succinctcoin
+ExecStart=/usr/bin/node /srv/succinctcoin-app/dist/node/run-node.js --data-dir /srv/succinctcoin
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+```
+
+Two facts worth knowing before the first boot. The node's identity is `<data-dir>/identity.seed` — 64 hex characters, mode `0600`, created on first boot and never logged; **back that file up**, because deleting it means a different node (and an unspent ticket does not move). And when the node finally has a dialable address it prints its own invitation exactly once — `to invite a friend, send them exactly:` followed by the one-line `scinvite:v1:…` — so with `systemd` that line is in `journalctl -u succinctcoin-node`, and there is no need to open a UI to read it. (`<data-dir>/invite.txt` is the **inbound** file — invitations *this* node should join, one per line. It is not your invite: never write your own into it.) `--relay` turns the machine into a volunteer relay: boot prints its dialable multiaddr, peer id included, and *that line* is what hidden nodes put in `SUCCINCTCOIN_RELAY_SEEDS`.
+
+The runner writes exactly what the desktop app writes (`identity.seed`, `chain/blocks/`, `chain/state/`, plus the `chain/.lock` holder file), so pointing `--data-dir` at the app's userData directory **continues that node** — same identity, same chain — on a machine with no display. That is also how a home node hands its identity over to a VPS instead of becoming a second node by accident. One directory, one writer: the lock is exclusive, so if the desktop app is still running the runner refuses to boot (`SC-STORE-1`) rather than corrupting it — stop one before starting the other.
 
 ## Joining a network
 
@@ -87,14 +138,15 @@ The package is self-contained: the main and preload processes are Vite bundles w
 | `corepack pnpm build` | repo root | Core build: protocol codegen + `tsc`. |
 | `corepack pnpm test` | repo root | Full workspace test suite (headless). |
 | `corepack pnpm typecheck` | repo root | Core typecheck. |
-| `corepack pnpm build` | `packages/app` | Clean emit → typecheck → renderer Vite → main Vite bundle → preload Vite bundle → genesis copy. |
-| `corepack pnpm test` | `packages/app` | App suite (core-host parity, renderer, closing e2e, packaged-boot matrix). |
+| `corepack pnpm build` | `packages/app` | Clean emit → typecheck → renderer Vite → main Vite bundle → preload Vite bundle → headless runner bundle → genesis copy. |
+| `corepack pnpm start:node` | `packages/app` | Run the headless node (plain Node, no Electron) — needs `--data-dir`; see "Run a node without the app". |
+| `corepack pnpm test` | `packages/app` | App suite (core-host parity, renderer, closing e2e, packaged-boot matrix, headless runner). |
 | `corepack pnpm package` | `packages/app` | `electron-forge package` → distributable zip in `out/`. |
 
 ## Architecture & documentation
 
 - **The architecture spine** (the rule set for the codebase — decisions AD-1…AD-12): `_bmad-output/initiative-succinctcoin-ai/architecture-succinctcoin/architecture-succinctcoin.md`
-- **Epic & story plans** (the full build history, 45 stories across 6 epics): `_bmad-output/initiative-succinctcoin-ai/epic-*/`
+- **Epic & story plans** (the full build history, 62 story plans across 10 epics): `_bmad-output/initiative-succinctcoin-ai/epic-*/`
 - **Deferred work** (known, deliberately-deferred items with dispositions): `_bmad-output/initiative-succinctcoin-ai/deferred-work.md`
 
 Key design boundaries worth knowing before reading the code:

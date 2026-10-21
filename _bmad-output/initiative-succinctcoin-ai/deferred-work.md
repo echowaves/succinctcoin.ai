@@ -207,3 +207,28 @@
      visible win over tcp+relay+punching. Revisit ONLY if epic 10's field
      data shows DCUtR punch rates disappointing on TCP — then re-evaluate
      WebRTC-direct as a second transport, not a replacement. -->
+
+<!-- DECISION 2026-10-20 (ticket 8, headless runner): THE RUNNER IS A FLAG/ENV
+     SHELL, NOT A DAEMON MANAGER — recorded, not an oversight. `run-node.js`
+     takes argv + the app's existing env knobs and nothing else: NO config file
+     (a second configuration surface would disagree with genesis.json/env and
+     force a precedence debate), NO service installer (`systemd`/launchd units
+     are ops opinion; the README ships one unit to copy instead of generating
+     it per-distro), NO key import/export/wallet commands (the identity IS
+     `<data-dir>/identity.seed`; moving a node means pointing `--data-dir` at
+     the desktop app's userData directory, which is byte-for-byte the same
+     layout — copying that one 0600 file is the whole migration story). Also
+     NOT added: log rotation (a supervisor owns the journal), PID files, and a
+     status RPC — a headless node's interface is stdout + exit code, and both
+     are pinned by tests. Revisit when an actual fleet exists (multiple relays
+     to operate) rather than for one machine. -->
+
+<!-- OBSERVATION 2026-10-20 (ticket 8): ON A PUBLIC HOST, `reachability` CAN
+     READ `unknown` FOR A RELAY. AutoNAT probes come from other peers; a
+     freshly-booted VPS may have none yet, so boot prints `unknown` while the
+     machine is in fact dialable — and `--relay` serves anyway (the auto-relay
+     policy from ticket 7 withholds service ONLY on a learned `unreachable`).
+     Nothing to fix in code; operators should read that line as "not yet
+     observed", and the `[boot] dial me:` line — which comes from the real
+     listen addresses, not from probing — is the authoritative answer to "am I
+     dialable". -->

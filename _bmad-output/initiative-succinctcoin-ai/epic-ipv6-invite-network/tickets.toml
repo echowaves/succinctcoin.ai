@@ -86,3 +86,15 @@ after = [6]
 hitl = false
 risk = "medium"
 unknown = "Whether to release held circuits once a probe later proves direct reachability (upstream reservation API has no explicit release; TTL expiry covers it) — decide during implementation and pin the choice."
+
+[[entry]]
+id = 8
+type = "story"
+title = "Headless node runner — plain-Node mining node for VPS hosting"
+description = "The reliable way to be dialable is an always-on host with native IPv6, and mining rewards UPTIME — but the only node entry point is Electron's main process, so a server needs Xvfb + GUI deps. Add a CLI sibling of index.ts that reuses the electron-free main path verbatim (AD-1 already made createCoreHost / defaultNetConfig / buildDiscoveryPorts / loadOrCreateIdentitySeed parameter-injected): src/main/run-node.ts exports runNode(opts) taking { dataDir, genesisPath, env, platform, netConfig factory, log } — loads genesis, derives identity from <dataDir>/identity.seed (SAME format/permissions as the app, so copying a seed moves the identity), builds the adapter through defaultNetConfig with the SAME env knobs (SUCCINCTCOIN_LISTEN_PORT/_MDNS/_RELAY_SEEDS/_RELAY_SERVER) + <dataDir>/bootstrap.txt, FileChainStore at <dataDir>/chain, the full discovery ladder, and an injectable log sink for forwardEvent; returns { host, stop }. src/main/cli/run-node.ts is the argv+signal shell (SIGINT/SIGTERM -> stop -> exit) printing [boot] identity / dial me / reachability lines, the existing invite line from the ladder callback, one line per mined block, and interface-class counts when no invite exists yet (inviteDiagnostics counts as JSON — the renderer prose module stays unimported by main). Emit via a new vite.node.config.ts -> dist/node/run-node.mjs (externals: node builtins only; genesis resolves with the same ../config/ relative expression main uses) + start:node script. No config file, no daemon installer, no key import command."
+verify = "test/run-node.test.ts on plain Node with an explicitly injected memory net config (AD-10): BOOTS_AND_MINES (clean stop, boot line + >=1 mined line, chain dir created); IDENTITY_STABLE_ACROSS_RESTART (same dir => same identityId, different dir differs); INVITE_LINE_APPEARS (bounded poll; the printed scinvite parses AND verifies through the shipped verifyInvite against the same genesis — the CLI's output is dialable data, not decoration); NO_KEYS_IN_LOGS (AD-11 scan of captured lines); CLI_SOURCE_PIN (no electron import in the shell + argv/env precedence pinned in the pure parser). Existing app suites unchanged; README gains the VPS section + systemd unit."
+covers = ["R1", "R5"]
+after = [7]
+hitl = false
+risk = "low"
+unknown = "None — every input the runner needs is already a parameter somewhere in main; this story only adds the shell."

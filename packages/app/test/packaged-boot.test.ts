@@ -31,17 +31,26 @@
  *                            `dist/main/stale-emit.js` — then runs the
  *                            app's `build` script — `corepack pnpm build`
  *                            in the app dir — UNCONDITIONALLY — F3/F7):
- *                            ALL FOUR pinned artifacts exist after the
+ *                            ALL FIVE pinned artifacts exist after the
  *                            clean build (`dist/main/index.js`,
  *                            `dist/preload.mjs`,
  *                            `dist/config/genesis.json`,
- *                            `dist/renderer/index.html`), the planted
+ *                            `dist/renderer/index.html`,
+ *                            `dist/node/run-node.js`), the planted
  *                            stale emit is GONE (the clean step ran), and
  *                            EVERY comment-stripped import specifier
  *                            (static `from '...'` + line-anchored
  *                            side-effect `import '...'` + dynamic
  *                            `import('...')`) is `electron` or a node
  *                            builtin WITH OR WITHOUT the `node:` prefix
+ *                            (Node's ESM loader resolves both identically;
+ *                            `node:module`'s `builtinModules` is the
+ *                            authoritative set): the core is INLINED, the
+ *                            package needs no workspace node_modules. The
+ *                            headless runner bundle is held to the STRICTER
+ *                            rule — node builtins ONLY, `electron` is not even
+ *                            an allowed specifier (ticket 8: it runs on plain
+ *                            Node).
  *                            (Node's ESM loader resolves both identically;
  *                            `node:module`'s `builtinModules` is the
  *                            authoritative set): the core is INLINED, the
@@ -118,6 +127,8 @@ const MAIN_BUNDLE = join(APP_DIR, 'dist', 'main', 'index.js')
 const PRELOAD_BUNDLE = join(APP_DIR, 'dist', 'preload.mjs')
 /** The bundled renderer entry (the build's renderer `vite build` step). */
 const RENDERER_INDEX = join(APP_DIR, 'dist', 'renderer', 'index.html')
+/** The headless runner bundle (ticket 8 — plain Node, NO Electron anywhere). */
+const NODE_BUNDLE = join(APP_DIR, 'dist', 'node', 'run-node.js')
 /** A simulated stale prior-pipeline emit (the clean-step probe — F7). */
 const STALE_EMIT = join(APP_DIR, 'dist', 'main', 'stale-emit.js')
 /** The thin electron glue (the `PATH_THREADED` scan target). */
@@ -345,13 +356,15 @@ describe('packaged-app boot (plain Node, AD-10 headless-safe)', () => {
     writeFileSync(STALE_EMIT, '/* stale prior-pipeline emit (clean-step probe) */\n')
     runAppBuild()
 
-    // ALL FOUR pinned artifacts exist after a clean build (AC #1) — the
+    // ALL FIVE pinned artifacts exist after a clean build (AC #1) — the
     // forge `main`, the Electron ESM-preload rule (the preload MUST be
-    // `.mjs`), the ONE bundled genesis source, the renderer entry.
+    // `.mjs`), the ONE bundled genesis source, the renderer entry, and the
+    // headless runner (ticket 8 — same build, no Electron).
     expect(existsSync(MAIN_BUNDLE), 'dist/main/index.js exists').toBe(true)
     expect(existsSync(PRELOAD_BUNDLE), 'dist/preload.mjs exists').toBe(true)
     expect(existsSync(BUNDLED_GENESIS), 'dist/config/genesis.json exists').toBe(true)
     expect(existsSync(RENDERER_INDEX), 'dist/renderer/index.html exists').toBe(true)
+    expect(existsSync(NODE_BUNDLE), 'dist/node/run-node.js exists').toBe(true)
     // The planted stale emit is GONE — the build's clean step ran.
     expect(existsSync(STALE_EMIT), 'the planted stale emit is removed by the clean step').toBe(false)
 
@@ -385,6 +398,22 @@ describe('packaged-app boot (plain Node, AD-10 headless-safe)', () => {
       // both parse it).
       expect(src, `${bundle}: no require()`).not.toMatch(/\brequire\s*\(/)
     }
+
+    // The headless runner is STRICTER: same self-containment, and `electron`
+    // is not even an allowed specifier — this is the proof behind the README's
+    // "no Electron module anywhere in it". (Checked on the EXTRACTED specifier
+    // set: a dependency probing `process.versions.electron` at runtime is not
+    // an import, and a whole-text scan would false-positive on it.)
+    const nodeSrc = stripComments(readFileSync(NODE_BUNDLE, 'utf8'))
+    const nodeSpecs = extractImportSpecifiers(nodeSrc)
+    expect(nodeSpecs.length, 'dist/node/run-node.js: has import specifiers').toBeGreaterThan(0)
+    const nodeForeign = nodeSpecs.filter((s) => !builtins.has(s))
+    expect(nodeForeign, 'dist/node/run-node.js: node builtins ONLY (no electron)').toEqual([])
+    const nodeNpm = nodeSpecs.filter(
+      (s) => s.startsWith('@succinctcoin/') || s.startsWith('@libp2p/') || s === 'big.js',
+    )
+    expect(nodeNpm, 'dist/node/run-node.js: the core graph must be inlined').toEqual([])
+    expect(nodeSrc, 'dist/node/run-node.js: no require()').not.toMatch(/\brequire\s*\(/)
   }, 300_000)
 
   // -----------------------------------------------------------------
