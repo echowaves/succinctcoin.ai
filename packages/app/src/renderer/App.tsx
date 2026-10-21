@@ -17,7 +17,12 @@
  */
 import { useEffect, useState } from 'react'
 
-import { describeIpv6, describeLoopbackInvite, type InviteDiagnostics } from './ipv6-hint.js'
+import {
+  describeCircuitInvite,
+  describeIpv6,
+  describeLoopbackInvite,
+  type InviteDiagnostics,
+} from './ipv6-hint.js'
 import { useSuccinctcoin } from './useSuccinctcoin.js'
 import type { UiState } from './ui-state.js'
 
@@ -170,6 +175,12 @@ function InvitePanel() {
   // this machine has NO global IPv6 is either a loopback dev invite or a
   // stale one — friends cannot dial in either way. Say so.
   const loopbackWarning = diag !== null ? describeLoopbackInvite(diag) : null
+  // Ticket 7: an invite whose address carries /p2p-circuit rides a relay —
+  // say so, distinctly from the loopback warning (a circuit is healthy, not
+  // broken; it just costs a hop). Own invite and pasted invite alike.
+  const ownCircuitHint = invite !== null ? describeCircuitInvite(invite) : null
+  const pastedCircuitHint =
+    pasted.trim() === '' ? null : describeCircuitInvite(pasted)
 
   return (
     <section>
@@ -186,6 +197,7 @@ function InvitePanel() {
           <textarea readOnly rows={3} cols={72} value={invite} onFocus={(e) => e.currentTarget.select()} />
           <button onClick={refresh}>Refresh</button>
           {loopbackWarning !== null && <p role="status">{loopbackWarning}</p>}
+          {ownCircuitHint !== null && <p role="status">{ownCircuitHint}</p>}
         </>
       )}
       <p>Join via a friend's invite:</p>
@@ -196,6 +208,7 @@ function InvitePanel() {
         value={pasted}
         onChange={(e) => setPasted(e.target.value)}
       />
+      {pastedCircuitHint !== null && <p role="status">{pastedCircuitHint}</p>}
       <button onClick={join} disabled={pasted.trim() === ''}>
         Join
       </button>

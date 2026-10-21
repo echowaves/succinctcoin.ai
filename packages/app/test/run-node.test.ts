@@ -365,6 +365,15 @@ describe('ticket 8 — the CLI shell is pure glue', () => {
     expect(refused.configs[0]?.relayRole).toBeUndefined()
   }, 30_000)
 
+  it('RELAY_AUTO (ticket 7): the runner boots auto-relay ON; SUCCINCTCOIN_RELAY_AUTO=0 is the kill switch', async () => {
+    const h = await bootRunner()
+    await h.handle.stop()
+    expect(h.configs[0]?.relayAuto).toBe('auto')
+    const off = await bootRunner({ env: { SUCCINCTCOIN_RELAY_AUTO: '0' } })
+    await off.handle.stop()
+    expect(off.configs[0]?.relayAuto).toBe('explicit-only')
+  }, 30_000)
+
   it('NO_MINE: an apply-only node boots, stays quiet, and holds genesis', async () => {
     const h = await bootRunner({ startMining: false })
     // A MINING node runs through the same window: its first line proves the

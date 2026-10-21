@@ -93,7 +93,11 @@ import { memory } from '@libp2p/memory'
 import { tcp } from '@libp2p/tcp'
 import { gossipsub } from '@libp2p/gossipsub'
 import { identify } from '@libp2p/identify'
-import { circuitRelayServer, circuitRelayTransport } from '@libp2p/circuit-relay-v2'
+import {
+  RELAY_V2_HOP_CODEC,
+  circuitRelayServer,
+  circuitRelayTransport,
+} from '@libp2p/circuit-relay-v2'
 import { bootstrap } from '@libp2p/bootstrap'
 import { mdns } from '@libp2p/mdns'
 import { peerIdFromString } from '@libp2p/peer-id'
@@ -143,6 +147,13 @@ import {
   isHonestAddressText,
 } from './reachability.js'
 import type { Reachability } from './reachability.js'
+import {
+  MAX_AUTO_RELAYS,
+  autoHoldWanted,
+  autoServeEnabled,
+  pickRelayCandidates,
+} from './auto-relay.js'
+import type { AutoRelayMode, RelayCandidate } from './auto-relay.js'
 import { dcutr as dcutrService } from '@libp2p/dcutr'
 
 /** The dial bound for `dial()` (D2 — a timeout, never a clock read). */
@@ -244,6 +255,22 @@ export interface NetAdapterConfig {
    * shrink it; `stop()` cancels pending retries.
    */
   relaySeedRetryMs?: number | undefined
+  /**
+   * Auto-relay (ticket 7) — `'auto'`: SERVE hops unless this node is
+   * proven-unreachable, and HOLD circuits through hop-advertising DIRECT
+   * peers once proven-unreachable (the ladder rule; zero operator config).
+   * `undefined` / `'explicit-only'` keeps today's shipped behavior
+   * byte-identical: seeds + explicit `relayRole` only. The app glue
+   * resolves this from `SUCCINCTCOIN_RELAY_AUTO` (kill switch `'0'`);
+   * tests set it directly. Seeds stay ADDITIVE under `'auto'`.
+   */
+  relayAuto?: AutoRelayMode | undefined
+  /**
+   * Auto-relay top-up cadence while holding is wanted (default 15_000 ms;
+   * tests shrink it). The chain only ever runs while proven-unreachable —
+   * a healthy node never schedules it.
+   */
+  autoRelayRetryMs?: number | undefined
 }
 
 /** 10.2 — one relay-seed attempt outcome (boot log / tests). */
@@ -496,6 +523,21 @@ async function buildNode(
   // listener (inbound only via the relay), so the config's `listenAddress`
   // is ignored for this role.
   const isClient = config.relayRole === 'client'
+  // Auto-relay (ticket 7) — the SERVE decision, made once at construction
+  // from the reachability known then: a fresh adapter has no probe evidence
+  // ('unknown'), and serving while unknown is the policy (`autoServeEnabled`)
+  // — refusing while unknown would starve every fresh boot of relay capacity.
+  // The explicit `relayRole: 'relay'` stays a force-on override; a 'client'
+  // never serves (it has no inbound listener at all). Dynamic server
+  // start/stop is deliberately NOT attempted (CircuitRelayServer's
+  // start/stop are interface-internal — rejected on the same grounds as the
+  // 10.3 pin review): a node that later learns it is unreachable keeps
+  // advertising a hop until restart, and peer-side selection self-corrects
+  // (refused/unusable circuit ⇒ next candidate). Pinned by an adapter row.
+  const serveWanted =
+    !isClient &&
+    (config.relayRole === 'relay' ||
+      autoServeEnabled(config.relayAuto ?? 'explicit-only', 'unknown'))
   const node = await createLibp2p<Services>({
     addresses: {
       listen: isClient ? [] : [config.listenAddress],
@@ -526,8 +568,9 @@ async function buildNode(
       gossip: gossipsub({ runOnLimitedConnection: true }),
       identify: identify(),
       // 5.7 D8 — the relay role registers the circuit-relay SERVER (serves
-      // hops to reserved clients); 'none'/'client' nodes carry no server.
-      ...(config.relayRole === 'relay' ? { circuitRelay: circuitRelayServer() } : {}),
+      // hops to reserved clients); ticket 7 widens this with the auto-serve
+      // policy (`serveWanted` above); explicit-only nodes carry no server.
+      ...(serveWanted ? { circuitRelay: circuitRelayServer() } : {}),
       // 10.1 — the reachability probe (tcp only, AD-10). Its events feed the
       // adapter's honesty filter; the service itself declares identify as a
       // dependency (registered above).
@@ -752,7 +795,16 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
   /** Subscribe the tracker (source seam wins over the service). */
   function wireReachability(n: Libp2p<Services>): () => void {
     const report = (addr: string, reachable: boolean): void => {
+      const before = reachTracker.aggregate()
       reachTracker.observe(addr, reachable)
+      // Auto-relay (ticket 7) — the rung-3 trigger: holding begins on the
+      // TRANSITION EDGE into proven-unreachable (the ladder rule: this rung
+      // starts where direct addressing leaves off). Top-ups ride the round
+      // chain armed here; reservation loss re-holds through the existing
+      // 10.2 watcher, so nothing else needs to fire on this edge.
+      if (before !== 'unreachable' && reachTracker.aggregate() === 'unreachable') {
+        armAutoRounds(holdRun)
+      }
     }
     if (config.reachabilitySource !== undefined) return config.reachabilitySource(report)
     const svc = n.services.autoNatV2
@@ -823,8 +875,13 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
    * `SEED_ATTEMPTS` tries spaced by `relaySeedRetryMs`. Success records the
    * circuit address; each failure emits an event and (unless last) retries.
    * NEVER throws — a dead seed is a normal outcome (boot never unwinds).
+   * Resolves TRUE iff the episode ended with a held reservation (ticket 7:
+   * the auto rounds use that verdict to cool a failing relay down).
    */
-  async function holdSeed(seed: string, run: { alive: boolean }): Promise<void> {
+  async function holdSeed(
+    seed: string,
+    run: { alive: boolean },
+  ): Promise<boolean> {
     // Pre-flight (review F6): shape + policy are DETERMINISTIC — a bad seed
     // gets exactly one skip event, never three retries of the same throw.
     const relayPeer = seedRelayPeerId(seed)
@@ -834,7 +891,7 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
         ok: false,
         error: 'seed must parse as a multiaddr and carry /p2p/<relayId>',
       })
-      return
+      return false
     }
     // The adapter's OWN dial path obeys the same IPv6-only policy as
     // operator dials on tcp (seeds are addressing; one family). 10.3: use
@@ -846,12 +903,12 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
         assertDialable(seed)
       } catch {
         emitSeed(run, { seed, ok: false, error: 'off-policy seed (IPv6-only)' })
-        return
+        return false
       }
     }
     const retryMs = config.relaySeedRetryMs ?? 5000
     for (let attempt = 1; attempt <= SEED_ATTEMPTS; attempt++) {
-      if (!run.alive) return
+      if (!run.alive) return false
       try {
         const n = requireNode()
         await n.dial(multiaddr(seed), { signal: AbortSignal.timeout(DIAL_TIMEOUT_MS) })
@@ -864,16 +921,139 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
           peerIdFromString(relayPeer),
         )
         if (!reserved) throw new Error('relay refused the circuit reservation')
-        if (!run.alive) return // stopped mid-dial: reservation is gone with the node
+        if (!run.alive) return false // stopped mid-dial: reservation is gone with the node
         heldCircuits.set(seed, `${seed}/p2p-circuit/p2p/${n.peerId.toString()}`)
         emitSeed(run, { seed, ok: true })
-        return
+        return true
       } catch (e) {
         emitSeed(run, { seed, ok: false, error: String(e) })
-        if (attempt === SEED_ATTEMPTS) return // given up — spine stays alive
+        if (attempt === SEED_ATTEMPTS) return false // given up — spine stays alive
         await new Promise((r) => setTimeout(r, retryMs))
       }
     }
+    return false
+  }
+
+  // ── auto-relay hold rounds (ticket 7) ──────────────────────────────────────
+  // Runtime-discovered seeds, held EXACTLY like manual ones: the same bounded
+  // hold episode, the same `onRelaySeed` events, the same loss recovery, and
+  // the same announce surface (`heldCircuits` feeds `listenAddresses()`).
+  // The round chain runs ONLY while holding is wanted (proven-unreachable);
+  // when evidence flips back to reachable the chain simply stops
+  // re-scheduling. Held circuits are NOT force-released on recovery — the
+  // pinned reservation API has no release and TTL expiry covers it (the
+  // ticket's recorded `unknown`, decided here).
+  const autoSeeds = new Set<string>()
+  const autoInFlight = new Set<string>()
+  // Failure memory (review M1): a seed whose bounded episode ended unheld
+  // is COOLED — skipped for `AUTO_FAIL_COOLDOWN_ROUNDS` rounds so its sort
+  // rank can never starve the candidates below it while it keeps refusing.
+  // Round-counted, not clock-counted (AD-3 discipline): entries tick down
+  // every round and the map clears on stop. The loss-triggered re-hold in
+  // `wireSeedLoss` deliberately BYPASSES the cooldown — losing a held seed
+  // is that relay's recovery path, not a refusal.
+  const autoFailRounds = new Map<string, number>()
+  const AUTO_FAIL_COOLDOWN_ROUNDS = 4
+  let autoRoundTimer: ReturnType<typeof setTimeout> | null = null
+  let autoRoundsArmed = false
+
+  /** One candidate round. DIRECT connections only (libp2p's own `direct`
+   * flag — a relayed link proves nothing about the hop), hop-advertising only
+   * (identify fills the peer store with `/libp2p/circuit/relay/0.2.0/hop`;
+   * no record yet = identify pending = not a candidate), then the pure policy
+   * pick over the FULL sorted list — dispatch walks it in rank order and
+   * stops once the round's room is spent, so cooled/in-flight candidates
+   * backfill from lower ranks instead of wasting the round. NEVER throws. */
+  async function runAutoHoldRound(run: { alive: boolean }): Promise<void> {
+    if (!run.alive || node === null) return
+    if (!autoHoldWanted(config.relayAuto ?? 'explicit-only', reachTracker.aggregate())) {
+      return
+    }
+    for (const [seed, left] of autoFailRounds) {
+      if (left <= 1) autoFailRounds.delete(seed)
+      else autoFailRounds.set(seed, left - 1)
+    }
+    const manual = new Set(config.relaySeeds ?? [])
+    const room = MAX_AUTO_RELAYS - [...autoSeeds].filter((s) => heldCircuits.has(s)).length
+    if (room <= 0) return
+    const n0 = node
+    const candidates: RelayCandidate[] = []
+    for (const conn of n0.getConnections()) {
+      if (!conn.direct) continue
+      try {
+        const peer = await n0.peerStore.get(conn.remotePeer)
+        if (!peer.protocols.includes(RELAY_V2_HOP_CODEC)) continue
+      } catch {
+        continue // no peer record yet — identify pending, skip this round
+      }
+      candidates.push({ peerId: conn.remotePeer.toString(), direct: true })
+    }
+    const self = n0.peerId.toString()
+    let dispatched = 0
+    for (const peerId of pickRelayCandidates(candidates, {
+      selfPeerId: self,
+      max: Number.MAX_SAFE_INTEGER,
+    })) {
+      if (!run.alive || node === null) return
+      if (dispatched >= room) break
+      // The seed text is the live direct address + the relay's peer id — the
+      // exact shape a manual `SUCCINCTCOIN_RELAY_SEEDS` entry has. (The live
+      // remoteAddr is ALREADY peer-encapsulated — appending twice would build
+      // `/p2p/<id>/p2p/<id>`; pin that with the endsWith guard.)
+      const conn = node
+        .getConnections()
+        .find((c) => c.direct && c.remotePeer.toString() === peerId)
+      if (conn === undefined) continue
+      const addr = conn.remoteAddr.toString()
+      const seed = addr.endsWith(`/p2p/${peerId}`) ? addr : `${addr}/p2p/${peerId}`
+      // Skip: already held, mid-episode, an OPERATOR's seed (their retry
+      // loop owns that address — no duplicate episode), or cooling down.
+      if (heldCircuits.has(seed) || autoInFlight.has(seed)) continue
+      if (manual.has(seed) || autoFailRounds.has(seed)) continue
+      autoSeeds.add(seed)
+      autoInFlight.add(seed)
+      dispatched += 1
+      // holdSeed NEVER rejects; the in-flight guard only prevents two
+      // concurrent episodes for the same relay, and it is RUN-SCOPED on
+      // deletion (review m2): a dead run's late episode must not clear the
+      // live run's guard for the same seed text.
+      void holdSeed(seed, run).then((held) => {
+        if (!run.alive) return
+        autoInFlight.delete(seed)
+        if (!held) autoFailRounds.set(seed, AUTO_FAIL_COOLDOWN_ROUNDS)
+      })
+    }
+  }
+
+  /** Arm the round chain (idempotent per run): one immediate round on the
+   * trigger edge, then top-ups every `autoRelayRetryMs` ONLY while holding
+   * stays wanted — a healthy node never keeps a timer alive. The next
+   * transition edge re-arms if the chain has stood down. A dead run NEVER
+   * arms (review m1: the chain object is per-run; arming on a retired one
+   * strands it until its tick merely disarms). */
+  function armAutoRounds(run: { alive: boolean }): void {
+    if (!run.alive) return
+    // Explicit-only mode NEVER arms anything — not even a wasted timer — so
+    // the kill-switch path stays byte-identical to pre-ticket behavior.
+    if (!autoHoldWanted(config.relayAuto ?? 'explicit-only', reachTracker.aggregate())) {
+      return
+    }
+    void runAutoHoldRound(run)
+    if (autoRoundsArmed) return
+    autoRoundsArmed = true
+    const tick = (): void => {
+      if (!run.alive) {
+        autoRoundsArmed = false
+        return
+      }
+      if (!autoHoldWanted(config.relayAuto ?? 'explicit-only', reachTracker.aggregate())) {
+        autoRoundsArmed = false // evidence moved on; the next edge re-arms
+        return
+      }
+      void runAutoHoldRound(run)
+      autoRoundTimer = setTimeout(tick, config.autoRelayRetryMs ?? 15_000)
+    }
+    autoRoundTimer = setTimeout(tick, config.autoRelayRetryMs ?? 15_000)
   }
 
   /** Connection-loss: drop the seed's circuit address, run ONE fresh bounded
@@ -917,11 +1097,6 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       await node.services.gossip.subscribe(TOPICS.peers)
       await node.services.gossip.subscribe(TOPICS.announcements)
       await node.services.gossip.subscribe(TOPICS.introductions)
-      // 10.1 — evidence flows from here on; a restart starts at 'unknown'
-      // (review F8: wired LAST so a throw mid-start can never leak the
-      // service-event subscription without a matching tracker/node).
-      reachTracker = createReachabilityTracker()
-      reachabilityUnsub = wireReachability(node)
       // 10.2 — relay seeds: fire-and-forget bounded hold episodes (a dead
       // seed NEVER unwinds boot) + the connection-loss watcher that
       // re-holds. Fresh reservations state AND a fresh run object per
@@ -929,6 +1104,14 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // and can never be revived by this one (review F1).
       holdRun = { alive: true }
       heldCircuits.clear()
+      // 10.1 — evidence flows from here on; a restart starts at 'unknown'
+      // (review F8: wired LAST so a throw mid-start can never leak the
+      // service-event subscription without a matching tracker/node).
+      // Ticket 7 review m1: AFTER the run object exists — a reachability
+      // source that reports synchronously on subscribe would otherwise arm
+      // the auto chain on the RETIRED run (a chain no later edge revives).
+      reachTracker = createReachabilityTracker()
+      reachabilityUnsub = wireReachability(node)
       wireSeedLoss(node)
       for (const seed of config.relaySeeds ?? []) void holdSeed(seed, holdRun)
     },
@@ -939,6 +1122,16 @@ export function createNetAdapter(config: NetAdapterConfig): NetAdapter {
       // and events are run-dropped); reservations die with the node.
       holdRun.alive = false
       heldCircuits.clear()
+      // Auto-relay (ticket 7) — stand the round chain down with the run; a
+      // restart starts from 'unknown' (no evidence, no chain).
+      if (autoRoundTimer !== null) {
+        clearTimeout(autoRoundTimer)
+        autoRoundTimer = null
+      }
+      autoRoundsArmed = false
+      autoSeeds.clear()
+      autoInFlight.clear()
+      autoFailRounds.clear()
       // 10.1 — evidence stops flowing (no leak across a restart).
       reachabilityUnsub?.()
       reachabilityUnsub = null

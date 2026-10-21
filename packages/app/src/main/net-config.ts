@@ -21,7 +21,11 @@
  * keypair stays in main (`index.ts` creates it); the config carries only
  * the plain public id string, never key material.
  */
-import type { GenesisConfig, NetAdapterConfig } from '@succinctcoin/core'
+import type {
+  AutoRelayMode,
+  GenesisConfig,
+  NetAdapterConfig,
+} from '@succinctcoin/core'
 
 /**
  * The production listen address: `/ip6/::/tcp/0` — all interfaces, EPHEMERAL
@@ -76,8 +80,25 @@ export function defaultNetConfig(
     // opt-in AND key-absent when off: default builds stay byte-identical to
     // pre-10.3 (exact-config pins). `as const` keeps the literal type.
     ...(opts.relayServer === true ? { relayRole: 'relay' as const } : {}),
+    // Ticket 7 — auto-relay is ON unless the kill switch says otherwise, so
+    // the key is ABSENT only when a caller passes no mode (the pinned
+    // exact-config default); the app boot always passes `resolveRelayAuto`.
+    ...(opts.relayAuto !== undefined ? { relayAuto: opts.relayAuto } : {}),
     protocolIdentityId,
   }
+}
+
+/**
+ * Ticket 7 — resolve the auto-relay mode from the environment. DEFAULT ON:
+ * a plain install serves hops while reachable and holds circuits through
+ * hop-advertising direct peers once proven-unreachable (the discovery
+ * ladder's rung 3; zero operator config). KILL SWITCH: `SUCCINCTCOIN_RELAY_AUTO=0`
+ * ⇒ `'explicit-only'` — the pre-ticket behavior (explicit seeds +
+ * `SUCCINCTCOIN_RELAY_SERVER` only), byte-identical to today. Pure: env in,
+ * mode out.
+ */
+export function resolveRelayAuto(env: NodeJS.ProcessEnv): AutoRelayMode {
+  return env.SUCCINCTCOIN_RELAY_AUTO === '0' ? 'explicit-only' : 'auto'
 }
 
 /** Optional boot overrides (resolved from env/files by the thin glue). */
@@ -101,6 +122,11 @@ export interface NetConfigOptions {
    * opt-in. A server bootstraps like any peer and should NOT itself need
    * seeds — it is the seed. */
   relayServer?: boolean | undefined
+  /** Ticket 7 — auto-relay mode (env SUCCINCTCOIN_RELAY_AUTO; default
+   * `'auto'`, kill switch `'0'` ⇒ `'explicit-only'`). ABSENT by default so
+   * the pinned exact-config builds don't grow a key; the app boot always
+   * passes `resolveRelayAuto(env)`. */
+  relayAuto?: AutoRelayMode | undefined
 }
 
 /**

@@ -54,6 +54,7 @@ import {
   defaultNetConfig,
   parseBootstrapFile,
   parseRelaySeeds,
+  resolveRelayAuto,
 } from '../src/main/net-config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -131,6 +132,26 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
       protocolIdentityId: 'af'.repeat(32),
     })
     expect(relay.relaySeeds).toEqual([]) // a server IS a seed, not a seed-user
+  })
+
+  it('RELAY_AUTO (ticket 7): kill-switch resolve; key ABSENT unless passed (default pins hold)', () => {
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    // Pure resolver: DEFAULT auto; ONLY the literal '0' kills it (any other
+    // value — including '1' or junk — stays 'auto', matching the env-knob
+    // discipline of the neighbors).
+    expect(resolveRelayAuto({})).toBe('auto')
+    expect(resolveRelayAuto({ SUCCINCTCOIN_RELAY_AUTO: '0' })).toBe('explicit-only')
+    expect(resolveRelayAuto({ SUCCINCTCOIN_RELAY_AUTO: '1' })).toBe('auto')
+    expect(resolveRelayAuto({ SUCCINCTCOIN_RELAY_AUTO: '' })).toBe('auto')
+    // Seam: absent option ⇒ NO key (the exact-config pins above stay green);
+    // explicit mode passes through untouched.
+    expect('relayAuto' in defaultNetConfig(g, 'f1'.repeat(32))).toBe(false)
+    expect(
+      defaultNetConfig(g, 'f1'.repeat(32), { relayAuto: 'explicit-only' }).relayAuto,
+    ).toBe('explicit-only')
+    expect(defaultNetConfig(g, 'f1'.repeat(32), { relayAuto: 'auto' }).relayAuto).toBe(
+      'auto',
+    )
   })
 
   it('MDNS_OPT_IN: mdns is OFF by default; ONLY `mdns: true` enables it (9.1)', () => {

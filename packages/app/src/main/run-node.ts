@@ -50,7 +50,12 @@ import type { CoreHost } from './core-host.js'
 import { loadOrCreateIdentitySeed } from './identity-seed.js'
 import { inviteDiagnostics } from './invite-diagnostics.js'
 import type { Ip6InterfaceTable } from './invite-diagnostics.js'
-import { defaultNetConfig, parseBootstrapFile, parseRelaySeeds } from './net-config.js'
+import {
+  defaultNetConfig,
+  parseBootstrapFile,
+  parseRelaySeeds,
+  resolveRelayAuto,
+} from './net-config.js'
 
 /** A log line sink (the app's equivalent is `webContents.send`). */
 export type LogLine = (line: string) => void
@@ -132,6 +137,10 @@ export async function runNode(opts: RunNodeOptions): Promise<NodeRunHandle> {
   const relaySeeds = parseRelaySeeds(env.SUCCINCTCOIN_RELAY_SEEDS)
   const relayServer =
     opts.flags?.relayServer ?? env.SUCCINCTCOIN_RELAY_SERVER === '1'
+  // Ticket 7 — same auto-relay default as the app boot (kill switch
+  // SUCCINCTCOIN_RELAY_AUTO=0); no argv flag: this is a network-policy
+  // knob, not a per-run preference.
+  const relayAuto = resolveRelayAuto(env)
 
   // The adapter's seed events are boot facts, not debug noise: a hidden node
   // operator's only feedback that `SUCCINCTCOIN_RELAY_SEEDS` is working (or
@@ -143,6 +152,7 @@ export async function runNode(opts: RunNodeOptions): Promise<NodeRunHandle> {
       mdns: env.SUCCINCTCOIN_MDNS === '1',
       relaySeeds,
       relayServer,
+      relayAuto,
     }),
     onRelaySeed: (event) => {
       log(
@@ -294,7 +304,10 @@ const USAGE = [
   '  --help              this text',
   '',
   'Env: SUCCINCTCOIN_LISTEN_PORT, SUCCINCTCOIN_RELAY_SEEDS, SUCCINCTCOIN_RELAY_SERVER,',
-  '     SUCCINCTCOIN_MDNS. Files in --data-dir: invite.txt (joins), bootstrap.txt.',
+  '     SUCCINCTCOIN_MDNS, SUCCINCTCOIN_RELAY_AUTO (=0 disables auto-relay:',
+  '     serving hops + holding circuits through hop-capable peers when behind',
+  '     NAT — explicit seeds/server role only). Files in --data-dir: invite.txt',
+  '     (joins), bootstrap.txt.',
 ].join('\n')
 
 /**

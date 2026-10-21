@@ -7,7 +7,11 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { describeIpv6, describeLoopbackInvite } from '../src/renderer/ipv6-hint.js'
+import {
+  describeCircuitInvite,
+  describeIpv6,
+  describeLoopbackInvite,
+} from '../src/renderer/ipv6-hint.js'
 import type { InviteDiagnostics } from '../src/renderer/ipv6-hint.js'
 
 const d = (over: Partial<InviteDiagnostics>): InviteDiagnostics => ({
@@ -64,5 +68,34 @@ describe('dev-only announce allowance — describeLoopbackInvite', () => {
     expect(s).toMatch(/only on this machine/) // dev invite: local-only truth
     expect(s).toMatch(/stale/) // older invite: the other honest reading
     expect(s).toMatch(/SUCCINCTCOIN_ALLOW_LOOPBACK/)
+  })
+})
+
+// Ticket 7: an invite whose address runs through /p2p-circuit RIDES A RELAY —
+// the panel must say so (distinct from the loopback warning: a circuit is
+// healthy, it just costs a hop). The hint is a decoded-bytes scan (thin-client
+// rule: no core import), so these rows encode invite-shaped payloads directly.
+describe('ticket 7 — describeCircuitInvite (the rides-a-relay hint)', () => {
+  const enc = (body: string): string =>
+    'scinvite:v1:' + Buffer.from(body, 'utf8').toString('base64url')
+
+  it('CIRCUIT: a /p2p-circuit address ⇒ the honest ride-a-relay sentence', () => {
+    const s = describeCircuitInvite(
+      enc('/ip6/2001:db8::9/tcp/1/p2p/RELAY/p2p-circuit/p2p/FRIEND'),
+    )
+    expect(s).not.toBeNull()
+    expect(s).toMatch(/rides a relay/)
+    expect(s).toMatch(/NAT/)
+  })
+
+  it('DIRECT_SILENT: a plain direct invite stays quiet (the shipped default)', () => {
+    expect(describeCircuitInvite(enc('/ip6/2001:db8::5/tcp/4001/p2p/FRIEND'))).toBeNull()
+  })
+
+  it('MALFORMED: junk, wrong prefix, or oversize ⇒ null — the parser judges, never the hint', () => {
+    expect(describeCircuitInvite('')).toBeNull()
+    expect(describeCircuitInvite('scinvite:v1:!!!not base64!!!')).toBeNull()
+    expect(describeCircuitInvite('something else entirely')).toBeNull()
+    expect(describeCircuitInvite('scinvite:v1:' + 'A'.repeat(5000))).toBeNull()
   })
 })

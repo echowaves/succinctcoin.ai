@@ -42,7 +42,12 @@ import { createCoreHost } from './core-host.js'
 import { loadOrCreateIdentitySeed } from './identity-seed.js'
 import { inviteDiagnostics } from './invite-diagnostics.js'
 import { IPC_COMMANDS, IPC_EVENTS, IPC_READ } from './ipc-channels.js'
-import { defaultNetConfig, parseBootstrapFile, parseRelaySeeds } from './net-config.js'
+import {
+  defaultNetConfig,
+  parseBootstrapFile,
+  parseRelaySeeds,
+  resolveRelayAuto,
+} from './net-config.js'
 
 /**
  * The BUNDLED `dist/config/genesis.json` — the ONE genesis source (the
@@ -107,6 +112,10 @@ async function boot(): Promise<void> {
       // dialable multiaddr + peer id print in the boot log; share that seed
       // out-of-band and peers behind firewalls hold circuits through it.
       relayServer: process.env.SUCCINCTCOIN_RELAY_SERVER === '1',
+      // Ticket 7 — auto-relay (ladder rung 3) is ON by default: serve hops
+      // while reachable, hold circuits through hop-advertising direct peers
+      // once proven-unreachable. SUCCINCTCOIN_RELAY_AUTO=0 ⇒ explicit-only.
+      relayAuto: resolveRelayAuto(process.env),
     }),
     onRelaySeed: (event) => {
       console.log(

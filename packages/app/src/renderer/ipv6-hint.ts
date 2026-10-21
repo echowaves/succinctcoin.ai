@@ -54,3 +54,40 @@ export function describeLoopbackInvite(d: InviteDiagnostics): string | null {
     + 'and an older invite may simply be stale — regenerate once a global address is back.'
   )
 }
+
+/** Same text-stage cap the core's parser applies (never decode megabytes). */
+const MAX_INVITE_TEXT_LEN = 4096
+
+/**
+ * Ticket 7 — does this invite RIDE A RELAY? An address carrying
+ * `/p2p-circuit` is a circuit: the node behind it is reached THROUGH a
+ * relay, not directly (the auto-relay tier's visible signature). Honest and
+ * distinct from the loopback warning above — nothing is wrong here, the
+ * connection just costs an extra hop.
+ *
+ * Thin-client rule (AD-1): NO core import — the invite body is base64url of
+ * a protobuf whose addresses are plain UTF-8 strings, so a decoded-bytes
+ * substring scan answers the question without the codec. Anything that fails
+ * to decode is simply "not recognizable" ⇒ null (the real parser in main
+ * gives the verdict on join). Pure, sync, never throws.
+ */
+export function describeCircuitInvite(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('scinvite:v1:') || trimmed.length > MAX_INVITE_TEXT_LEN) {
+    return null
+  }
+  let decoded: string
+  try {
+    const body = trimmed.slice('scinvite:v1:'.length)
+    const b64 = body.replace(/-/g, '+').replace(/_/g, '/')
+    decoded = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
+  } catch {
+    return null // malformed text is the parser's problem, not the hint's
+  }
+  if (!decoded.includes('/p2p-circuit')) return null
+  return (
+    'This invite rides a relay (its address runs through /p2p-circuit): the node '
+    + 'is reached via a third-party hop rather than directly — normal for peers '
+    + 'behind NAT, expect slightly higher latency.'
+  )
+}

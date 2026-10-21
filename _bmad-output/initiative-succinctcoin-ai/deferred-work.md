@@ -232,3 +232,28 @@
      observed", and the `[boot] dial me:` line — which comes from the real
      listen addresses, not from probing — is the authoritative answer to "am I
      dialable". -->
+
+<!-- DECISION REVERSED 2026-10-21 (ticket 7, auto-relay): SERVING IS AUTO-
+     MATIC WHEN REACHABLE, AND THE PEERBOOK IS THE RELAY DIRECTORY. Two epic-
+     10 records are superseded. (1) "the volunteer server role as config:
+     SUCCINCTCOIN_RELAY_SERVER=1" — serving is now ON by default for every
+     node whose probes do NOT say `unreachable` ('unknown' serves; the flag
+     remains as force-on). (2) STILL PARKED item (c), "gossip-based RELAY
+     ADVERTISEMENT ... stays unsolved by design" — solved WITHOUT a new wire
+     protocol: identify already tells us which direct peers advertise the
+     Circuit Relay v2 hop service, so an unreachable node picks up to 3
+     candidates deterministically from its own peerbook (sorted PeerIds, all
+     nodes converge; MAX_AUTO_RELAYS=3). Rationale for both: the ladder was
+     rung 3 existentially useless — relay capacity existed (every reachable
+     node) and reachability truth existed (AutoNAT), but wiring them needed a
+     human to copy multiaddrs through a forum. NOT reversed: (a) zero OFFICIAL
+     endpoints/default seeds (relays are incidental, not operated); (b) relay
+     operator incentives (still an open spec question); IPv4-stays-unserved;
+     the /ip6-hop rule. Kill switch: SUCCINCTCOIN_RELAY_AUTO=0 → byte-
+     identical pre-ticket behavior (seeds only). Known limits pinned by tests:
+     serving is decided at construction (a node that LATER measures unreach-
+     able keeps its server — SERVES_WHEN_UNREACHABLE row; CircuitRelayServer's
+     start/stop are undeclared on the pipeline object, and a mid-run toggle
+     would strangle circuits already riding it), and held auto circuits are
+     not force-released when reachability returns (the reservation store has
+     no release API; TTLs expire them). -->

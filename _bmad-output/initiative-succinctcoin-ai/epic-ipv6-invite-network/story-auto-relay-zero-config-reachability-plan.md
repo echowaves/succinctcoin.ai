@@ -1,6 +1,6 @@
 ---
 id: auto-relay-zero-config-reachability
-status: in-progress
+status: built
 epic: epic-ipv6-invite-network (follow-on to 10.2 relay tier / 10.3 reachability)
 title: Auto-relay — zero-config reachability on every node
 ---
@@ -53,9 +53,14 @@ today's explicit-only behavior. Seeds stay additive.
   KNOWN-unreachable (`'unreachable'` ⇒ false: a node whose inbound is proven
   dead must not advertise a hop it cannot serve; `'reachable'`/`'unknown'` ⇒
   true — unknown is honest, the probe has not answered yet).
-- `autoHoldWanted(reachability): boolean` — hold circuits only where direct
-  addressing is not proven good (`'unreachable' | 'unknown'`; a reachable node
-  needs no hop and must not burn relay capacity).
+- `autoHoldWanted(mode, reachability): boolean` — hold circuits only where
+  direct addressing is PROVEN dead (`'unreachable'` only). `'unknown'` does
+  NOT hold: holding on evidence-free startup would have every fresh node burn
+  three strangers' reservations for nothing, and the ladder rule says rung 3
+  starts where rung 1 leaves off (the optimistic boot announces direct
+  addresses until proven wrong). The probe answers seconds after joining,
+  and joining requires an invite — so a hidden node has candidates to probe
+  through the moment it joins.
 - `pickRelayCandidates(candidates, { selfIdentityId, max })` — deterministic
   (sorted peer id order), deduped, self-excluded, only peers we hold a DIRECT
   connection to (an outbound-only or relayed link proves nothing about their
@@ -101,4 +106,61 @@ today's explicit-only behavior. Seeds stay additive.
 - No new wire protocol, no relay authentication/trust ranking (a malicious
   relay can only drop/observe traffic it already could observe by being a peer;
   consensus is unaffected — record as accepted).
-- No headless node runner (separate gap), no official relay endpoint.
+- No headless node runner (separate gap — shipped since by ticket 8), no
+  official relay endpoint.
+
+## Build log (2026-10-21)
+
+**Shipped.** Policy module `net/auto-relay.ts` (committed first, `e38b76d`):
+`autoServeEnabled` / `autoHoldWanted` / `pickRelayCandidates` /
+`MAX_AUTO_RELAYS = 3` — pure, 8 rows. Adapter wiring (`net/adapter.ts`):
+
+- **Serve** at CONSTRUCTION: `autoServeEnabled(relayAuto, 'unknown')` OR
+  explicit `relayRole: 'relay'` adds `circuitRelayServer()`. Pinned
+  limitation row SERVES_WHEN_UNREACHABLE (server never stops mid-run;
+  `CircuitRelayServer.start/stop` are undeclared on the pipeline object —
+  dynamic toggle rejected as planned).
+- **Hold** on the TRANSITION EDGE into `'unreachable'` inside the
+  reachability report wiring (not polling): edge arms a self-rescheduling
+  round chain (`autoRelayRetryMs`, default 15 s) that stands down by itself
+  the moment holding stops being wanted. Round = policy pick over the FULL
+  sorted candidate list, dispatch walks rank order until round room is spent;
+  candidates = libp2p `conn.direct` ∧ peerStore protocols include
+  `RELAY_V2_HOP_CODEC` (no record ⇒ identify pending ⇒ skip); seeds are the
+  live `conn.remoteAddr` + `/p2p/<id>` (endsWith guard — remoteAddr is
+  ALREADY peer-encapsulated; the naive append built `/p2p/<id>/p2p/<id>`, the
+  bug that first broke AUTO_HOLD), fed through the existing `holdSeed`
+  episode so circuits/events/announce are identical to manual seeds.
+  Auto seeds skip operator manual seeds; explicit-only never arms even a
+  timer; all auto state cleared in `stop()`.
+- **Cooldown fairness** (review MAJOR): a failing candidate is benched
+  `AUTO_FAIL_COOLDOWN_ROUNDS = 4` rounds (ROUND-counted, AD-3 no clock) so a
+  top-ranked broken relay cannot starve lower candidates; cleared on stop;
+  loss-triggered re-hold deliberately bypasses the cooldown (recovery path,
+  not refusal). Held auto circuits are NOT force-released when reachability
+  returns — the pinned reservation store has no release API; TTLs expire
+  them (resolves the ticket's recorded `unknown`).
+- Review m1: reachability is wired AFTER `holdRun` is opened, so a
+  synchronous source at start cannot arm a retired run.
+
+**App glue:** `resolveRelayAuto(env)` (`SUCCINCTCOIN_RELAY_AUTO=0` ⇒
+`'explicit-only'`, else auto) in `main/net-config.ts`, threaded through both
+boots (Electron `index.ts`, runner `run-node.ts` — env knob, deliberately NO
+argv flag: network policy, not a per-run preference). `defaultNetConfig`
+gains an optional `relayAuto` (key absent unless passed — exact-config pins
+untouched).
+
+**Honesty surface:** renderer `describeCircuitInvite(text)` base64url-decodes
+the invite text and substring-scans for `/p2p-circuit` (cap 4096, never
+throws; AD-1: no core import in the renderer) — honest "rides a relay…
+expect slightly higher latency" hint under BOTH the own-invite panel and the
+paste box.
+
+**Rows added:** core `net-auto-relay-adapter.test.ts` (5: AUTO_HOLD, AUTO_
+SERVE, REACHABLE-does-not-hold, EXPLICIT_ONLY byte-identical,
+SERVES_WHEN_UNREACHABLE pin); app +5 (`net-config`, `ipv6-hint`, `run-node`).
+
+**Gates:** root build ✓ typecheck ✓ app tsc (both tsconfigs) ✓; core 450/59,
+app 66/10, root 516/69 — all green in one pass. README reachability-ladder /
+relay-serving sections rewritten (reversal documented); deferred-work carries
+the DECISION REVERSED record.
