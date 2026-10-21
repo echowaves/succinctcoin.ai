@@ -11,7 +11,7 @@ The chain continuously receives **signed liveness proofs**: mining tickets (iden
 `PeerAnnouncement { identityId, multiaddrs[], observedExternalAddr?, slotStart, slotEnd }`, signed by the identity key.
 
 - Gossiped on the existing peers topic AND anchored in block metadata (block winners and ticket submitters publish theirs).
-- **IPv6-only:** `multiaddrs` entries are global `/ip6` addresses only — IPv4, link-local `fe80::`, and loopback never enter an announcement (spec constraint); macOS-style rotating interface IDs are absorbed by chain-time re-announce.
+- **Address shapes (amended 2026-10-21 for CAP-8):** `multiaddrs` entries are direct global `/ip6` addresses, or circuit addresses whose HOP passes the relay-hop rule below — non-global hops and direct `/ip4` never enter an announcement (spec constraint); macOS-style rotating interface IDs are absorbed by chain-time re-announce.
 - **Expiry is chain-time:** valid for `[slotStart, slotEnd]`; re-announce driven by block-applied events; expired records are dead weight nobody relays. No wall clocks (AD-3).
 - **Reorg-safe:** announcements are block data — they roll back and re-confirm exactly like the chain (no off-chain address state to desync).
 - **One identity, many addresses:** book dedupes by `identityId`, not address — DHCP/NAT rotation is natural; identities persist.
@@ -29,6 +29,14 @@ Every record is tagged `(source class, first-seen slot)`. Connect-eligibility ru
 | hint-grade | gossiped records, books, embedded release hints | ~nothing | never dialed directly; never re-gossiped until verified |
 
 **Three-introductions rule:** a hint becomes connect-eligible only after ≥3 independent signed introductions ("I saw X online at slot s" — Letter of Introduction from distinct known identities). Introductions carry reachability class (direct / via-relay / LAN) so NATed targets get usable addresses.
+
+## Relay-hop addressing (CAP-8, dual-stack hop)
+
+The one exception to IPv6-only addressing, kept small on purpose (full evidence + verdict: CGNAT research companion):
+
+- **Rule:** a `/…/p2p-circuit/p2p/<id>` address is valid iff its leading HOP segment (`/ip4|/ip6/…/tcp/N[/p2p/<relayId>]`) is **global scope** — v4 or v6 — and the remainder carries no IP components. Global rejects RFC1918, CGNAT `100.64.0.0/10`, loopback, link-local, ULA, multicast, zones; direct addresses keep the strict global-`/ip6` law. One predicate module owns every boundary (dial/announce/ingest/book/crawl); consensus mechanics never see a new family — only a widened address-shape check.
+- **Diversity/anti-abuse keys on the hop network:** relayed entries count one point of network per relay `/64` (v6) or per-IP/`/24` (v4).
+- **Seeds are bootstrap, never trust root:** software ships a built-in dual-stack seed list (domain with A + AAAA, dialed family-agnostically); records reached through any relay still verify by signature + tickets like every other class. Seeds absent or dead degrades exactly to epic-10 behavior; volunteer relays dilute the seed.
 
 ## Fallback ladder (boot sequence; MVP rungs)
 
@@ -67,7 +75,7 @@ Every book record carries a local score — Bitcoin addrman / Ethereum peer-scor
 
 - **Amnesiac Boot Proof** (CAP-7 success): wiped node + ONE block-grade record (a human-channel invitation qualifies) → ≥k healthy peers across distinct /64s in <30 s, book ≤100 — LAN and NATed-internet variants; runs headless over memory transport with a simulated book (AD-10); real-stack variant via the `dial-manual.mjs` invite-dial pattern (`mdns-smoke.mjs` retired to legacy).
 - **Poison test:** injected forged/expired/hint-grade records never produce a dial or a re-gossip.
-- **Discovery lint (CI):** repo-wide scan fails on hardwired multiaddrs outside test fixtures, and on `/ip4` multiaddrs in non-test sources — the anti-seed / IPv6-only immune system.
+- **Discovery lint (CI):** repo-wide scan fails on hardwired multiaddrs outside test fixtures, and on `/ip4` multiaddrs in non-test sources except at relay-hop positions the CAP-8 predicate governs (seed config, hop fixtures) — the anti-seed / direct-IPv6-only immune system.
 
 ## Prerequisite (blocking build)
 

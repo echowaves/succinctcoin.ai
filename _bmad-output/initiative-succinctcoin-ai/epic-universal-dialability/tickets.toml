@@ -1,0 +1,65 @@
+# tickets.toml — epic-universal-dialability's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names
+# a child for good and is never reused; it is not an order.
+# Status never lives here: an entry with no plan and no leaf file is planned; its
+# plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Relay-hop address policy: one predicate, every boundary"
+description = "Split the addressing law in core/net/address-policy.ts without touching direct rules: add a pure hop-scope predicate (global /ip4 OR global /ip6 for the HOP segment — reject RFC1918, CGNAT 100.64.0.0/10, loopback ::1/127.0.0.0/8, link-local fe80::/10, ULA fc00::/7, v4 multicast 224.0.0.0/4 + v6 ff00::/8, zones; reuse the existing v6 expander for scope math) and a circuit-shaped validator: a multiaddr containing /p2p-circuit is policy-valid iff its leading hop passes the hop predicate AND no further ip/ip6zone components appear in the tail. Switch the announcement/invitation validators, book ingest, and crawl eligibility to the circuit-shaped rule (circuit addresses are consensus data — direct /ip4 must STILL reject inside candidates/apply-block/introductions; non-global hops reject everywhere). SC-NET-1 message updated to name the hop rule. Export from the net barrel; memory transport stays policy-free."
+verify = "Table rows pin both predicates: global-v4-hop circuit ACCEPTS at dial/announce/ingest incl. strict consensus contexts; direct /ip4 REJECTS at every site (regression rows on existing 9.1/10.2 fixtures unchanged); RFC1918/CGNAT/loopback/link-local/ULA/multicast/zone hops REJECT; tail-with-IP REJECT; validator encode->parse->verify round-trip over one direct-v6 + one v4-hop-circuit record; build + typecheck + full root/app suites green headless."
+covers = ["R1", "R2", "E1"]
+after = ["10.2"] # epic-reachability-tier/2 — widen those exact policy boundaries, don't fork them
+hitl = false
+risk = "high"
+unknown = "Exact component walk for the hop boundary on multiaddr 13 getComponents() (hop ends at /p2p/<relayId> or before /p2p-circuit — verify against shipped 10.2 fixtures); whether invitation validation shares the announcement predicate or duplicates it (grep first, unify if duplicated)."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Adapter dials v4 seeds: hold, announce, invite through the hop exception"
+description = "Make the user's machine able to dial a relay. In core/net/adapter.ts switch the holdSeed pre-flight from assertDialable to the seed-shaped check (direct-or-hop: a seed may be a direct global /ip6 as today, or serve as a v4/v6 hop per 11.1), and extend the SUCCINCTCOIN_ALLOW_LOOPBACK dev allowance to loopback hops of BOTH families (::1 AND 127.0.0.1) on the DIAL side only — same per-call env read, never ingest. The direct-dial TCP guard (~L1195) stays strict global-v6 (+::1 under flag) for non-circuit targets. Held v4-hop circuits then flow through the untouched ticket-7 machinery (announce construction, invite text, book, auto-relay rounds). Tests: memory-transport rows extended from 10.2 with a fake v4-hop seed address accepted by policy and dialed via captured dispatch; real-socket loopback trio on built dist under the dev flag — relay-new (v4 listener), node-behind (holds through 127.0.0.1 hop), invite-use-through-relay (dial round-trip) as dial-manual.mjs modes with skips disclosed."
+verify = "Adapter rows: v4 seed passes pre-flight, loopback-v4 held only under the dev flag and rejected without it; direct /ip4 dial still throws SC-NET-1; announce set includes <hop>/p2p-circuit/p2p/<self> after a held reservation (existing circuit rows unchanged); dial-manual v4 trio proven live on one machine (exit 0, DIALED THROUGH RELAY line); full suites green headless."
+covers = ["R3", "E2"]
+after = [1]
+hitl = false
+risk = "medium"
+unknown = "Whether libp2p dial of a /ip4 seed needs anything beyond the policy pass-through (transport already family-agnostic — verify); dev-flag loopback-v4 interplay with connectionGater rules added in 9.x."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Shipped seed seam + operator docs + hop-aware discovery lint"
+description = "Zero config becomes real. net-config gains a built-in DEFAULT_RELAY_SEEDS constant (dual-stack multiaddr or empty until 11.4 provisions the domain; EMPTY value must be a pinned constant, not absence) merged under SUCCINCTCOIN_RELAY_SEEDS (env additive, documented precedence); boot lines report each seed hold with the family dialed. README reachability ladder rewritten: direct v6 first, circuit relay for inbound-blocked AND IPv4-only nodes ('served through a relay hop — your invite starts /ip4/... or /ip6/...'), volunteer-relay config unchanged; ipv6-hint renderer copy stops claiming IPv4-only is unserved (keep AD-1: no core import). discovery-lint.test.ts relaxed ONLY for /ip4 at hop positions: seed config in net-config and test fixtures; direct-address sources keep the hard ban."
+verify = "Config rows: default constant pinned (empty today, provisioned after 11.5 flip), env additive + precedence; lint green with hop-position /ip4 allowlist and still red on a planted direct-v4 fixture; README ladder reviewed against actual behavior lines; full suites green headless."
+covers = ["R4"]
+after = [2]
+hitl = false
+risk = "low"
+unknown = "Exact renderer strings to amend in ipv6-hint.ts/App.tsx (read current copy at build)."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Provision the bootstrap relay: domain, dual-stack host, volunteer runbook"
+description = "The ops half of R4 — a person does this, code only consumes it. Acquire/point a domain (A + AAAA records), stand up one always-on host running the headless runner with SUCCINCTCOIN_RELAY_SERVER=1 (README VPS section + systemd unit already exist), open TCP inbound, verify reservations hold and relayed dials work from BOTH a v6-only and a v4-only network (phone hotspot suffices); write the volunteer runbook (same steps, incentive-free) beside it; hand the seed multiaddr (/dns/<domain>/tcp/<port>/p2p/<relayId>) to 11.5 for the DEFAULT_RELAY_SEEDS flip. If the user amends the autonomous seed-supply call (epic Notes), this story becomes sourcing a community endpoint instead — same deliverable shape."
+verify = "From a v4-only connection: reserve + dialed-through round-trip logged on the relay; from v6: same; domain resolves A+AAAA; runbook doc committed; seed multiaddr string delivered to 11.5."
+covers = ["R4"]
+after = []
+hitl = true
+risk = "low"
+unknown = "Domain/DNS access and host budget (operator-provided); whether the relay needs the epic built first for v4-HOP announces (it does not — v6 service works today; flip order handles the rest)."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Honest Boot Proof + seed flip + tier closeout"
+description = "Pin the promise. Integration row (the CAP-8 Honest Boot Proof): a node fixture configured with NO global IPv6 (test seam hides v6 listeners; relay hop on loopback-v4 under the dev flag) boots with default config, holds a circuit reservation, and its <hop>/p2p-circuit/p2p/<self> address is dialed by a v6-side peer with data round-trip — plus the unchanged-shape dual-stack variant; live variant via dial-manual modes on one machine, skips disclosed. Flip DEFAULT_RELAY_SEEDS to 11.4's provisioned multiaddr (skip-with-note if 11.4 not done — the seam stays pinned empty and the epic closes with an explicit gap line). Closeout: deferred-work.md relay entries updated to shipped-with-pointer; spec open question narrowed to incentives + beyond-seed discovery only; README cross-refs verified."
+verify = "Honest Boot Proof row green headless (both variants); seed flip row or documented skip; suites green headless; docs pass a fresh-reader check for an IPv4-only operator."
+covers = ["E2", "R4"]
+after = [2, 3, 4]
+hitl = false
+risk = "medium"
+unknown = "Best test seam for 'no global IPv6' on the memory transport (listener filtering vs. config fixture) — pick one that fails if v6 leaks back in."

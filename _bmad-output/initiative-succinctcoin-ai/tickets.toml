@@ -91,3 +91,12 @@ covers = ["CAP-3", "CAP-7"]
 after = [
   { epic = 9, needs = "the IPv6-only address policy + invite/announce/book surfaces the relay hop must pass, and the 5.7 circuit-relay machinery (server role, always-wired client transport) this epic bootstraps" },
 ]
+
+[[epic]]
+id = 11
+slug = "epic-universal-dialability"
+title = "Universal dialability: dual-stack relay hop + shipped seeds"
+covers = ["CAP-8", "CAP-3"]
+after = [
+  { epic = 10, needs = "the shipped relay tier (seed bootstrap, reservation lifecycle, circuit-address announce path) that the v4 hop rides on, and its policy tests this epic widens" },
+]
