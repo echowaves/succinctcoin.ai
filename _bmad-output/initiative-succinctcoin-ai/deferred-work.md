@@ -144,14 +144,21 @@
      relay trio (relay-new / node-behind / invite-use-through-relay, live
      on loopback). README "Reachability ladder" documents it. STILL PARKED
      here: (a) any OFFICIALLY operated relay endpoint — the network ships
-     zero default seeds; (b) operator INCENTIVES for volunteers (open spec
+     zero default seeds [UPDATE 2026-10-22, epic 11: UNPARKED into a
+     concrete HITL — story 11.4 provisions the first relay; until it runs,
+     DEFAULT_RELAY_SEEDS stays pinned empty (seam shipped in 11.3)];
+     (b) operator INCENTIVES for volunteers (open spec
      question, not a build blocker); (c) gossip-based RELAY ADVERTISEMENT
      — how peers learn seeds without out-of-band sharing stays unsolved
      by design; discovery only ever verifies addresses, never registers
      relays. -->
 
 <!-- DECISION 2026-10-19 (ticket 9.5): IPv4 IS NOT SUPPORTED — recorded, not
-     an oversight. `isGlobalIp6Multiaddr`/`assertDialable` (SC-NET-1) reject
+     an oversight. [SUPERSEDED IN PART 2026-10-22 by epic 11 / CAP-8: a
+     GLOBAL /ip4 is admitted as the circuit-relay HOP segment only — direct
+     addresses stay strict global v6; see the UNIVERSAL DIALABILITY entry
+     below. The reversal-cost design held: it took a spec amendment + its
+     own epic, not a policy tweak.] `isGlobalIp6Multiaddr`/`assertDialable` (SC-NET-1) reject
      /ip4 at announce, dial, and ingest; the discovery lint test bans /ip4
      literals in shipped src; wire-golden tests keep /ip4 fixtures only where
      bytes never pass the validator. Rationale: global v6 removes the
@@ -257,6 +264,31 @@
      would strangle circuits already riding it), and held auto circuits are
      not force-released when reachability returns (the reservation store has
      no release API; TTLs expire them). -->
+
+<!-- SHIPPED 2026-10-22 (epic 11, stories 11.1–11.3 + 11.5; GAP: 11.4):
+     UNIVERSAL DIALABILITY (CAP-8). The hop law: a /p2p-circuit address may
+     carry a GLOBAL-scope HOP of EITHER family (/ip4 admitted for the first
+     time — direct addresses stay strict global v6, byte-identical); ONE
+     predicate module (address-policy.ts) owns every boundary — record,
+     seed, dial-target, announce (11.1, 2982833). The adapter dials v4
+     seeds, holds reservations, and flows held circuits through gossip/
+     invites/books under the record law; direct /ip4 never announces or
+     dials (11.2, e96af47; loopback-family circuits dial under
+     SUCCINCTCOIN_ALLOW_LOOPBACK=1 only). Seed seam: DEFAULT_RELAY_SEEDS
+     (pinned EMPTY) + mergeRelaySeeds + the [boot] relay HOLD/FAIL (v4|v6)
+     boot line + hop-aware discovery lint + operator runbook
+     (docs/relay-runbook.md) (11.3, 8d28e41). Honest Boot Proof
+     (packages/core/test/honest-boot-proof.test.ts): a v4-only host boots,
+     holds, announces EXACTLY its circuit (exact-set leak pin), is dialed
+     through the hop, and exchanges chain-level gossip BOTH ways; dual-
+     stack unchanged-shape variant green. Live shape: dial-manual.mjs
+     relay-new-v4 trio on one machine. Seed FORMAT resolved as a side
+     quest: seeds are IP-form multiaddrs — /dns names are rejected by the
+     seed law (first IP must be global scope); domain records serve humans,
+     not the wire. GAP (11.4, HITL, open): no relay is PROVISIONED yet —
+     the seam stays pinned empty and the seed flip in 11.5 is a documented
+     skip; provisioning = run the runbook on a dual-stack host and publish
+     IP-form seeds. -->
 
 <!-- OPEN 2026-10-21 (story 11.2, PCL-1): MANUAL TRIO TEARDOWN RACE (v6).
      dial-manual.mjs `relay-new` exits the moment it counts two peers, which
