@@ -2,7 +2,7 @@
 ticket: "2"
 title: "Identity keypair + ticket signature (AD-12)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "daacebddaa8f66c7d6d87cd5d9c801f522779a53"
 review: quick

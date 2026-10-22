@@ -78,8 +78,10 @@
      is the root cause; AD-10 constrains tests/CI, not the app runtime).
      3 stories: 7.1 empty-bootstrap genesis + validation relaxation + join
      docs, 7.2 app selects tcp + mDNS + genesis bootstrap (pure seam),
-     7.3 two-instance LAN proof (hitl). Mark this item RESOLVED when 7.3
-     completes.
+     7.3 two-instance LAN proof (hitl). **RESOLVED 2026-10-22** — 7.3
+     accepted with field evidence (two Macs, one Wi-Fi, `SUCCINCTCOIN_LAN=1`:
+     mDNS discovered the real cross-machine peer with zero manual multiaddrs;
+     evidence in epic-real-network/story-two-instance-lan-proof-…md).
      6.4 F2 blockers note (what kept `electron-forge package` from
      actually running) — dispositioned 2026-10-15 (plan-packaged-app-boot):
      blocker (b) — the `workspace:*` core dep unresolvable outside the
@@ -305,3 +307,11 @@
      in `relay-new` (or make node-behind print arrival synchronously), then
      the driver can prove both trios unattended. Manual runs with human-paced
      polling never hit it. -->
+
+<!-- OPEN 2026-10-22 (initiative sweep): TICKET 8.6 — TWO-DEVICE
+     BOOTSTRAP-FREE JOIN PROOF is the initiative's only remaining open ticket.
+     Needs an environment neither test machine has: global IPv6 on both devices
+     (invite address law) OR a volunteer relay hop (v4 hops legal since 11.1;
+     live trio proven on loopback only, 10.3/11.2). CI-side + loopback proofs
+     passed (9.5 amnesiac boot, 10.3/11.x trios). Not code — environment.
+     epic-bootstrap-free-discovery stays in-progress until this closes. -->

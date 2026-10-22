@@ -3,7 +3,7 @@ title: 'Draw verification + launch gate test'
 type: 'feature'
 ticket: '4'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: 'be4fb04eddab1acdc7d039c454dcaebedd51f29b'
 route: 'full'
 route_source: 'pinned'

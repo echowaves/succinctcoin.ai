@@ -2,7 +2,7 @@
 ticket: "5"
 title: "Uptime = valid tickets over lookback-L (ramp from zero)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "c3688d3d695c1ed89ceaecd336aaeee7881fc63d"
 review: quick

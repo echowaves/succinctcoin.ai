@@ -3,7 +3,7 @@ title: 'Tracer: slot loop + PoW hot path + applyBlock (one block)'
 type: 'feature'
 ticket: '2'
 created: '2026-10-05'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 baseline_revision: 'c46895073ee6883b8acfd19d7f0222f8c81da97f'

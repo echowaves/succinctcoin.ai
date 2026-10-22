@@ -3,7 +3,7 @@ title: 'Genesis config + boot validation'
 type: 'feature'
 ticket: 3
 created: '2026-10-02'
-status: 'built'
+status: done
 baseline_revision: '32da399396121c49c60220a37b45d1b3891d412d'
 route: 'full'
 route_source: 'auto'

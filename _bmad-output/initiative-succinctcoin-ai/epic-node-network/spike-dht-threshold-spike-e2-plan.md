@@ -1,7 +1,7 @@
 ---
 ticket: "8"
 epic: epic-node-network
-status: "built"
+status: done
 review: quick
 review_source: pinned
 covers: ["E2"]

@@ -8,6 +8,7 @@ assignee: ""
 risk: medium
 estimate: "3 stories, S–M"
 estimate_basis: "No new consensus or wire-block surface: AutoNAT/DCUtR are js-libp2p service registrations on the real transport only (memory transport untouched, AD-10); circuit-relay v2 shipped in 5.7 (server role + always-wired client transport), so the tier's new work is seed bootstrap, reservation lifecycle, and carrying circuit addresses through the address policy / validator / book / crawl boundaries. The risk concentrates in those boundary rows — a circuit address must never smuggle a non-global relay hop."
+status: done
 ---
 
 # Reachability tier: AutoNAT truth + volunteer circuit relays + DCUtR

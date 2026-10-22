@@ -3,7 +3,7 @@ title: 'Conservation + fee invariant property tests'
 type: 'feature'
 ticket: 4
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: 'dd276f04fad602544d6727198de48dfd23f61e67'
 route: 'full'
 route_source: 'auto'

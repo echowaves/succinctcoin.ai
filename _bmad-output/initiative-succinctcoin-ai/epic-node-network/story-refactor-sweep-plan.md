@@ -2,7 +2,7 @@
 ticket: "9"
 title: "Refactor sweep"
 epic: epic-node-network
-status: "built"
+status: done
 route: full
 baseline_revision: "17deb3b9d419ec0131ce4bf0a001c89b83f741f4"
 review: quick

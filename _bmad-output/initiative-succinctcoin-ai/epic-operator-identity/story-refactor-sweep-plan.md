@@ -2,7 +2,7 @@
 ticket: "9"
 title: "Refactor sweep"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "0768fb49f63af2fec1eba164fbf709a9908644c9"
 review: quick

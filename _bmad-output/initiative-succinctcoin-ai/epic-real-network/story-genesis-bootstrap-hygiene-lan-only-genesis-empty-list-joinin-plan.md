@@ -3,7 +3,7 @@ title: 'Genesis bootstrap hygiene: LAN-only genesis (empty list) + joining-a-net
 type: 'feature'
 ticket: '1'
 created: '2026-10-16'
-status: 'built'
+status: done
 route: 'oneshot'
 route_source: 'auto'
 review: 'quick'

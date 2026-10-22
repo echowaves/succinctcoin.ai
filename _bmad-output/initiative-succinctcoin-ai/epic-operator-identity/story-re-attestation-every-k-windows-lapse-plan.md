@@ -2,7 +2,7 @@
 ticket: "6"
 title: "Re-attestation every K windows + lapse = lose eligibility"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "d519eb4b894a229d02746af50f39a62c2a6fedcc"
 review: quick

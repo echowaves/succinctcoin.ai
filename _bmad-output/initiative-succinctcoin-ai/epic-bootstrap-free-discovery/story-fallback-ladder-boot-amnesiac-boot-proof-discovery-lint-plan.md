@@ -2,7 +2,7 @@
 ticket: 5
 title: Fallback-ladder boot + Amnesiac Boot Proof + discovery lint
 baseline_revision: dd8902a
-status: built
+status: done
 route: full
 review: quick
 covers: [R1, R4, E2, E3]

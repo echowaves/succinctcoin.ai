@@ -3,7 +3,7 @@ title: 'Core skeleton + public surface + ports'
 type: 'feature'
 ticket: 2
 created: '2026-10-02'
-status: 'built'
+status: done
 baseline_revision: 'e2dd0ac213c2bd8a6a932c3e00c6372800a909a4'
 route: 'full'
 route_source: 'auto'

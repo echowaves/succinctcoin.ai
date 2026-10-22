@@ -8,6 +8,7 @@ assignee: ""
 risk: medium
 estimate: ""
 estimate_basis: ""
+status: done
 ---
 
 # Exact money: ledger, amounts, conservation invariants

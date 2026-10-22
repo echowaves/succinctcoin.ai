@@ -3,7 +3,7 @@ title: 'Store persistence + BigInt round-trip'
 type: 'feature'
 ticket: 3
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '89caef2ad4bdf9c2c63efbfeac986a8cbeebdbef'
 route: 'full'
 route_source: 'auto'

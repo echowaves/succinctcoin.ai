@@ -2,7 +2,7 @@
 ticket: "8"
 title: "Refactor sweep"
 epic: epic-equal-node-mining
-status: "built"
+status: done
 route: full
 baseline_revision: "4af44a8253c2aa46e61b8f321c0f9bf1dc6d02ba"
 review: "quick"

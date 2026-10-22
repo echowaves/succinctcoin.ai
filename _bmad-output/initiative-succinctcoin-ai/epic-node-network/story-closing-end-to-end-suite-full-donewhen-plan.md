@@ -2,7 +2,7 @@
 ticket: "10"
 title: "Closing end-to-end suite (full Done-when)"
 epic: epic-node-network
-status: "built"
+status: done
 route: full
 baseline_revision: "d38ad5f954b94b61592ae984da9ecad07b93de34"
 review: quick

@@ -4,7 +4,7 @@ type: 'feature'
 ticket: '4'
 created: '2026-10-18'
 baseline_revision: fe1883d
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 review: 'quick'

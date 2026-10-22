@@ -3,7 +3,7 @@ title: 'Honest Boot Proof + seed flip + tier closeout'
 type: 'feature'
 ticket: '5'
 created: '2026-10-22'
-status: built
+status: done
 route: 'full'
 route_source: 'auto'
 baseline_revision: '9ea45dd6e284e8b438204dac5f580964b9dbcbda'

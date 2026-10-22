@@ -3,7 +3,7 @@ title: 'Boot path: start() -> loadGenesis -> slot loop'
 type: 'feature'
 ticket: '5'
 created: '2026-10-06'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'pinned'
 review: 'quick'

@@ -3,7 +3,7 @@ title: '11.1 Relay-hop address policy: one predicate, every boundary'
 type: 'feature'
 ticket: '1'
 created: '2026-10-21'
-status: 'built'
+status: done
 baseline_revision: '3663d6742e0bf380ead22f4b79fbeba8796db6df'
 route: 'full'
 route_source: 'auto'

@@ -8,6 +8,7 @@ assignee: ""
 risk: high
 estimate: ""
 estimate_basis: ""
+status: done
 ---
 
 # Operator identity: tickets, gate verifier port, re-attestation, acceptance cap

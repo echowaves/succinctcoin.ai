@@ -2,7 +2,7 @@
 ticket: "7"
 title: "Multi-node simulation: uptime-only slot rate (R1)"
 epic: epic-equal-node-mining
-status: "built"
+status: done
 route: full
 baseline_revision: "6ad19e1c1206947d7950cc6e0be9bb2c4d726b39"
 review: "quick"

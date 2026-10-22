@@ -1,7 +1,7 @@
 ---
 ticket: "4"
 epic: epic-desktop-app
-status: "built"
+status: done
 review: quick
 review_source: pinned
 covers: ["R1", "R2", "R3", "E2"]

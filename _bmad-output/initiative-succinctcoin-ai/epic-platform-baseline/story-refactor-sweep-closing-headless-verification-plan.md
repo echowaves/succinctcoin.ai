@@ -3,7 +3,7 @@ title: 'Refactor sweep + closing headless verification'
 type: 'feature'
 ticket: 6
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '05ee109a47f7beba34ce6b6a7f7bd6670f5c8b4f'
 route: 'full'
 route_source: 'auto'

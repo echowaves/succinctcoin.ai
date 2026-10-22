@@ -3,7 +3,7 @@ title: 'Reward + fee economic model in applyBlock'
 type: 'feature'
 ticket: '6'
 created: '2026-10-06'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'pinned'
 review: 'quick'

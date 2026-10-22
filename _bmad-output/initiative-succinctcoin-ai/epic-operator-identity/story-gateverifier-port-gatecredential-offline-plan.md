@@ -2,7 +2,7 @@
 ticket: "1"
 title: "GateVerifier port + GateCredential (offline)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "554502e24c2c02cc71ae1b609f0bfe820c87e0ae"
 review: quick

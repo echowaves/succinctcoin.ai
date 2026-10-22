@@ -3,7 +3,7 @@ title: 'Ledger core: amounts, mutation seam, no-negative'
 type: 'feature'
 ticket: 1
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'a4779e0b77f91c85000505508c4f216d58570396'
 route: 'full'
 route_source: 'auto'

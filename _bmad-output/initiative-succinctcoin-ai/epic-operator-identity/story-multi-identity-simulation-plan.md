@@ -2,7 +2,7 @@
 ticket: "8"
 title: "Multi-identity simulation (acceptance cap + uptime + re-attestation)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "f3b58e60976bd5d03d4ad702f3023053250063e2"
 review: quick

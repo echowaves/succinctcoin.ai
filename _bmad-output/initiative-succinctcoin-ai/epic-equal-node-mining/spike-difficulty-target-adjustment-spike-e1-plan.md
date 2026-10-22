@@ -3,7 +3,7 @@ title: 'Difficulty / target adjustment spike (E1)'
 type: 'feature'
 ticket: '1'
 created: '2026-10-05'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 baseline_revision: 'b1808795a7059920e1194f1d0c593f1f3b09e24c'

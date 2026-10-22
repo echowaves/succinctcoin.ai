@@ -1,6 +1,6 @@
 ---
 title: "Story 6.2 plan — App: Electron shell + preload/IPC bridge (AD-11) + core-suite headless parity"
-status: "built"
+status: done
 ticket: "2"
 epic: "epic-desktop-app"
 route: "full"

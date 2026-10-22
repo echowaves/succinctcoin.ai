@@ -3,7 +3,7 @@ title: '11.3 Shipped seed seam + operator docs + hop-aware discovery lint'
 type: 'feature'
 ticket: '3'
 created: '2026-10-21'
-status: 'built'
+status: done
 baseline_revision: 'e96af477bf6f98ba0b68e2dd9d9d8e74813df2ea'
 route: 'full'
 route_source: 'auto'

@@ -2,7 +2,7 @@
 ticket: "1"
 title: "Core: the running node (slot loop) + the UI data source (events + real read-API)"
 epic: epic-desktop-app
-status: "built"
+status: done
 route: full
 baseline_revision: "53a94938646c31b2eb62f9a9696a017d7fed5440"
 review: quick

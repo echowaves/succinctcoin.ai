@@ -3,7 +3,7 @@ title: '11.2 Adapter dials v4 seeds: hold, announce, invite through the hop exce
 type: 'feature'
 ticket: '2'
 created: '2026-10-21'
-status: 'built'
+status: done
 baseline_revision: '29828330e2157b26af3096df93fd6c71725f7dc9'
 route: 'full'
 route_source: 'auto'

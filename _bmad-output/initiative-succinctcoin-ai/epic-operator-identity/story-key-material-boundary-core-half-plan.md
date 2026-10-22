@@ -2,7 +2,7 @@
 ticket: "7"
 title: "Key material boundary (keys never leave core in plaintext)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "25102e8efb0a840edf9de4448a30ff9464e11b70"
 review: quick

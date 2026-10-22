@@ -8,6 +8,7 @@ assignee: ""
 risk: high
 estimate: ""
 estimate_basis: ""
+status: done
 ---
 
 # Node network: libp2p adapter, gossipsub topics, discovery, relay, sync

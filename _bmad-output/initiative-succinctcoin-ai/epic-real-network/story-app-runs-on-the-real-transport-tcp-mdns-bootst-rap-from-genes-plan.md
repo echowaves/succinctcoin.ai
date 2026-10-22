@@ -3,7 +3,7 @@ title: 'App runs on the real transport: tcp + mDNS, bootstrap from genesis (memo
 type: 'feature'
 ticket: '2'
 created: '2026-10-16'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 review: 'quick'

@@ -8,6 +8,7 @@ assignee: ""
 risk: medium
 estimate: "4 stories + 1 hitl, S–M"
 estimate_basis: "Research D3 verified the blast radius is small and code-local: one blocking seed-dial call (holdSeed -> assertDialable), one pure predicate module to split, and validators that already funnel through it. The risk concentrates in R2 — circuit addresses are consensus-validated chain data, so every widened acceptance needs a pinned rejection twin proving direct /ip4 still rejects everywhere and non-global hops never pass; block rules, signatures, slot math and fork choice stay byte-identical."
+status: done
 ---
 
 # Universal dialability: dual-stack relay hop + shipped seeds

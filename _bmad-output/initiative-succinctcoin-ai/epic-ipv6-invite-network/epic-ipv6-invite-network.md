@@ -8,6 +8,7 @@ assignee: ""
 risk: medium
 estimate: "5 stories + 1 re-scoped hitl proof, S–M"
 estimate_basis: "No new consensus surface: addressing policy is a listen/filter change with test migration; the invitation reuses 8.2's signed announcement + validator; one small proto addition (peerbook) on the established sync-stream pattern; scoring is a pure local module. The risk concentrates in real-world IPv6 inbound reachability, deferred to the hitl proof."
+status: done
 ---
 
 # IPv6-only + invitation join + scored peer-book

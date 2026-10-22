@@ -2,7 +2,7 @@
 ticket: "2"
 title: "Gossipsub topics + protobuf message envelopes (blocks / tickets / tx / peer info)"
 epic: epic-node-network
-status: "built"
+status: done
 route: full
 review: quick
 review_source: pinned

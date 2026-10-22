@@ -8,6 +8,7 @@ assignee: ""
 risk: medium
 estimate: "3 stories, S each"
 estimate_basis: "The tcp/mdns/bootstrap/relay code paths already exist in the core (epic 5) and are already inlined in the app bundle (verified at 0bba993); this epic is app-side selection (a pure config seam), one named core validation relaxation + three test pins, genesis data, docs, and an on-device two-instance proof."
+status: done
 ---
 
 # Real network: the app joins a LAN + internet network

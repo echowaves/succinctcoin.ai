@@ -1,6 +1,7 @@
 ---
+ticket: 3
 id: dcutr-punching-operator-docs-tier-closeout
-status: built
+status: done
 epic: epic-reachability-tier (ticket 10.3)
 title: DCUtR punching + operator docs + tier closeout
 ---

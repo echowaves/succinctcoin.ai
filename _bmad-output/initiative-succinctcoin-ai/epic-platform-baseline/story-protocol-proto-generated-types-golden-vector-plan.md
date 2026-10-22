@@ -3,7 +3,7 @@ title: 'protocol.proto + generated types + golden vector'
 type: 'feature'
 ticket: 4
 created: '2026-10-02'
-status: 'built'
+status: done
 baseline_revision: '2eb85b261da37811852673f79a0ad9d9d696b33a'
 route: 'full'
 route_source: 'auto'

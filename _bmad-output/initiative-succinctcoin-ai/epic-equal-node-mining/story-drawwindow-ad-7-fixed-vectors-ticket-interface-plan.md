@@ -3,7 +3,7 @@ title: 'drawWindow (AD-7) + fixed vectors + Ticket interface'
 type: 'feature'
 ticket: '3'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: 'e61ae4f2549169ed91c49b83286a274f9b957743'
 route: 'full'
 route_source: 'pinned'

@@ -1,7 +1,7 @@
 ---
 ticket: "3"
 epic: epic-desktop-app
-status: "built"
+status: done
 route: full
 review: quick
 review_source: pinned

@@ -8,6 +8,7 @@ assignee: ""
 risk: medium
 estimate: ""
 estimate_basis: ""
+status: done
 ---
 
 # Desktop app: Electron shell, IPC bridge, React UI, packaging

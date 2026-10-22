@@ -3,7 +3,7 @@ title: 'Fee boundary (big.js)'
 type: 'feature'
 ticket: 2
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '2f7f2f7483dd4a9bc1963759e2f11ba8785b18a6'
 route: 'full'
 route_source: 'auto'

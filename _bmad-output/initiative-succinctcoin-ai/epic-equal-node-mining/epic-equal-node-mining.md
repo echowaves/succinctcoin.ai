@@ -8,6 +8,7 @@ assignee: ""
 risk: high
 estimate: ""
 estimate_basis: ""
+status: done
 ---
 
 # Slot-based mining: slot loop, verifiable draw, PoW hot path, applyBlock

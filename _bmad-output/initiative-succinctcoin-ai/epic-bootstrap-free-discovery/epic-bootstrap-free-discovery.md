@@ -8,6 +8,7 @@ assignee: ""
 risk: high
 estimate: "6 stories, S–L"
 estimate_basis: "One proto addition + one consensus-visible block-field change (digest/golden-vector churn — the L), two pure core modules with property rows, app boot-ladder wiring on the shipped 7.2 seam, and a closing hitl device proof; presence mechanics reuse existing ticket/signing/gossip seams rather than inventing them."
+status: in-progress
 ---
 
 # Ticket-seeded bootstrap-free discovery

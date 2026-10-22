@@ -3,7 +3,7 @@ title: 'Chainstore + exclusive lock'
 type: 'feature'
 ticket: 5
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '53b3a1e13ab721873767d24f66c50d997ad73b3d'
 route: 'full'
 route_source: 'auto'

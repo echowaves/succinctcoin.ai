@@ -2,7 +2,7 @@
 ticket: "4"
 title: "Acceptance cap (one valid ticket per identity per window)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "abb51d500f374be1a7ce1683638db494a390da84"
 review: quick

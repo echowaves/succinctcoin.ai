@@ -2,7 +2,7 @@
 ticket: "1"
 title: "Network deps + libp2p adapter scaffold over @libp2p/memory"
 epic: epic-node-network
-status: "built"
+status: done
 route: full
 review: quick
 review_source: pinned

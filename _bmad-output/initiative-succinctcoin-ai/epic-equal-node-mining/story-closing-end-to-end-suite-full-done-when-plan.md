@@ -2,7 +2,7 @@
 ticket: "9"
 title: "Closing end-to-end suite (full Done-when)"
 epic: epic-equal-node-mining
-status: "built"
+status: done
 route: full
 baseline_revision: "33063ae448e5783aeae68759fae3ee83b88b3ce9"
 review: quick

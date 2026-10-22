@@ -3,7 +3,7 @@ title: 'Workspace + headless test harness'
 type: 'feature'
 ticket: 1
 created: '2026-10-01'
-status: 'built'
+status: done
 baseline_revision: '3bf6016a8d8644172ce7faef8fa21f0d83904475'
 route: 'full'
 route_source: 'auto'

@@ -2,7 +2,7 @@
 ticket: "3"
 title: "Conform tickets to drawWindow + wire signature verification (AD-7 / AD-12)"
 epic: epic-operator-identity
-status: "built"
+status: done
 route: full
 baseline_revision: "bf3ef884e03521dcd40f890e35b2aa3553e0da2b"
 review: quick
