@@ -1,4 +1,4 @@
-# Relay Runbook — volunteering a circuit relay (and running the bootstrap relay)
+# Relay Runbook — volunteering a circuit relay
 
 Audience: an operator willing to keep one always-on node reachable so nodes
 behind NAT — **including IPv4-only ones** — can hold circuits through it and
@@ -111,29 +111,34 @@ If HOLD never prints: inbound TCP (firewall/cloud security group), the port,
 or the host genuinely has no global address on that family — each failure is
 loud in the boot log (`[boot] relay FAIL (v4) …: <reason>`).
 
-## The bootstrap relay (project-operated instance)
+## Running a prominent volunteer relay
 
-The same runbook, plus three differences, because this instance is where
-`DEFAULT_RELAY_SEEDS` points until the pool grows:
+If your relay is the one people point newcomers at (a forum signature, your
+site, an org's public node), three extra habits matter, because strangers
+will hard-code your address:
 
-1. **Domain first.** Acquire a domain; point A **and** AAAA records at the
-   host (dual-stack). The name is for humans and docs — seeds stay IP-form
-   (see rules above), but `dig A`/`dig AAAA` are your health check that both
-   families really answer.
+1. **Domain for humans.** Point A **and** AAAA records at the host
+   (dual-stack). Seeds stay IP-form (see rules above — the policy routes no
+   `/dns`), but `dig A`/`dig AAAA` are your health check that both families
+   really answer, and a domain lets your *published instructions* survive an
+   IP change.
 2. **Static addresses.** Pick a host whose v4 and v6 are pinned; document the
    expected pair beside the unit file so an accidental rebuild with a new IP
-   is noticed, not silently shipped in everyone's config.
-3. **Seed delivery.** Once verified from both families (steps 1–3 above),
-   hand the IP-form multiaddrs to the release: they become the
-   `DEFAULT_RELAY_SEEDS` flip in `packages/app/src/main/net-config.ts` (the
-   constant is pinned empty today by a test precisely so the flip is a visible
-   diff). Format, one entry per family:
+   becomes a deliberate re-publish, not a silent breakage for everyone who
+   pinned you.
+3. **Publish widely.** Once verified from both families (steps 1–3 above),
+   share the two IP-form multiaddrs — one entry per family — wherever your
+   newcomers read:
 
    ```text
    /ip4/<relay-v4>/tcp/4001/p2p/<relayId>
    /ip6/<relay-v6>/tcp/4001/p2p/<relayId>
    ```
 
-Operational honesty: until that flip ships, every user configures the env var
-themselves (`SUCCINCTCOIN_RELAY_SEEDS`); the shipped default stays empty and
-boot behaves exactly like a seedless install.
+Operational honesty: the project deliberately operates **no** relay and ships
+an empty default list (`DEFAULT_RELAY_SEEDS`, pinned empty by a test — there
+is no endpoint to take down). Every fixed seed therefore travels as an
+operator choice: users set `SUCCINCTCOIN_RELAY_SEEDS` themselves, or join via
+invitation and let auto-relay pick. If the community ever curates a release
+seed list, entries come from independent volunteers like you — never a
+project-operated instance.

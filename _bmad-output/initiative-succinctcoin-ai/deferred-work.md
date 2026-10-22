@@ -144,9 +144,11 @@
      relay trio (relay-new / node-behind / invite-use-through-relay, live
      on loopback). README "Reachability ladder" documents it. STILL PARKED
      here: (a) any OFFICIALLY operated relay endpoint — the network ships
-     zero default seeds [UPDATE 2026-10-22, epic 11: UNPARKED into a
-     concrete HITL — story 11.4 provisions the first relay; until it runs,
-     DEFAULT_RELAY_SEEDS stays pinned empty (seam shipped in 11.3)];
+     zero default seeds [DECISION 2026-10-22 (user, Correct Course): stays
+     parked PERMANENTLY — the project operates NO relay; a single operated
+     endpoint is a single point of failure. DEFAULT_RELAY_SEEDS ships empty
+     by design (seam + pinned-empty guard from 11.3); volunteer seeds via
+     env or future community curation only];
      (b) operator INCENTIVES for volunteers (open spec
      question, not a build blocker); (c) gossip-based RELAY ADVERTISEMENT
      — how peers learn seeds without out-of-band sharing stays unsolved
@@ -265,8 +267,8 @@
      not force-released when reachability returns (the reservation store has
      no release API; TTLs expire them). -->
 
-<!-- SHIPPED 2026-10-22 (epic 11, stories 11.1–11.3 + 11.5; GAP: 11.4):
-     UNIVERSAL DIALABILITY (CAP-8). The hop law: a /p2p-circuit address may
+<!-- SHIPPED 2026-10-22 (epic 11, stories 11.1–11.3 + 11.5; 11.4 DROPPED
+     BY DECISION — see below): UNIVERSAL DIALABILITY (CAP-8). The hop law: a /p2p-circuit address may
      carry a GLOBAL-scope HOP of EITHER family (/ip4 admitted for the first
      time — direct addresses stay strict global v6, byte-identical); ONE
      predicate module (address-policy.ts) owns every boundary — record,
@@ -285,10 +287,13 @@
      relay-new-v4 trio on one machine. Seed FORMAT resolved as a side
      quest: seeds are IP-form multiaddrs — /dns names are rejected by the
      seed law (first IP must be global scope); domain records serve humans,
-     not the wire. GAP (11.4, HITL, open): no relay is PROVISIONED yet —
-     the seam stays pinned empty and the seed flip in 11.5 is a documented
-     skip; provisioning = run the runbook on a dual-stack host and publish
-     IP-form seeds. -->
+     not the wire. DECISION (2026-10-22, user,
+     Correct Course — change-remove-relay-spof): the project operates NO
+     relay — 11.4's provisioning dropped as a single point of failure.
+     DEFAULT_RELAY_SEEDS is empty BY DESIGN (pinned-empty test = permanent
+     invariant guard); join rides invitation + auto-relay, operators pin
+     volunteer IP-form seeds via env. Epic 11 COMPLETE: 11.1/2/3/5 built,
+     11.4 dropped. -->
 
 <!-- OPEN 2026-10-21 (story 11.2, PCL-1): MANUAL TRIO TEARDOWN RACE (v6).
      dial-manual.mjs `relay-new` exits the moment it counts two peers, which

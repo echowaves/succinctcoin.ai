@@ -36,7 +36,7 @@ The one exception to IPv6-only addressing, kept small on purpose (full evidence 
 
 - **Rule:** a `/…/p2p-circuit/p2p/<id>` address is valid iff its leading HOP segment (`/ip4|/ip6/…/tcp/N[/p2p/<relayId>]`) is **global scope** — v4 or v6 — and the remainder carries no IP components. Global rejects RFC1918, CGNAT `100.64.0.0/10`, loopback, link-local, ULA, multicast, zones; direct addresses keep the strict global-`/ip6` law. One predicate module owns every boundary (dial/announce/ingest/book/crawl); consensus mechanics never see a new family — only a widened address-shape check.
 - **Diversity/anti-abuse keys on the hop network:** relayed entries count one point of network per relay `/64` (v6) or per-IP/`/24` (v4).
-- **Seeds are bootstrap, never trust root:** software ships a built-in dual-stack seed list (domain with A + AAAA, dialed family-agnostically); records reached through any relay still verify by signature + tickets like every other class. Seeds absent or dead degrades exactly to epic-10 behavior; volunteer relays dilute the seed.
+- **Seeds are bootstrap, never trust root (amended 2026-10-22):** software ships an EMPTY built-in seed list — the project operates no relay and owns no domain or DNS. Seeds are IP-form multiaddrs (`/ip4|/ip6/<host>/tcp/N/p2p/<relayId>`) operators pin via `SUCCINCTCOIN_RELAY_SEEDS`, typically published by volunteers as text; domains name hosts for humans only (the seed law rejects `/dns`). Records reached through any relay still verify by signature + tickets like every other class. Seeds absent or dead degrades exactly to epic-10 behavior; volunteer relays dilute any seed.
 
 ## Fallback ladder (boot sequence; MVP rungs)
 

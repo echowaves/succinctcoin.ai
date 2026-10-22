@@ -43,9 +43,10 @@
  * on ONE machine via `_bmad-output/.../dial-manual.mjs` `relay-new-v4` /
  * `node-behind` / `invite-use-through-relay` under
  * SUCCINCTCOIN_ALLOW_LOOPBACK=1 — manual, never CI (AD-10: zero real sockets
- * here). SEED FLIP:
- * documented skip — 11.4 provisioning is HITL-open, so DEFAULT_RELAY_SEEDS
- * stays pinned empty; the epic Notes carry the gap line.
+ * here). SEED SEAM: DEFAULT_RELAY_SEEDS ships EMPTY BY DESIGN (2026-10-22:
+ * the project operates no relay — there is nothing to provision or flip);
+ * the fixture's seed arrives exactly as an operator pins it. Epic Notes
+ * carry the decision line.
  *
  * Discipline: memory transport (AD-10); bounded polls, no wall-clock
  * asserts, no RNG (AD-3); root-barrel imports + the established deep import
@@ -440,11 +441,12 @@ describe('11.5 — the CAP-8 Honest Boot Proof (memory, headless)', () => {
     },
   )
 
-  it('SEED_SEAM_STAYS_EMPTY: the proof ran with zero shipped default seeds (the 11.5 flip is a documented skip)', async () => {
+  it('SEED_SEAM_STAYS_EMPTY: the proof ran with zero shipped default seeds (empty by design — the project operates no relay)', async () => {
     // The fixture above pins the operational truth: EVERY hold in this suite
-    // came from an explicit seed. The shipped default stays empty until 11.4
-    // provisions a relay — pinned by packages/app net-config.test.ts; this
-    // row documents the epic-closing gap line, not a second mechanism.
+    // came from an explicit seed. The shipped default is empty BY DESIGN
+    // (2026-10-22 amendment) — pinned by packages/app net-config.test.ts as
+    // a permanent invariant guard; this row documents the decision, not a
+    // second mechanism.
     const events: RelaySeedEvent[] = []
     const lone = createNetAdapter({
       transport: TRANSPORT,

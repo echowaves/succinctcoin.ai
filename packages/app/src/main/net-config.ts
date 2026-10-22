@@ -39,12 +39,13 @@ import type {
 export const LAN_LISTEN_ADDRESS = '/ip6/::/tcp/0'
 
 /**
- * 11.3 — the SHIPPED default relay seeds: EMPTY today, and that is the pin.
- * This is a provisioned constant, not an absence: 11.5's flip replaces this
- * empty list with pinned dual-stack seed multiaddrs once 11.4 lands, and a
- * config test pins the empty constant itself (an install without the env
- * var must keep behaving exactly like pre-seam until then). Merged BEFORE
- * the operator's `SUCCINCTCOIN_RELAY_SEEDS` via {@link mergeRelaySeeds}.
+ * 11.3 — the SHIPPED default relay seeds: EMPTY, and that is permanent BY
+ * DESIGN (2026-10-22 amendment: the project operates no relay — no endpoint
+ * to provision, take down, or censor). A config test pins the empty constant
+ * as a standing invariant guard; operators pin volunteer seeds via
+ * `SUCCINCTCOIN_RELAY_SEEDS` (an install without it behaves exactly like
+ * pre-seam). Merged BEFORE the operator's env seeds via
+ * {@link mergeRelaySeeds}.
  */
 export const DEFAULT_RELAY_SEEDS: readonly string[] = []
 
@@ -129,7 +130,7 @@ export function defaultNetConfig(
     mdns: opts.mdns === true,
     bootstrap,
     // 10.2/11.3 — relay seeds: the shipped defaults (DEFAULT_RELAY_SEEDS,
-    // EMPTY today — 11.5's flip provisions it) merged BEFORE the env seeds
+    // EMPTY by design — the project operates no relay) merged BEFORE the env
     // (SUCCINCTCOIN_RELAY_SEEDS): defaults first, env additive, deduped by
     // exact string. Empty + empty ⇒ [] — byte-identical to the pre-seam
     // default (the exact-config pins); when set, the adapter holds
