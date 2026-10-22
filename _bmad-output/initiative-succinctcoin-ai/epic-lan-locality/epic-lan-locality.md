@@ -5,7 +5,7 @@ parent: initiative-succinctcoin-ai
 covers: ["CAP-9"]
 after: []
 assignee: ""
-status: in-progress
+status: done
 risk: low
 estimate: "1 story, S — BUILT out-of-band (prototype), recorded here"
 estimate_basis: "Surface verified before the prototype and unchanged since: one opt-in bind swap in net-config, one loopback wire filter in the adapter's announce path, one bootstrap-filter branch, boot-line UX, plus lint exemption. Chain-level law untouched; default config byte-identical (exact pins)."
