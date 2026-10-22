@@ -107,6 +107,8 @@ import {
   assertDialableTarget,
   filterDialableAddresses,
   isDialableSeedMultiaddr,
+  isLanBootstrapMultiaddr,
+  lanModeDropsAddress,
 } from './address-policy.js'
 import { createLibp2p } from 'libp2p'
 
@@ -222,6 +224,16 @@ export interface NetAdapterConfig {
    * resolution lives in the pure `autoNatEnabledFor`.
    */
   autoNat?: boolean | undefined
+  /**
+   * LAN locality (prototype 2026-10-22, app env `SUCCINCTCOIN_LAN=1`): when
+   * true the announce filter ADDITIONALLY drops loopback-family direct
+   * addresses (`::1`, v4 127/8 — {@link lanModeDropsAddress}) from what
+   * identify / mDNS / `getMultiaddrs()` advertise, so a LAN node announces
+   * its real address instead of loopback junk. Absent/false ⇒ the wire view
+   * is byte-identical to before. Chain-level law untouched: `/ip4` still
+   * never enters an announcement, invite, or block (record law is separate).
+   */
+  lanMode?: boolean | undefined
   /**
    * 10.1 — TEST SEAM for reachability evidence: subscribe addr→reachable
    * reports (return an unsubscribe). When present it REPLACES the AutoNAT
@@ -496,12 +508,18 @@ function buildPeerDiscovery(config: NetAdapterConfig): Libp2pInit['peerDiscovery
   // operator-visible drop diagnostics are recorded as deferred work (9.5).
   // Memory keeps the raw list: its fixtures are not real addresses.
   const bootstrapList =
-    config.transport === 'tcp'
-      // Bootstrap entries ARE dialed, so the list obeys the DIAL law —
-      // including the dev-only loopback allowance (a `::1` hint in
-      // bootstrap.txt works exactly when dialing ::1 does; default off).
-      ? filterDialableAddresses(config.bootstrap ?? [])
-      : (config.bootstrap ?? [])
+    config.transport !== 'tcp'
+      ? (config.bootstrap ?? [])
+      : // Bootstrap entries ARE dialed, so the list obeys the DIAL law —
+        // including the dev-only loopback allowance (a `::1` hint in
+        // bootstrap.txt works exactly when dialing ::1 does; default off).
+        // LAN mode (2026-10-22 prototype) widens to private/loopback IPv4:
+        // the `[boot] LAN dial:` line is copy-pasted into a peer's
+        // bootstrap.txt precisely when multicast is blocked, so a pinned LAN
+        // peer must survive this filter (public /ip4 still never does).
+        config.lanMode === true
+        ? (config.bootstrap ?? []).filter(isLanBootstrapMultiaddr)
+        : filterDialableAddresses(config.bootstrap ?? [])
   if (bootstrapList.length > 0) {
     discovery.push(bootstrap({ list: bootstrapList }))
   }
@@ -559,9 +577,15 @@ async function buildNode(
       // addresses stop reaching peers on the wire, not just in our local
       // view. Keys normalize away the `/p2p/<self>` suffix (AutoNAT events
       // report raw listen addrs; see `normalizeAddressKey`). Circuit
-      // addresses never drop (the fallback must survive a dead direct probe).
+      // addresses never drop BY HONESTY (the fallback must survive a dead
+      // direct probe); only LAN mode's loopback filter can touch them, and
+      // only when the hop itself is loopback.
       announceFilter: (addrs) =>
-        addrs.filter((ma) => isHonestAddressText(ma.toString(), getReachView())),
+        addrs.filter(
+          (ma) =>
+            isHonestAddressText(ma.toString(), getReachView()) &&
+            !(config.lanMode === true && lanModeDropsAddress(ma.toString())),
+        ),
     },
     // 5.7 D9 — `circuitRelayTransport` is ALWAYS wired (after the direct
     // transport): the dial-THROUGH-relay capability a 'none' node needs to

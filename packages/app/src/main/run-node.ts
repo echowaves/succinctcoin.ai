@@ -35,6 +35,7 @@ import {
   createOfflineGateVerifier,
   deriveIdentityKeypair,
   isGlobalIp6Multiaddr,
+  lanModeDropsAddress,
   loadGenesis,
 } from '@succinctcoin/core'
 import type {
@@ -151,6 +152,8 @@ export async function runNode(opts: RunNodeOptions): Promise<NodeRunHandle> {
       listenPort,
       extraBootstrap,
       mdns: env.SUCCINCTCOIN_MDNS === '1',
+      // LAN locality prototype (2026-10-22) — same knob as the app boot.
+      lan: env.SUCCINCTCOIN_LAN === '1',
       relaySeeds,
       relayServer,
       relayAuto,
@@ -250,10 +253,20 @@ async function bootOverTransport(args: {
   // mining first would bury these lines under block logs.
   try {
     const dialable = net.listenAddresses().filter(isGlobalIp6Multiaddr)
+    // LAN locality mode prints its real local addresses instead (never an
+    // invite — the chain-level law still drops /ip4 from every announcement).
+    const lanDialable =
+      env.SUCCINCTCOIN_LAN === '1'
+        ? net
+            .listenAddresses()
+            .filter((a) => a.startsWith('/ip4/') && !lanModeDropsAddress(a))
+        : []
     log(
       dialable.length > 0
         ? `[boot] dial me: ${dialable.join(' ')}`
-        : '[boot] no dialable (global IPv6) listen address yet',
+        : lanDialable.length > 0
+          ? `[boot] LAN dial: ${lanDialable.join(' ')} (local testnet — not an invite)`
+          : '[boot] no dialable (global IPv6) listen address yet',
     )
     // AutoNAT has not had time to probe at this instant, so `unknown` is the
     // normal honest answer here; `dial me:` above is the authoritative one.
@@ -303,7 +316,9 @@ const USAGE = [
   '  --help              this text',
   '',
   'Env: SUCCINCTCOIN_LISTEN_PORT, SUCCINCTCOIN_RELAY_SEEDS, SUCCINCTCOIN_RELAY_SERVER,',
-  '     SUCCINCTCOIN_MDNS, SUCCINCTCOIN_RELAY_AUTO (=0 disables auto-relay:',
+  '     SUCCINCTCOIN_MDNS, SUCCINCTCOIN_LAN (=1 local-first testnet: v4 bind,',
+  '     mDNS on, loopback dropped from the wire view; NO invite),',
+  '     SUCCINCTCOIN_RELAY_AUTO (=0 disables auto-relay:',
   '     serving hops + holding circuits through hop-capable peers when behind',
   '     NAT — explicit seeds/server role only). Files in --data-dir: invite.txt',
   '     (joins), bootstrap.txt.',

@@ -129,6 +129,8 @@ Every node climbs the same four rungs, automatically and in order — each one o
 
 LAN multicast (mDNS) is OFF by default since 9.1; opt in with `SUCCINCTCOIN_MDNS=1` where a trusted LAN justifies it.
 
+**Local-first testnet (`SUCCINCTCOIN_LAN=1`, prototype 2026-10-22).** Two machines on one LAN with no global IPv6 (the common home case) can run the real stack against each other: the flag binds the IPv4 wildcard instead of v6, implies mDNS, and drops loopback-family addresses from what libp2p advertises — so nodes announce their real `192.168…` address on the local network and connect directly, no relay, no invite, zero infrastructure. The boot log prints `[boot] LAN dial: /ip4/…` to copy into a peer's `bootstrap.txt` when multicast is blocked. This is deliberately **local-only**: the chain-level address law is untouched — LAN `/ip4` never enters an announcement, an invitation, or a block — so such a node has no WAN identity while the flag is on; it is a testnet between friends, not a public address.
+
 ## Package for distribution
 
 ```sh

@@ -23,8 +23,80 @@ import {
   isGlobalIp6Multiaddr,
   isRelayHopCircuitMultiaddr,
   isRelaySeedMultiaddr,
+  isLoopbackV4Multiaddr,
+  isLanBootstrapMultiaddr,
+  lanModeDropsAddress,
   ip6Slash64,
 } from '../src/net/address-policy.js'
+
+describe('LAN locality (prototype 2026-10-22) — loopback-v4 twin + the lanMode wire drop', () => {
+  it('isLoopbackV4Multiaddr ACCEPTS every 127/8 shape, REJECTS everything else', () => {
+    for (const addr of [
+      '/ip4/127.0.0.1/tcp/58462/p2p/12D3KooWSelf',
+      '/ip4/127.0.0.1/tcp/1',
+      '/ip4/127.5.5.5/tcp/9', // the whole 127/8 block is loopback
+    ]) {
+      expect(isLoopbackV4Multiaddr(addr)).toBe(true)
+    }
+    for (const addr of [
+      '/ip4/192.168.1.50/tcp/9', // a real LAN address — NOT loopback
+      '/ip4/10.0.0.7/tcp/1',
+      '/ip4/8.8.8.8/tcp/1',
+      '/ip6/2001:db8::1/tcp/1',
+      '/ip6/::1/tcp/1', // the v6 twin owns that one
+      '/ip4/127.0.0.1/ip6/::1', // mixed families ⇒ neither pure twin
+      'junk',
+      '',
+    ]) {
+      expect(isLoopbackV4Multiaddr(addr)).toBe(false)
+    }
+  })
+
+  it('lanModeDropsAddress drops BOTH loopback families (the field-junk shape), keeps LAN/global/circuit/memory', () => {
+    // The exact announced junk from the 2026-10-22 LAN investigation:
+    expect(lanModeDropsAddress('/ip6/::1/tcp/58462/p2p/12D3KooWSelf')).toBe(true)
+    expect(lanModeDropsAddress('/ip4/127.0.0.1/tcp/58462/p2p/12D3KooWSelf')).toBe(true)
+    // Real addresses survive — this is the whole point of LAN mode:
+    expect(lanModeDropsAddress('/ip4/192.168.1.50/tcp/4001/p2p/12D3KooWPeer')).toBe(false)
+    expect(lanModeDropsAddress('/ip6/2001:db8::9/tcp/4001/p2p/12D3KooWPeer')).toBe(false)
+    // Circuits through REAL hops are load-bearing regardless of mode…
+    expect(
+      lanModeDropsAddress('/ip4/192.168.1.9/tcp/9/p2p/12D3A/p2p-circuit/p2p/12D3B'),
+    ).toBe(false)
+    // …while a loopback-HEADED circuit is junk everywhere, dropped too.
+    expect(
+      lanModeDropsAddress('/ip4/127.0.0.1/tcp/9/p2p/12D3A/p2p-circuit/p2p/12D3B'),
+    ).toBe(true)
+    // Memory fixtures carry no IP at all — never touched.
+    expect(lanModeDropsAddress('/memory/lane-a')).toBe(false)
+  })
+
+  it('isLanBootstrapMultiaddr: dial law PLUS private/loopback v4; public /ip4 NEVER', () => {
+    // The ordinary law passes through untouched:
+    expect(isLanBootstrapMultiaddr('/ip6/2001:db8::9/tcp/4001/p2p/12D3A')).toBe(true)
+    expect(
+      isLanBootstrapMultiaddr('/ip6/2001:db8::9/tcp/1/p2p/12D3A/p2p-circuit/p2p/12D3B'),
+    ).toBe(true)
+    // LAN pins (the bootstrap.txt copy-paste this exists for):
+    expect(isLanBootstrapMultiaddr('/ip4/192.168.1.50/tcp/4001/p2p/12D3A')).toBe(true)
+    expect(isLanBootstrapMultiaddr('/ip4/10.20.30.4/tcp/1/p2p/12D3A')).toBe(true)
+    expect(isLanBootstrapMultiaddr('/ip4/172.16.0.2/tcp/1/p2p/12D3A')).toBe(true)
+    expect(isLanBootstrapMultiaddr('/ip4/172.31.255.1/tcp/1')).toBe(true)
+    expect(isLanBootstrapMultiaddr('/ip4/127.0.0.1/tcp/9/p2p/12D3A')).toBe(true)
+    // A LAN-hop circuit too:
+    expect(
+      isLanBootstrapMultiaddr('/ip4/192.168.1.9/tcp/9/p2p/12D3A/p2p-circuit/p2p/12D3B'),
+    ).toBe(true)
+    // PUBLIC v4 stays banned — LAN mode widens toward the wire it sits on,
+    // never into a general direct-v4 allowance:
+    expect(isLanBootstrapMultiaddr('/ip4/8.8.8.8/tcp/1/p2p/12D3A')).toBe(false)
+    expect(isLanBootstrapMultiaddr('/ip4/172.32.0.1/tcp/1')).toBe(false) // just outside 172.16/12
+    expect(isLanBootstrapMultiaddr('/ip4/203.0.113.7/tcp/9/p2p/QmR')).toBe(false)
+    // ULA v6 and junk: no.
+    expect(isLanBootstrapMultiaddr('/ip6/fd00::5/tcp/1')).toBe(false)
+    expect(isLanBootstrapMultiaddr('junk')).toBe(false)
+  })
+})
 
 describe('9.1 — address policy: global /ip6 only', () => {
   it('ACCEPTS global unicast over tcp, with p2p and p2p-circuit tails', () => {

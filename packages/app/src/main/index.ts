@@ -32,6 +32,7 @@ import {
   createOfflineGateVerifier,
   deriveIdentityKeypair,
   isGlobalIp6Multiaddr,
+  lanModeDropsAddress,
   loadGenesis,
 } from '@succinctcoin/core'
 
@@ -108,6 +109,10 @@ async function boot(): Promise<void> {
       // 9.1: LAN multicast is opt-in — middleboxes eat it and the network is
       // IPv6-only; SUCCINCTCOIN_MDNS=1 re-enables it on friendly LANs.
       mdns: process.env.SUCCINCTCOIN_MDNS === '1',
+      // LAN locality prototype (2026-10-22): SUCCINCTCOIN_LAN=1 binds the
+      // IPv4 wildcard + implies mDNS + drops loopback from the wire view.
+      // A LOCAL-FIRST testnet: no invite, no WAN identity (see net-config).
+      lan: process.env.SUCCINCTCOIN_LAN === '1',
       relaySeeds,
       // 10.3 — volunteer as a circuit relay (the 5.7 server role). Its own
       // dialable multiaddr + peer id print in the boot log; share that seed
@@ -264,11 +269,26 @@ async function boot(): Promise<void> {
   // Copy-paste this line's address to a LAN peer's bootstrap.txt when mDNS
   // cannot cross the network (the dial path is plain unicast TCP).
   try {
-    const lan = net.listenAddresses().filter(isGlobalIp6Multiaddr)
+    const dialable = net.listenAddresses().filter(isGlobalIp6Multiaddr)
+    // LAN locality mode prints its real local addresses instead (never an
+    // invite — the chain-level law still drops /ip4 from every announcement).
+    const lanDialable =
+      process.env.SUCCINCTCOIN_LAN === '1'
+        ? net
+            .listenAddresses()
+            .filter((a) => a.startsWith('/ip4/') && !lanModeDropsAddress(a))
+        : []
+    // Same hints feedback on both address lines (review F5 parity).
+    const hints =
+      extraBootstrap.length > 0
+        ? ` (bootstrap hints: ${String(extraBootstrap.length)} from ${bootstrapFile})`
+        : ''
     console.log(
-      lan.length > 0
-        ? `[boot] dial me: ${lan.join(' ')}${extraBootstrap.length > 0 ? ` (bootstrap hints: ${String(extraBootstrap.length)} from ${bootstrapFile})` : ''}`
-        : '[boot] no LAN listen address yet (adapter reported none)',
+      dialable.length > 0
+        ? `[boot] dial me: ${dialable.join(' ')}${hints}`
+        : lanDialable.length > 0
+          ? `[boot] LAN dial: ${lanDialable.join(' ')} (local testnet — not an invite)${hints}`
+          : '[boot] no LAN listen address yet (adapter reported none)',
     )
   } catch {
     // never unwinds boot for a log line

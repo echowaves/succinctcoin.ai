@@ -291,6 +291,88 @@ export function isLoopbackIp6Multiaddr(addr: string): boolean {
   }
   return sawLoopback
 }
+
+/**
+ * LAN locality (prototype 2026-10-22, `SUCCINCTCOIN_LAN`): the IPv4 twin of
+ * {@link isLoopbackIp6Multiaddr}. True iff `addr` parses, carries no
+ * `/ip6`/`ip6zone`, and EVERY `/ip4` component is in `127.0.0.0/8` (first
+ * octet 127). Encapsulation (`/p2p/<id>` tails) is allowed — announced
+ * addresses arrive self-suffixed. A real LAN address (192.168/16, 10/8,
+ * any non-loopback v4) is NOT loopback; a global address never matches.
+ */
+export function isLoopbackV4Multiaddr(addr: string): boolean {
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return false
+  }
+  let sawLoopback = false
+  for (const component of components) {
+    if (component.code === CODE_IP6 || component.code === CODE_IP6ZONE) return false
+    if (component.code === CODE_IP4) {
+      const octets = typeof component.value === 'string' ? component.value.split('.') : []
+      if (octets.length !== 4 || octets[0] !== '127') return false
+      sawLoopback = true
+    }
+  }
+  return sawLoopback
+}
+
+/**
+ * The LAN-mode WIRE-view filter (adapter `announceFilter` under
+ * `lanMode: true`, app env `SUCCINCTCOIN_LAN=1`): drop pure loopback-family
+ * direct addresses — the junk a wildcard bind expands to on a machine whose
+ * only non-link-local interface addresses are loopback (field evidence
+ * 2026-10-22: mDNS announced `/ip6/::1/tcp/…` and no peer could ever dial
+ * it). Everything else passes: real LAN addresses, global addrs, and
+ * circuit reservations through NON-loopback hops (a loopback-headed circuit
+ * is junk everywhere — the local peer would just dial itself twice). This
+ * is the libp2p advertise view ONLY (identify / mDNS / getMultiaddrs) — the
+ * chain-level announce law (`filterAnnounceAddresses`) never consults it,
+ * so a LAN address can still never enter an announcement, invite, or block.
+ */
+export function lanModeDropsAddress(addr: string): boolean {
+  return isLoopbackIp6Multiaddr(addr) || isLoopbackV4Multiaddr(addr)
+}
+
+/**
+ * LAN-mode BOOTSTRAP law (prototype 2026-10-22): what survives the
+ * bootstrap-list filter when `lanMode` is on. The ordinary dial law first
+ * (`isDialableMultiaddr` — global `/ip6`, hop-law circuits, `::1` under the
+ * dev flag), PLUS private/loopback IPv4 (RFC 1918: 10/8, 172.16/12,
+ * 192.168/16; loopback 127/8) as a direct address or circuit hop — the
+ * addresses a LOCAL testnet legitimately pins in `bootstrap.txt` when
+ * multicast is blocked. A PUBLIC `/ip4` never joins the list: direct v4
+ * stays banned exactly as before, so LAN mode widens only toward the wire
+ * it is already sitting on. Pure.
+ */
+export function isLanBootstrapMultiaddr(addr: string): boolean {
+  if (isDialableMultiaddr(addr)) return true
+  let components: Array<{ code: number, value?: string }>
+  try {
+    components = multiaddr(addr).getComponents()
+  } catch {
+    return false
+  }
+  let sawPrivateV4 = false
+  for (const component of components) {
+    if (component.code === CODE_IP6 || component.code === CODE_IP6ZONE) return false
+    if (component.code === CODE_IP4) {
+      const octets =
+        typeof component.value === 'string' ? component.value.split('.').map(Number) : []
+      if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255))
+        return false
+      const [a, b] = [octets[0] as number, octets[1] as number]
+      const privateRange = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+      const loopback = a === 127
+      if (!privateRange && !loopback) return false
+      sawPrivateV4 = true
+    }
+  }
+  return sawPrivateV4
+}
+
 /**
  * The class of a RAW IPv6 text address (a host interface address, NOT a
  * multiaddr) — the same top-bit knowledge as `ip6IsGlobalUnicast`, owned

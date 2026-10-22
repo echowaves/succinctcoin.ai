@@ -393,6 +393,36 @@ describe('ticket 8 — the CLI shell is pure glue', () => {
     expect(refused.configs[0]?.relayRole).toBeUndefined()
   }, 30_000)
 
+  it('LAN_LOCALITY env (2026-10-22): SUCCINCTCOIN_LAN=1 rides the same seam as the app', async () => {
+    const h = await bootRunner({ env: { SUCCINCTCOIN_LAN: '1' } })
+    await h.handle.stop()
+    expect(h.configs[0]?.listenAddress).toBe('/ip4/0.0.0.0/tcp/0')
+    expect(h.configs[0]?.mdns).toBe(true)
+    expect(h.configs[0]?.lanMode).toBe(true)
+    // And unset changes NOTHING (the byte-identity pin for the runner path).
+    const off = await bootRunner({})
+    await off.handle.stop()
+    expect(off.configs[0]?.listenAddress).toBe('/ip6/::/tcp/0')
+    expect(off.configs[0]?.lanMode).toBeUndefined()
+  }, 30_000)
+
+  it('LAN_LOCALITY boot line (review F4): LAN dial prints real local addrs, never loopback junk', async () => {
+    const h = await bootRunner({
+      env: { SUCCINCTCOIN_LAN: '1' },
+      listenAs: [
+        '/ip4/192.168.1.50/tcp/4001/p2p/12D3KooWLocal',
+        '/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWLocal',
+      ],
+    })
+    await h.handle.stop()
+    const line = h.logs.find((l) => l.startsWith('[boot] LAN dial:'))
+    expect(line).toBeDefined()
+    expect(line ?? '').toContain('/ip4/192.168.1.50/tcp/4001/p2p/12D3KooWLocal')
+    expect(line ?? '').not.toContain('127.0.0.1')
+    // The honest label rides along: a LAN address is never an invite.
+    expect(line ?? '').toContain('local testnet — not an invite')
+  }, 30_000)
+
   it('RELAY_AUTO (ticket 7): the runner boots auto-relay ON; SUCCINCTCOIN_RELAY_AUTO=0 is the kill switch', async () => {
     const h = await bootRunner()
     await h.handle.stop()

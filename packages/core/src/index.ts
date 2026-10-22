@@ -831,6 +831,9 @@ export {
   isGlobalHopMultiaddr,
   isGlobalIp6Multiaddr,
   isLoopbackIp6Multiaddr,
+  isLoopbackV4Multiaddr,
+  isLanBootstrapMultiaddr,
+  lanModeDropsAddress,
   isRelayHopCircuitMultiaddr,
   isRelaySeedMultiaddr,
 } from './net/index.js'

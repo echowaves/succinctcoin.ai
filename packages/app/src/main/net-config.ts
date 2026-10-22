@@ -39,6 +39,20 @@ import type {
 export const LAN_LISTEN_ADDRESS = '/ip6/::/tcp/0'
 
 /**
+ * LAN locality (prototype 2026-10-22, `SUCCINCTCOIN_LAN=1`): the IPv4
+ * wildcard BIND for local-first testnets. A bind is not an endpoint — no
+ * host is identified, and the chain-level record law still drops `/ip4`
+ * from every announcement, invite, and block; LAN mode only changes what
+ * libp2p advertises ON THE LOCAL NETWORK (mDNS/identify), plus the core's
+ * `lanMode` wire filter that keeps loopback junk out of it. The discovery
+ * lint exempts EXACTLY this declaration (position-scoped, like the seed
+ * region below); a v4 literal anywhere else stays banned. Trade-off pinned:
+ * on a machine with global IPv6, LAN mode deliberately swaps WAN-v6 for
+ * LAN-v4 — it is a local testnet, not an identity on the network.
+ */
+export const LAN_V4_LISTEN_ADDRESS = '/ip4/0.0.0.0/tcp/0'
+
+/**
  * 11.3 — the SHIPPED default relay seeds: EMPTY, and that is permanent BY
  * DESIGN (2026-10-22 amendment: the project operates no relay — no endpoint
  * to provision, take down, or censor). A config test pins the empty constant
@@ -110,10 +124,14 @@ export function defaultNetConfig(
   opts: NetConfigOptions = {},
 ): NetAdapterConfig {
   const port = opts.listenPort
+  // LAN locality (2026-10-22): the opt-in v4 wildcard bind REPLACES the v6
+  // one — a single listener, so dual-stack sockets never collide on ports.
+  const lan = opts.lan === true
+  const bindFamily = lan ? LAN_V4_LISTEN_ADDRESS : LAN_LISTEN_ADDRESS
   const listenAddress =
     typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535
-      ? `/ip6/::/tcp/${port}`
-      : LAN_LISTEN_ADDRESS
+      ? bindFamily.replace(/\/tcp\/0$/, `/tcp/${String(port)}`)
+      : bindFamily
   const extra = opts.extraBootstrap ?? []
   // Merge order: genesis first, then local hints; dedupe by exact string.
   // With no hints the list passes through VERBATIM (the pinned 7.2 shape).
@@ -127,7 +145,9 @@ export function defaultNetConfig(
     // 9.1: mDNS is OFF by default — its IPv4 multicast is middlebox-hostile
     // (the pivot's field evidence) and off-policy for an IPv6-only network.
     // Opt in with `mdns: true` (env SUCCINCTCOIN_MDNS=1) on friendly LANs.
-    mdns: opts.mdns === true,
+    // LAN locality (2026-10-22): multicast IS the discovery mechanism of a
+    // local testnet, so `lan` implies it on.
+    mdns: opts.mdns === true || lan,
     bootstrap,
     // 10.2/11.3 — relay seeds: the shipped defaults (DEFAULT_RELAY_SEEDS,
     // EMPTY by design — the project operates no relay) merged BEFORE the env
@@ -144,6 +164,10 @@ export function defaultNetConfig(
     // the key is ABSENT only when a caller passes no mode (the pinned
     // exact-config default); the app boot always passes `resolveRelayAuto`.
     ...(opts.relayAuto !== undefined ? { relayAuto: opts.relayAuto } : {}),
+    // LAN locality (2026-10-22): the core's loopback wire filter EXISTS
+    // only when opted in — absent key keeps the default config byte-identical
+    // (the exact-config pins above guard that).
+    ...(lan ? { lanMode: true } : {}),
     protocolIdentityId,
   }
 }
@@ -173,6 +197,12 @@ export interface NetConfigOptions {
   extraBootstrap?: readonly string[] | undefined
   /** Opt INTO LAN mDNS discovery (default OFF since 9.1). */
   mdns?: boolean | undefined
+  /** LAN locality prototype (2026-10-22, env `SUCCINCTCOIN_LAN=1`): bind
+   * the IPv4 wildcard instead of v6, imply mDNS on, and let the core drop
+   * loopback-family addresses from the wire view. Absent ⇒ byte-identical
+   * default config (exact pins). Local testnet only — see
+   * {@link LAN_V4_LISTEN_ADDRESS}. */
+  lan?: boolean | undefined
   /** 10.2 — circuit-relay seeds (multiaddrs carrying /p2p/<relayId>),
    * env SUCCINCTCOIN_RELAY_SEEDS. Merged additive AFTER
    * `DEFAULT_RELAY_SEEDS` (defaults first, deduped by exact string); with

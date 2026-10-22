@@ -52,6 +52,7 @@ import type { GenesisConfig } from '@succinctcoin/core'
 import {
   DEFAULT_RELAY_SEEDS,
   LAN_LISTEN_ADDRESS,
+  LAN_V4_LISTEN_ADDRESS,
   defaultNetConfig,
   mergeRelaySeeds,
   parseBootstrapFile,
@@ -97,6 +98,31 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     expect(LAN_LISTEN_ADDRESS).toBe('/ip6/::/tcp/0')
     // R1: the isolated transport is NEVER returned from the seam.
     expect(config.transport).not.toBe('memory')
+  })
+
+  it('LAN_LOCALITY (prototype 2026-10-22): lan:true ⇒ v4 bind + mdns implied + lanMode; OFF ⇒ byte-identical', () => {
+    const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
+    expect(LAN_V4_LISTEN_ADDRESS).toBe('/ip4/0.0.0.0/tcp/0')
+    // The LAN config, EXACTLY — the only diffs from the pinned default are
+    // the bind family, mDNS implied on, and the lanMode wire filter.
+    expect(defaultNetConfig(g, 'af'.repeat(32), { lan: true })).toEqual({
+      transport: 'tcp',
+      listenAddress: '/ip4/0.0.0.0/tcp/0',
+      mdns: true,
+      bootstrap: [],
+      relaySeeds: [],
+      lanMode: true,
+      protocolIdentityId: 'af'.repeat(32),
+    })
+    // A fixed port rides the v4 bind too (same suffix rewrite as v6).
+    expect(
+      defaultNetConfig(g, 'af'.repeat(32), { lan: true, listenPort: 4001 }).listenAddress,
+    ).toBe('/ip4/0.0.0.0/tcp/4001')
+    // OFF is the loud default: NO lanMode key on the default config (the
+    // exact pin above guards byte-identity otherwise).
+    expect('lanMode' in defaultNetConfig(g, 'af'.repeat(32))).toBe(false)
+    // mdns alone still works (9.1 knob untouched).
+    expect(defaultNetConfig(g, 'af'.repeat(32), { mdns: true }).mdns).toBe(true)
   })
 
   it('RELAY_SEEDS (10.2): env parse rows + verbatim passthrough, empty default', () => {
