@@ -100,3 +100,10 @@ covers = ["CAP-8", "CAP-3"]
 after = [
   { epic = 10, needs = "the shipped relay tier (seed bootstrap, reservation lifecycle, circuit-address announce path) that the v4 hop rides on, and its policy tests this epic widens" },
 ]
+
+[[epic]]
+id = 12
+slug = "epic-lan-locality"
+title = "Local-testnet locality (SUCCINCTCOIN_LAN=1)"
+covers = ["CAP-9"]
+# after = [] — built on top of epics 9/11 (address-policy + lint surfaces it carves around), all done; no gate needed for recorded work.
