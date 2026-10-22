@@ -32,9 +32,16 @@ The root `test` runs every package's suite: the core's 445-test suite (58 files)
 ## Run the desktop app
 
 ```sh
+corepack pnpm start       # repo root: rebuilds everything, then launches Electron
+```
+
+`start` is the one-command local run: it runs the core build (protocol codegen + `tsc`), then the full app build (clean → typecheck → renderer → main bundle → preload bundle → node runner → genesis copy), then launches the app — so every code change you made is compiled in before the window opens. The manual equivalent, step by step:
+
+```sh
+corepack pnpm build       # repo root: core build
 cd packages/app
 corepack pnpm build       # clean → typecheck → renderer → main bundle → preload bundle → node runner → genesis copy
-corepack pnpm exec electron .
+corepack pnpm start       # electron . (or: corepack pnpm exec electron .)
 ```
 
 On boot the app opens the window, loads the bundled renderer, and **auto-starts the node and mining** — the UI shows blocks being mined, balances, and peers (driven by the event stream, never polling). The chain is persisted under Electron's `userData` directory. The node runs on the real network stack (tcp + noise + yamux, IPv6-only); joining rides invitations, not multicast — see "Joining a network" below.
@@ -136,9 +143,11 @@ The package is self-contained: the main and preload processes are Vite bundles w
 | Command | Where | What |
 |---------|-------|------|
 | `corepack pnpm build` | repo root | Core build: protocol codegen + `tsc`. |
+| `corepack pnpm start` | repo root | Run the desktop app locally: core build → full app build → `electron .`. |
 | `corepack pnpm test` | repo root | Full workspace test suite (headless). |
 | `corepack pnpm typecheck` | repo root | Core typecheck. |
 | `corepack pnpm build` | `packages/app` | Clean emit → typecheck → renderer Vite → main Vite bundle → preload Vite bundle → headless runner bundle → genesis copy. |
+| `corepack pnpm start` | `packages/app` | Launch the built app (`electron .`) — assumes `pnpm build` has run (with the core built); from the repo root, `corepack pnpm start` does all three. |
 | `corepack pnpm start:node` | `packages/app` | Run the headless node (plain Node, no Electron) — needs `--data-dir`; see "Run a node without the app". |
 | `corepack pnpm test` | `packages/app` | App suite (core-host parity, renderer, closing e2e, packaged-boot matrix, headless runner). |
 | `corepack pnpm package` | `packages/app` | `electron-forge package` → distributable zip in `out/`. |

@@ -7,6 +7,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
+    "start": "electron .",
     "start:node": "node dist/node/run-node.js",
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json && vite build && vite build -c vite.main.config.ts && vite build -c vite.preload.config.ts && vite build -c vite.node.config.ts && node scripts/copy-genesis.mjs",
     "package": "electron-forge package"
