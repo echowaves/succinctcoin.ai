@@ -132,6 +132,14 @@ export function createCore(ports: CorePorts): CoreInstance {
   // until the first announcement publishes. Public text (a signed public
   // record), safe for the clipboard/UI (AD-9: no key material).
   let latestSelfInvite: string | null = null
+  // Invite-share UX (2026-10-22): dedupe key for the SelfInviteUpdated push.
+  // The loop re-mints its own announcement EVERY window with a fresh slot
+  // range and signature, so raw text comparison would push ~60 times/s of
+  // cosmetically-different invites; what a viewer shares is WHO/WHERE —
+  // identity + addresses — so the push fires when those change (or after
+  // stop clears it: '' re-arms). Set only AFTER a successful emit, so a
+  // throwing listener retries next window.
+  let lastInvitePushKey = ''
   // Ticket 9.3: cooperative stop for the fire-and-forget crawl (the boot
   // ladder + crawl run detached from `start()`; `stop()` flips this so an
   // in-flight crawl drains between dequeues instead of outliving the node).
@@ -288,6 +296,10 @@ export function createCore(ports: CorePorts): CoreInstance {
       }
       genesis = null
       latestSelfInvite = null // 9.2: a stopped node has no renderable invite
+      // Invite-share UX: the panel must CLEAR with the node (null payload),
+      // and '' re-arms the dedupe key for the next start's first mint.
+      this.emit('SelfInviteUpdated', { invite: null })
+      lastInvitePushKey = ''
       discoveryStopped = true // 9.3: an in-flight crawl drains between dequeues
       ;(ports.net as unknown as {
         setPeerBookSource?: (source: PeerBookSource | null) => void
@@ -340,6 +352,17 @@ export function createCore(ports: CorePorts): CoreInstance {
         onSelfAnnouncement: (record) => {
           try {
             latestSelfInvite = encodeInvite(record)
+            // Invite-share UX: push, don't poll — but only when the INVITE-
+            // WORTHY content changes (see lastInvitePushKey). The emit runs
+            // BEFORE the host observer so a throwing observer can never
+            // swallow the panel's single trigger for this change.
+            const key = `${record.identityId}|${record.multiaddrs.join(',')}|${
+              record.observedExternalAddr ?? ''
+            }`
+            if (key !== lastInvitePushKey) {
+              this.emit('SelfInviteUpdated', { invite: latestSelfInvite })
+              lastInvitePushKey = key // only after a successful emit
+            }
             ports.discovery?.onSelfInvite?.(latestSelfInvite)
           } catch {
             /* render/observer errors never unwind the loop */

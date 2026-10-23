@@ -319,16 +319,23 @@ describe('6.2 — the app in-app path (plain Node, AD-10 headless-safe)', () => 
       'BlockApplied',
       'CoreStarted',
       'CoreStopped',
+      // Invite-share UX: the invite PUSHES itself (public signed text, or
+      // null on stop — the same key-free payload `getInvite()` reads).
+      'SelfInviteUpdated',
     ])
     // 9.2 adds `invite` — public signed text out, never key material (E3).
     // Post-9.5 adds `inviteDiagnostics` — IPv6 interface CLASS COUNTS only
     // (no addresses, no hostnames — AD-11-safe by construction).
+    // Invite-share UX adds `lanDial` — LAN-mode /ip4 dial addresses behind
+    // the boot line's display-only filter (CAP-9); plain address strings,
+    // key-free like every read-model.
     expect(Object.values(IPC_READ).sort()).toEqual([
       'balances',
       'block',
       'chainHead',
       'invite',
       'inviteDiagnostics',
+      'lanDial',
       'peers',
     ])
     const channels = [

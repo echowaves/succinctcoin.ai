@@ -164,6 +164,10 @@ function surfacePayloads(): Record<'ReadPeer' | 'ReadBlock' | keyof CoreEvents, 
       ticketCount: 2,
       txCount: 1,
     },
+    // Invite-share UX: the SAME public signed text `getInvite()` renders (a
+    // signed PUBLIC announcement — signing proves possession, never ships
+    // it) — or null on stop. Key-free by identity (AD-11).
+    SelfInviteUpdated: { invite: 'scinvite:v1:public-signed-text' },
   } as const
   return { ReadPeer: peer, ReadBlock: block, ...events }
 }
@@ -179,6 +183,7 @@ const EXPECTED_KEY_SETS: Record<
   CoreStarted: ['slot'],
   CoreStopped: ['slot'],
   BlockApplied: ['hash', 'slot', 'ticketCount', 'txCount', 'winnerIdentityId'],
+  SelfInviteUpdated: ['invite'],
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +225,7 @@ describe('4.7 AD-11 key-material boundary (core half, E1) — frozen matrix', ()
       CoreStarted: clean,
       CoreStopped: clean,
       BlockApplied: clean,
+      SelfInviteUpdated: clean,
     }
 
     // The type bindings are exercised at compile time (the assignments

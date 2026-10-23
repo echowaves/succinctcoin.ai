@@ -140,6 +140,14 @@ function InvitePanel() {
   // the hint states this machine's actual IPv6 situation).
   const [diag, setDiag] = useState<InviteDiagnostics | null>(null)
 
+  // Invite-share UX: the Copy feedback line (set on click only — NO timer
+  // clears it, RENDERER_NO_POLL; Electron tests pin the clipboard CALL, not
+  // OS state, so the status reflects the attempt).
+  const [copied, setCopied] = useState<string | null>(null)
+  // Invite-share UX: LAN-mode dial addresses (display-only, CAP-9) — [] in
+  // every normal mode, so this block is invisible outside LAN testnets.
+  const [lanAddrs, setLanAddrs] = useState<string[]>([])
+
   const refresh = (): void => {
     // ONE paired fetch (review F2): invite + diagnostics land together, so a
     // hint never describes a different snapshot than the invite beside it.
@@ -157,6 +165,50 @@ function InvitePanel() {
       })
   }
   useEffect(refresh, [])
+
+  // Invite-share UX: PUSH, don't poll — the core emits `SelfInviteUpdated`
+  // the moment the invite mints (first announce window) and on every
+  // refresh, and clears it (`invite: null`) when the node stops. The panel
+  // therefore shows the copyable invite WITHOUT asking the user to Refresh.
+  // Same public signed text `getInvite()` returns (AD-11-safe by identity).
+  useEffect(
+    () =>
+      window.succinctcoin.on('SelfInviteUpdated', (payload) => {
+        setInvite(payload.invite)
+      }),
+    [],
+  )
+
+  // Invite-share UX: LAN-address read (the main process owns the mode
+  // check — [] whenever not in LAN mode, so no timer is needed). TWO
+  // triggers, both event-driven: once at mount (covers a node that started
+  // before this panel did) and on `CoreStarted` (boot loads the renderer
+  // BEFORE host.start, so the adapter can still be un-listening at mount —
+  // the started event is exactly when listenAddresses becomes real).
+  const readLan = (): void => {
+    void window.succinctcoin
+      .getLanDial()
+      .then((addrs) => setLanAddrs(addrs))
+      .catch(() => setLanAddrs([]))
+  }
+  useEffect(readLan, [])
+  useEffect(() => window.succinctcoin.on('CoreStarted', readLan), [])
+
+  /** Copy `text`; `done` is the success line (failure stays a manual-copy hint). */
+  const copy = (text: string, done: string): void => {
+    // The frozen matrix says "never throws": a missing clipboard API fails
+    // SYNCHRONOUSLY on property access, before any promise exists — so the
+    // access itself is guarded too, and every path lands in the status line.
+    const fail = 'copy failed — select the text and copy manually.'
+    try {
+      void navigator.clipboard
+        .writeText(text)
+        .then(() => setCopied(done))
+        .catch(() => setCopied(fail))
+    } catch {
+      setCopied(fail)
+    }
+  }
 
   const join = (): void => {
     if (pasted.trim() === '') return
@@ -188,14 +240,23 @@ function InvitePanel() {
       {invite === null ? (
         <p>
           No invite yet — this node announces once it has a global IPv6 address or holds a circuit
-          through a relay hop.{' '}
+          through a relay hop. It appears here by itself the moment it is ready.{' '}
           <button onClick={refresh}>Refresh</button>
           {diag !== null && <span> {describeIpv6(diag)}</span>}
         </p>
       ) : (
         <>
-          <p>Your invite (send it to a friend):</p>
+          <p>
+            Your invite is ready. <strong>1.</strong> Copy it and send it to your friend as one
+            whole message. <strong>2.</strong> Your friend pastes it into the box below (in{' '}
+            <em>their</em> app) and presses Join — nothing else to type.
+          </p>
           <textarea readOnly rows={3} cols={72} value={invite} onFocus={(e) => e.currentTarget.select()} />
+          <button
+            onClick={() => copy(invite, 'Invite copied — send it as one whole message.')}
+          >
+            Copy invite
+          </button>
           <button onClick={refresh}>Refresh</button>
           {loopbackWarning !== null && <p role="status">{loopbackWarning}</p>}
           {ownCircuitHint !== null && <p role="status">{ownCircuitHint}</p>}
@@ -214,6 +275,36 @@ function InvitePanel() {
         Join
       </button>
       {status !== null ? <p role="status">{status}</p> : null}
+      {copied !== null ? <p role="status">{copied}</p> : null}
+      {/* Invite-share UX: in LAN mode with NO invite the honest answer is
+          "local testnet only" (CAP-9) — the LOCAL dial address is still
+          worth copying. Display-only, same filter as the boot line; the
+          either/or mirrors the boot log (an INVITE always wins — a dual-
+          stack LAN host must not see mixed messages); invisible outside
+          LAN mode (the read returns []). */}
+      {invite === null && lanAddrs.length > 0 && (
+        <div>
+          <p>
+            <strong>Local testnet addresses — not an invite.</strong> This node
+            runs in LAN mode: these work only on this local network, and a
+            friend joins by pasting one into their bootstrap.txt.
+          </p>
+          <ul>
+            {lanAddrs.map((addr) => (
+              <li key={addr}>
+                <code>{addr}</code>{' '}
+                <button
+                  onClick={() =>
+                    copy(addr, 'Address copied — your friend pastes it into their bootstrap.txt.')
+                  }
+                >
+                  Copy
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

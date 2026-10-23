@@ -296,6 +296,40 @@ describe('9.2 — createCore invitation wiring', () => {
 
     await core.stop()
   })
+
+  it('SelfInviteUpdated PUSHES the minted invite (no poll) and clears on stop', async () => {
+    // Invite-share UX (plan-invite-share-ux, matrix rows 1 + 5): the panel
+    // learns about the invite by SUBSCRIBING — the first announce window
+    // must arrive on its own, byte-identical to getInvite(), and stop()
+    // must push the clear (`invite: null`) so a halted node never shows a
+    // stale "send this" block.
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
+    const ports = makePorts(dir)
+    ports.identity = deriveIdentityKeypair(seedFor(1))
+    ports.discovery = { announceAddresses: () => ['/ip6/2001:db8:a00:9::/tcp/4000'] }
+    const core = createCore(ports)
+
+    // Subscribe BEFORE start — missing the first mint is the whole bug.
+    const pushed: (string | null)[] = []
+    const unsubscribe = core.on('SelfInviteUpdated', (p) => pushed.push(p.invite))
+
+    await core.start()
+    await core.startMining()
+
+    await until(() => pushed.some((p) => p !== null))
+    const invite = pushed.find((p) => p !== null) as string
+    expect(invite).toBe(core.getInvite()) // the SAME public text, one source
+
+    // DEDUPE (review F2): the loop re-mints its announcement EVERY window
+    // with a fresh signature (~60/s at tick cadence), but the push is keyed
+    // on identity + addresses — several windows later, still exactly ONE.
+    await new Promise((r) => setTimeout(r, 30))
+    expect(pushed.filter((p) => p !== null)).toEqual([invite])
+
+    await core.stop()
+    expect(pushed[pushed.length - 1]).toBeNull() // stop pushes the CLEAR
+    unsubscribe()
+  })
 })
 
 describe('9.3 — createCore peer-book exchange wiring', () => {

@@ -44,6 +44,10 @@ const succinctcoin = {
   // only, key-free). Rides the same read-API seam as `getInvite`.
   getInviteDiagnostics: (): Promise<InviteDiagnostics> =>
     ipcRenderer.invoke(IPC_READ.inviteDiag),
+  // Invite-share UX: LAN-mode /ip4 dial addresses (display-only, CAP-9 —
+  // the main process owns the mode check + filter); [] whenever not in LAN
+  // mode. Plain address strings, key-free like every read-model.
+  getLanDial: (): Promise<string[]> => ipcRenderer.invoke(IPC_READ.lanDial),
   applyInvite: (text: string): Promise<InviteApplyResult> =>
     ipcRenderer.invoke(IPC_COMMANDS.applyInvite, text),
   // The event stream (main → renderer push): subscribe by the CORE event

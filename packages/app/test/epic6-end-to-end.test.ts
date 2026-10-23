@@ -313,6 +313,10 @@ function makeBridge(host: CoreHost): Window['succinctcoin'] {
     // Post-9.5: diagnostics are glue-level (not host-level) — the stand-in
     // reports the empty table (the pure module is tested directly).
     getInviteDiagnostics: async () => inviteDiagnostics({}),
+    // Invite-share UX: LAN dial read — glue-level too; this harness never
+    // runs in LAN mode, so [] is the faithful answer (the filter itself is
+    // core-owned and tested there).
+    getLanDial: async () => [],
     applyInvite: (text) => host.applyInvite(text),
     on: (event, cb) => {
       listeners.set(event, cb as (payload: unknown) => void)

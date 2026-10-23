@@ -125,6 +125,8 @@ function makeBridge(): {
       loopbackCount: 1,
       otherCount: 0,
     }),
+    // Invite-share UX: the LAN dial read ([] — this mock is not in LAN mode).
+    getLanDial: async () => [],
     applyInvite: unused,
     on: (event, cb) => {
       listeners.set(event, cb as (payload: unknown) => void)
@@ -262,6 +264,33 @@ describe('6.3 — the React renderer (headless-safe)', () => {
     expect(app).toMatch(
       /global IPv6 address or holds a circuit\s*\n?\s*through a relay hop/,
     )
+  })
+
+  it('invite-share UX: event-driven invite + copy-on-click + LAN block (plan-invite-share-ux)', () => {
+    // The frozen I/O matrix rows this static row pins (the runtime halves
+    // live in `core-ladder.test.ts` — the push, and the null-push on stop):
+    //  - the invite ARRIVES by event, so it appears without a Refresh click
+    //    (RENDERER_NO_POLL above keeps this push-based — no polling timer);
+    //  - the handler passes the payload THROUGH (`setInvite(payload.invite)`),
+    //    so the stop-time `null` clears the panel back to the no-invite copy;
+    //  - Copy issues a real clipboard CALL with the invite text (pinned as
+    //    the call, not OS state — Electron tests cannot read the clipboard);
+    //  - the null-at-mount path still pairs invite + diagnostics (review F2);
+    //  - LAN mode shows the honest display-only block ("not an invite",
+    //    CAP-9), fed by the `getLanDial` read (mode check owned by main).
+    const app = rendererSources()['App.tsx'] as string
+    expect(app).toMatch(/on\('SelfInviteUpdated'/)
+    expect(app).toMatch(/setInvite\(payload\.invite\)/)
+    expect(app).toMatch(/navigator\.clipboard\b[\s\S]{0,40}writeText/)
+    // Copy is click-wired with the invite text and its own success line…
+    expect(app).toMatch(/copy\(\s*invite,\s*'Invite copied/)
+    // …and the LAN read re-runs on CoreStarted (boot loads the renderer
+    // before host.start — the mount-only read would race the adapter).
+    expect(app).toMatch(/on\('CoreStarted', readLan\)/)
+    // The LAN block is the boot line's either/or: an invite always wins.
+    expect(app).toMatch(/invite === null && lanAddrs\.length > 0/)
+    expect(app).toMatch(/getInviteDiagnostics/)
+    expect(app).toMatch(/not an invite/)
   })
 
   it('RENDERER_AD11_NO_KEYS: no key material in the renderer source (AD-11, AC4)', () => {

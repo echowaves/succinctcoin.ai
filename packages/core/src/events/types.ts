@@ -84,6 +84,15 @@ export interface CoreEvents {
     ticketCount: number
     txCount: number
   }
+  /**
+   * Invite-share UX (2026-10-22): the renderable self-invitation (9.2) is
+   * minted/refreshed on an announce window — or cleared (`invite: null` on
+   * stop). The panel subscribes instead of making the user click Refresh:
+   * the moment a shareable invite exists, it shows itself. Payload is the
+   * SAME public signed text `getInvite()` returns (AD-11-safe by identity —
+   * an invite is a signed PUBLIC record), never key material.
+   */
+  SelfInviteUpdated: { invite: string | null }
 }
 
 /**

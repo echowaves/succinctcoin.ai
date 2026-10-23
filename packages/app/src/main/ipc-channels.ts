@@ -50,6 +50,9 @@ export const IPC_EVENTS: Readonly<Record<CoreEventName, string>> = {
   CoreStarted: 'coreStarted',
   BlockApplied: 'blockApplied',
   CoreStopped: 'coreStopped',
+  // Invite-share UX: the self-invitation PUSHES itself the moment it mints
+  // (or clears on stop) — the panel renders it without a Refresh click.
+  SelfInviteUpdated: 'selfInviteUpdated',
 }
 
 /**
@@ -64,6 +67,10 @@ export const IPC_READ = {
   block: 'block',
   /** 9.2: this node's renderable self-invitation (public signed text). */
   invite: 'invite',
+  /** Invite-share UX: LAN-mode /ip4 dial addresses behind the SAME
+   * display-only filter as the boot line (CAP-9); [] whenever not in LAN
+   * mode — the renderer never re-implements the mode check. */
+  lanDial: 'lanDial',
   /** Post-9.5: WHY there is no invite (IPv6 interface classes — counts only,
    * `main/invite-diagnostics.ts`). Key-free diagnostics, AD-11-safe. */
   inviteDiag: 'inviteDiagnostics',

@@ -38,6 +38,9 @@ declare global {
       /** Post-9.5: WHY there is no invite yet — this machine's IPv6 interface
        * classes (counts only, AD-11-safe; `main/invite-diagnostics.ts`). */
       getInviteDiagnostics(): Promise<InviteDiagnostics>
+      /** Invite-share UX: LAN-mode /ip4 dial addresses (display-only,
+       * CAP-9); empty whenever the node is not running in LAN mode. */
+      getLanDial(): Promise<string[]>
       /** 9.2 join seam: verify a pasted invitation, ingest it invite-grade,
        * and dial through it. Rejects SC-CORE-1 before the node has started. */
       applyInvite(

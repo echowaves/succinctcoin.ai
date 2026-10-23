@@ -213,6 +213,20 @@ async function boot(): Promise<void> {
   ipcMain.handle(IPC_READ.inviteDiag, () =>
     inviteDiagnostics(networkInterfaces()),
   )
+  // Invite-share UX: the LAN dial addresses, behind the SAME display-only
+  // filter as the boot line above (CAP-9 — they never become invites).
+  // [] whenever not in LAN mode; [] before start / after stop (the adapter
+  // throws there — a read channel must never crash a window).
+  ipcMain.handle(IPC_READ.lanDial, (): string[] => {
+    if (process.env.SUCCINCTCOIN_LAN !== '1') return []
+    try {
+      return net
+        .listenAddresses()
+        .filter((a) => a.startsWith('/ip4/') && !lanModeDropsAddress(a))
+    } catch {
+      return []
+    }
+  })
 
   // The BrowserWindow: contextIsolation ON, nodeIntegration OFF — the ONLY
   // bridge to the main process is the preload's `contextBridge` surface
