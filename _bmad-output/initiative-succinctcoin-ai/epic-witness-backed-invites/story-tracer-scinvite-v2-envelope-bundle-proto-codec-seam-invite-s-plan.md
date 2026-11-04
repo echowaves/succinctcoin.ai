@@ -3,7 +3,7 @@ title: 'Tracer: scinvite:v2 envelope — bundle proto, codec seam, invite surfac
 type: 'feature'
 ticket: '1'
 created: '2026-11-04'
-status: 'built'
+status: done
 baseline_revision: '4244432dbaf4045e43f8f2290a6694fc4104b908'
 route: 'full'
 route_source: 'auto'
