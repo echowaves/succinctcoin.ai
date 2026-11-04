@@ -2,7 +2,7 @@
 title: 'The Ledger Dials — staged connectivity: candidates over transports'
 type: 'change-proposal'
 created: '2026-11-04'
-status: 'proposed (produced by bmad-advanced-elicitation: Assumption Audit, Comparative Analysis Matrix, ADR, Reverse Engineering, Morphological Analysis; user acceptance of individual stages pending)'
+status: 'accepted per stage 2026-11-04 (produced by bmad-advanced-elicitation: Assumption Audit, Comparative Analysis Matrix, ADR, Reverse Engineering, Morphological Analysis; per-stage dispositions in §9)'
 scope: 'Major if fully accepted — T-A is a defaults change, T-B a wire-format version, T-C an announcement extension, T-D/E a consensus-data RFC. No stage blocks another; each ships alone.'
 initiative: 'initiative-succinctcoin-ai'
 epic: 'cross-cutting (connectivity); touches epic-ipv6-invite-network lineage, epic-reachability-tier lineage, epic-universal-dialability lineage'
@@ -100,6 +100,18 @@ Parameters {first contact, candidate source, relay discovery, trust, freshness c
 
 Each row ships alone and pays alone. Nothing in this proposal is implemented; nothing here changes any file outside `_bmad-output/`.
 
-## 9. Elicitation provenance
+## 9. Stage acceptance (2026-11-04, user)
+
+| Stage | Disposition | Route |
+|---|---|---|
+| T-A LAN default-on | **Accepted — build now** | `bmad-build` with this doc as intent, scoped to T-A |
+| T-B scinvite:v2 witness bundle | **Accepted as an epic** | `bmad-spec` (this doc as input) → `bmad-ticket` slicing; property tests before any UI surfaces v2 invites (R2) |
+| T-C witness propagation | Accepted, sequenced behind T-B | rides T-B's types |
+| T-D chain relay registry | **Accepted as RFC-only** | architect route (`bmad-agent-architect` / `bmad-architecture`) into the spine; MUST NOT enter a build queue before the consensus-safety review (R1) |
+| T-E receipts → rewards | Parked with T-D | open spec; gated on T-D's RFC |
+
+Consequential: instrumentation row of §8 (dial-outcome counters) rides the T-A build where cheap, else its own small ticket. Ticket 8.6 unchanged.
+
+## 10. Elicitation provenance
 
 Assumption Audit (A1–A7, weakest = A4 eclipse analysis) · Comparative Analysis Matrix (§2) · Architecture Decision Records persona debate (reliability / threat / purist / product / operator voices → §3 decision text) · Reverse Engineering (§4) · Morphological Analysis (§5). User directive: "let's do them all… unique and innovative and creative."
