@@ -1,0 +1,96 @@
+# tickets.toml — epic-witness-backed-invites's agreed children. tickets.py reads it.
+# The order of the tables is the build order: move a table to reorder. `id` names a child for good and is never reused; it is not an order.
+# Keys tickets.py does not know are ignored, so a team may add its own.
+# Status never lives here: an entry with no plan and no leaf file is planned; its plan beside it carries `status`.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer: scinvite:v2 envelope — bundle proto, codec seam, invite surfaces speak v2"
+description = "Open the v2 wire format without touching v1 semantics: proto adds ReachabilityWitness {target identity, address, chainId, firstSeenSlot, expirySlot, signature} and InviteBundle {primary PeerAnnouncement; candidates[] {address, witnesses[]}} (regenerate, PROTO_OK; pin the call that these messages touch NO block digest — AD-12); core/src/discovery/invitation.ts gains mintV2(bundle) -> 'scinvite:v2:' + base64url(canonical bundle) and parseV2(text) whitespace-tolerant behind a v2 hard length cap (v1's MAX_INVITE_TEXT_LEN path byte-identical, decoder never handed unbounded input); a zero-backup bundle wraps the v1 record verbatim; verification stub accepts ONLY zero-candidate bundles until 13.3 lands, so invite.txt, the boot line, and the panel already round-trip v2 end to end while every dial still goes through v1's gates."
+verify = "Golden vectors: mintV2->parseV2 round-trip; a zero-backup v2 carries byte-identical v1 primary bytes; v1 codec + verifyInvite fixtures unchanged from pre-change; a v1 parser rejects 'scinvite:v2:' by prefix with a clean reason, never as corruption; cap rows (over-length refused before decode); boot row: valid zero-backup v2 in invite.txt joins exactly as the v1 invite did; full root + app suites green headless."
+covers = ["WB-1"]
+after = []
+hitl = false
+risk = "medium"
+unknown = "v2 byte budget and max backup count N (draft: keep 4096, N = 3) — proto field numbers reserved now so the wire stays stable whichever cap is chosen."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Witness issuance + local witness store"
+description = "core/src/discovery/witness.ts pure module: issueWitness signs canonical witness bytes (target identity, address, chainId, firstSeenSlot, expirySlot) with the core-held identity key (AD-11 — no key material leaves core), verifyWitnessSignature is pure and rejects any witness whose chainId differs from ctx; slot bounds are half-open [firstSeenSlot, expirySlot) judged on the caller-supplied currentSlot (AD-3 — no ambient clocks); a local witness store keeps fresh witnesses (issued or later received); issuance policy caps signatures per (target, slot-window) with explicit decline paths (kill switch, empty evidence) so a node is never an unbounded signing oracle."
+verify = "Property rows: tampering any field fails the signature check; wrong-chainId witnesses rejected at verify; expiry boundary rows exact at firstSeenSlot and expirySlot; cap row: a filled window declines further issuance with a reason; decline yields no signature; store evicts expired entries; full suites green headless."
+covers = ["WB-2"]
+after = [1]
+hitl = false
+risk = "medium"
+unknown = "Expiry default in slots (draft: longer than the 32-slot invite liveness lookback — relay churn is slower than ticket churn) — pinned as a named constant at build."
+
+[[entry]]
+id = 3
+type = "story"
+title = "Verification floor: k-of-n distinct signers, slot expiry, /64 diversity, direct-first law"
+description = "verifyInviteV2(bundle, ctx) in invitation.ts: the primary passes v1's three gates unchanged (parse -> validatePeerAnnouncement -> ticket liveness); a backup candidate is accepted only with >= k=2 witnesses from distinct signer identities, all unexpired against ctx.currentSlot, its candidate hops spanning the /64 diversity floor; strict signer chain-liveness engages ONLY when real blocks exist — the pinned empty-chain rule caps a fresh node's trust ceiling, so k-of-n + expiry + diversity are the load-bearing eclipse defenses; every candidate gets a verdict with a reason; consumers enforce the dial-order law: no candidate dialed before the primary is attempted, none while it answers."
+verify = "Property rows reject single-witness bundles, expired witnesses, duplicate signers, and same-/64 clusters; the minimal valid bundle (k=2 distinct signers across two /64s) is accepted; headless dial-order row: zero candidate dials while the primary answers; empty-chain vs real-block strictness rows; full suites green headless."
+covers = ["WB-3"]
+after = [2]
+hitl = false
+risk = "high"
+unknown = "Diversity metric for global /ip4 candidate hops (draft: reject v4 candidates until decided — CAP-8 admits them as circuit hops); whether signers must hold recent winner tickets with a chain present (draft: strict distinct identity always, ticket liveness soft)."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Witness propagation over the existing windowed announcement exchange"
+description = "Nodes share fresh witnesses they hold for direct peers through the EXISTING windowed announcement exchange as additive proto fields — no new protocol id, no new stream; receivers run witness verification (13.2/13.3 machinery) before storing into the witness store; expired witnesses are never gossiped and are dropped on receipt; older nodes ignore the field with validation unchanged."
+verify = "Three-node headless row: C learns B's witnessed address via A alone with no direct C-B dial; older-node compat row: a message carrying the new fields validates as before and the fields are ignored; expiry rows (stale not served, dropped on receipt); PROTO_OK green; full suites green headless."
+covers = ["WB-4"]
+after = [3]
+hitl = false
+risk = "high"
+unknown = "Which exchange carries the fields (announcement window vs peerbook response) — follow the existing gossip shape at build and pin the choice."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Witness-grade ingest + mint-with-backups"
+description = "Book side: a new trust grade between hint and invitation — hints < witness < invite < block pinned in ordering and selection; candidates that PASS 13.3's verification enter the book at witness grade with expiry-driven eviction, and parse alone never yields a dial target (verify-before-connect); mint-side: mintV2 now assembles up to N backup candidates from the node's fresh stored witnesses, so a live node's invite carries real backups and an offline node's last-pushed invite keeps working until witnesses expire."
+verify = "Book rows: grade recorded, ordered, expired out; an unverified or partially verified bundle yields zero dial targets (no connect side effect); witness-grade records are never promoted to invite/block grade by gossip alone; mint row: store with fresh witnesses for 2N peers -> bundle carries exactly N candidates within the cap, store empty -> zero-backup bundle identical to 13.1's shape; full suites green headless."
+covers = ["WB-6", "WB-1"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Live-lease invite UX: stale copy, honest backup count, self-refresh"
+description = "The invite panel presents a live lease, not a permalink: copy states the invite goes stale when the sender goes offline; a backup-count line renders only when non-zero (pure renderer function over the existing SelfInviteUpdated payload — no new IPC channel, no polling timers); the paste box accepts v2 text unchanged."
+verify = "Renderer tests: stale-when-offline copy present; zero backups -> no count line; non-zero -> exact count; RENDERER_NO_POLL scan green; app suite green headless."
+covers = ["WB-5"]
+after = [5]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup pass over everything this epic touched — invitation.ts, witness.ts, book ingest, the gossip fields, the invite panel — scope set at start from the build records and review findings deferred during the epic; cleanup only, no new behavior."
+verify = "Full root + app suites green headless; golden vectors byte-identical to pre-sweep (no behavior change)."
+covers = []
+after = [1, 2, 3, 4, 5, 6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Closing proof: offline-inviter redemption (success signal) + probes + docs"
+description = "The spec's success signal as a CI suite: three-node headless under SUCCINCTCOIN_ALLOW_LOOPBACK=1 (mirroring the relay trio) — a fresh node redeems an scinvite:v2 whose inviter is OFFLINE at redemption, connects through a witnessed backup within seconds, and gossips witness knowledge onward; negative pairs: a witness-less bundle and an expired bundle both dial nothing; the invite probe script gains a v2 mode (mint/parse/verify against real core dist); README gains the live-lease invite flow (mint -> text -> redeem while sender offline)."
+verify = "Proof green (bounded, event-driven, no wall clock); both negative rows green; probe v2 mode runs against built dist on loopback behind the flag; README renders the flow end to end; full suites green headless."
+covers = ["WB-1", "WB-2", "WB-3", "WB-4", "WB-5", "WB-6"]
+after = [7]
+hitl = false
+risk = "medium"

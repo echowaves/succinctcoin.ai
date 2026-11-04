@@ -107,3 +107,10 @@ slug = "epic-lan-locality"
 title = "Local-testnet locality (SUCCINCTCOIN_LAN=1)"
 covers = ["CAP-9"]
 # after = [] — built on top of epics 9/11 (address-policy + lint surfaces it carves around), all done; no gate needed for recorded work.
+
+[[epic]]
+id = 13
+slug = "epic-witness-backed-invites"
+title = "Witness-backed invitations: a texted invite that survives the inviter sleeping"
+covers = ["CAP-3", "CAP-7"]
+# after = [] — builds on epics 9/10/11's shipped surfaces (PeerAnnouncement + validator, invite v1, relay tier), all done; no whole-epic gate. Spec: ../spec-scinvite-v2/.
