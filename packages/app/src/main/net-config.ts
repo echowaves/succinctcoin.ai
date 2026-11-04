@@ -142,12 +142,16 @@ export function defaultNetConfig(
   return {
     transport: 'tcp',
     listenAddress,
-    // 9.1: mDNS is OFF by default — its IPv4 multicast is middlebox-hostile
-    // (the pivot's field evidence) and off-policy for an IPv6-only network.
-    // Opt in with `mdns: true` (env SUCCINCTCOIN_MDNS=1) on friendly LANs.
-    // LAN locality (2026-10-22): multicast IS the discovery mechanism of a
-    // local testnet, so `lan` implies it on.
-    mdns: opts.mdns === true || lan,
+    // T-A (change-ledger-dials, 2026-11-04): LAN multicast discovery is ON
+    // by default — ADDITIVE to the invitation ladder, never instead of it,
+    // and the CAP-9 law is untouched whatever mDNS discovers: local
+    // addresses never enter an announcement, an invitation, or a block. The
+    // 9.1 opt-in is reversed (its middlebox-hostility only ever meant the
+    // rung stayed empty); kill switch `mdns: false` (env
+    // SUCCINCTCOIN_MDNS=0). LAN locality (2026-10-22): multicast IS the
+    // discovery mechanism of a local testnet, so `lan` forces it on even
+    // against an explicit false.
+    mdns: lan || opts.mdns !== false,
     bootstrap,
     // 10.2/11.3 — relay seeds: the shipped defaults (DEFAULT_RELAY_SEEDS,
     // EMPTY by design — the project operates no relay) merged BEFORE the env
@@ -195,7 +199,9 @@ export interface NetConfigOptions {
    * was copied from its boot log) MERGED after `genesis.bootstrap`. The
    * adapter policy-filters the list on the real transport. */
   extraBootstrap?: readonly string[] | undefined
-  /** Opt INTO LAN mDNS discovery (default OFF since 9.1). */
+  /** Explicitly DISABLE LAN mDNS discovery. Default ON since T-A
+   * (change-ledger-dials); a true `lan` overrides an explicit false —
+   * multicast is the local testnet's only discovery mechanism. */
   mdns?: boolean | undefined
   /** LAN locality prototype (2026-10-22, env `SUCCINCTCOIN_LAN=1`): bind
    * the IPv4 wildcard instead of v6, imply mDNS on, and let the core drop

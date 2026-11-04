@@ -102,13 +102,18 @@ async function boot(): Promise<void> {
   // the reachability tier's operator channel. Empty default; every attempt
   // outcome logs a [boot] line (hold success, or each bounded-retry failure).
   const relaySeeds = parseRelaySeeds(process.env.SUCCINCTCOIN_RELAY_SEEDS)
+  // T-A: ONE read of the multicast knob — the net config AND the honest
+  // ladder report (rung 1) must never disagree about whether mDNS is on.
+  const mdnsEnabled = process.env.SUCCINCTCOIN_MDNS !== '0'
   const net = createNetAdapter({
     ...defaultNetConfig(genesis, identity.identityId, {
       listenPort: Number.isNaN(envPort) ? undefined : envPort,
       extraBootstrap,
-      // 9.1: LAN multicast is opt-in — middleboxes eat it and the network is
-      // IPv6-only; SUCCINCTCOIN_MDNS=1 re-enables it on friendly LANs.
-      mdns: process.env.SUCCINCTCOIN_MDNS === '1',
+      // T-A (change-ledger-dials): LAN multicast discovery is ON by default
+      // — additive to the invitation ladder, and local addresses still never
+      // leave the subnet's view (CAP-9 law unchanged). SUCCINCTCOIN_MDNS=0
+      // disables it (pre-T-A semantics were the inverse: =1 opted in).
+      mdns: mdnsEnabled,
       // LAN locality prototype (2026-10-22): SUCCINCTCOIN_LAN=1 binds the
       // IPv4 wildcard + implies mDNS + drops loopback from the wire view.
       // A LOCAL-FIRST testnet: no invite, no WAN identity (see net-config).
@@ -151,6 +156,7 @@ async function boot(): Promise<void> {
         platform: process.platform,
         env: process.env,
         userDataDir: app.getPath('userData'),
+        mdnsEnabled,
       },
       () => net.listenAddresses(),
       undefined,

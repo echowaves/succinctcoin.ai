@@ -147,11 +147,16 @@ export async function runNode(opts: RunNodeOptions): Promise<NodeRunHandle> {
   // The adapter's seed events are boot facts, not debug noise: a hidden node
   // operator's only feedback that `SUCCINCTCOIN_RELAY_SEEDS` is working (or
   // why it is not) is these lines — the adapter never throws for a bad seed.
+  // T-A: ONE read of the multicast knob — the net config AND the honest
+  // ladder report (rung 1) must never disagree about whether mDNS is on.
+  const mdnsEnabled = env.SUCCINCTCOIN_MDNS !== '0'
   const netConfig: NetAdapterConfig = {
     ...defaultNetConfig(genesis, identity.identityId, {
       listenPort,
       extraBootstrap,
-      mdns: env.SUCCINCTCOIN_MDNS === '1',
+      // T-A (change-ledger-dials) — same knob as the app boot: multicast
+      // discovery ON by default, SUCCINCTCOIN_MDNS=0 disables.
+      mdns: mdnsEnabled,
       // LAN locality prototype (2026-10-22) — same knob as the app boot.
       lan: env.SUCCINCTCOIN_LAN === '1',
       relaySeeds,
@@ -173,7 +178,7 @@ export async function runNode(opts: RunNodeOptions): Promise<NodeRunHandle> {
   // CLI's exit would never fire and the operator would get a hung process
   // instead of an error line.
   try {
-    return await bootOverTransport({ opts, log, net, genesis, identity, env, platform })
+    return await bootOverTransport({ opts, log, net, genesis, identity, env, platform, mdnsEnabled })
   } catch (err) {
     await net.stop().catch(() => {})
     throw err
@@ -190,8 +195,10 @@ async function bootOverTransport(args: {
   identity: IdentityKeypair
   env: Record<string, string | undefined>
   platform: NodeJS.Platform
+  /** T-A: the ONE multicast-knob read (from {@link runNode}) — see there. */
+  mdnsEnabled: boolean
 }): Promise<NodeRunHandle> {
-  const { opts, log, net, genesis, identity, env, platform } = args
+  const { opts, log, net, genesis, identity, env, platform, mdnsEnabled } = args
   const store = new FileChainStore(join(opts.dataDir, 'chain'))
   const gate = createOfflineGateVerifier({ acceptedGates: genesis.gates })
 
@@ -217,7 +224,7 @@ async function bootOverTransport(args: {
     gate,
     identity,
     discovery: buildDiscoveryPorts(
-      { platform, env, userDataDir: opts.dataDir },
+      { platform, env, userDataDir: opts.dataDir, mdnsEnabled },
       () => net.listenAddresses(),
       // The ladder's "how did this node find its way" report goes through the
       // SAME sink as everything else — with the default it would print past an
@@ -316,8 +323,9 @@ const USAGE = [
   '  --help              this text',
   '',
   'Env: SUCCINCTCOIN_LISTEN_PORT, SUCCINCTCOIN_RELAY_SEEDS, SUCCINCTCOIN_RELAY_SERVER,',
-  '     SUCCINCTCOIN_MDNS, SUCCINCTCOIN_LAN (=1 local-first testnet: v4 bind,',
-  '     mDNS on, loopback dropped from the wire view; NO invite),',
+  '     SUCCINCTCOIN_MDNS (=0 disables LAN multicast — on by default),',
+  '     SUCCINCTCOIN_LAN (=1 local-first testnet: v4 bind,',
+  '     mDNS forced on, loopback dropped from the wire view; NO invite),',
   '     SUCCINCTCOIN_RELAY_AUTO (=0 disables auto-relay:',
   '     serving hops + holding circuits through hop-capable peers when behind',
   '     NAT — explicit seeds/server role only). Files in --data-dir: invite.txt',

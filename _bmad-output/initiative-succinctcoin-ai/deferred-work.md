@@ -315,3 +315,20 @@
      live trio proven on loopback only, 10.3/11.2). CI-side + loopback proofs
      passed (9.5 amnesiac boot, 10.3/11.x trios). Not code — environment.
      epic-bootstrap-free-discovery stays in-progress until this closes. -->
+
+
+<!-- DECISION REVERSED IN PART 2026-11-04 (T-A of change-ledger-dials, plan
+     plan-mdns-default-on.md): mDNS DEFAULTS ON. The 9.1 demotion ("mDNS is
+     OFF by default; opt in SUCCINCTCOIN_MDNS=1") reversed: LAN multicast
+     discovery now ships ON (app + runner), kill switch SUCCINCTCOIN_MDNS=0.
+     Field trigger: users on one Wi-Fi report "nodes never find each other" —
+     true at the product default, false at the protocol (12.1 field proof).
+     What STANDS from 9.1: the middlebox evidence (multicast may stay silent
+     on hostile LANs — discovery is ADDITIVE, the invitation remains rung 0
+     and the load-bearing join path; no channel becomes load-bearing); the
+     IPv6-only address law (CAP-9: local addresses never enter an
+     announcement, an invitation, or a block — policy code untouched);
+     SUCCINCTCOIN_LAN=1 semantics (forces multicast on against explicit
+     false). FOLLOW-UP: spec-succinctcoin.md ("mDNS retained only behind an
+     opt-in flag") + discovery-design.md rung-0 wording need a bmad-spec
+     amendment to match; historical epic records left as-written. -->

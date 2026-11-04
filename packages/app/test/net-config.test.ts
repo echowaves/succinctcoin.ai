@@ -9,13 +9,14 @@
  *   NET_TCP_MDNS_LAN_ONLY      (AC1) a LAN-only genesis (`bootstrap: []`,
  *                                valid post-7.1) yields EXACTLY
  *                                `{ transport: 'tcp', listenAddress:
- *                                '/ip6/::/tcp/0', mdns: false,
+ *                                '/ip6/::/tcp/0', mdns: true,
  *                                bootstrap: [], protocolIdentityId }` —
  *                                tcp is selected, the memory transport is
  *                                NEVER returned (R1). 9.1 IPv6-only: the
  *                                bind is v6 (`::` dual-stack socket, policy
- *                                at every boundary) and mDNS DEFAULTS OFF
- *                                (opt-in row below).
+ *                                at every boundary); mDNS DEFAULTS ON since
+ *                                T-A (change-ledger-dials) — off-switch row
+ *                                below.
  *   BOOTSTRAP_VERBATIM         (AC1) a genesis listing public peers passes
  *                                the list through VERBATIM (same reference
  *                                — no copy, no filter, no reorder; the
@@ -88,7 +89,8 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     expect(config).toEqual({
       transport: 'tcp',
       listenAddress: '/ip6/::/tcp/0',
-      mdns: false,
+      // T-A (change-ledger-dials): LAN multicast discovery ON by default.
+      mdns: true,
       bootstrap: [],
       relaySeeds: [],
       protocolIdentityId: 'ab'.repeat(32),
@@ -104,7 +106,8 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
     expect(LAN_V4_LISTEN_ADDRESS).toBe('/ip4/0.0.0.0/tcp/0')
     // The LAN config, EXACTLY — the only diffs from the pinned default are
-    // the bind family, mDNS implied on, and the lanMode wire filter.
+    // the bind family and the lanMode wire filter (mDNS is on in both since
+    // T-A; `lan` only adds the FORCE against an explicit false).
     expect(defaultNetConfig(g, 'af'.repeat(32), { lan: true })).toEqual({
       transport: 'tcp',
       listenAddress: '/ip4/0.0.0.0/tcp/0',
@@ -121,7 +124,7 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     // OFF is the loud default: NO lanMode key on the default config (the
     // exact pin above guards byte-identity otherwise).
     expect('lanMode' in defaultNetConfig(g, 'af'.repeat(32))).toBe(false)
-    // mdns alone still works (9.1 knob untouched).
+    // The mdns knob still resolves explicitly (T-A flipped only the default).
     expect(defaultNetConfig(g, 'af'.repeat(32), { mdns: true }).mdns).toBe(true)
   })
 
@@ -208,7 +211,7 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     expect(relay).toEqual({
       transport: 'tcp',
       listenAddress: '/ip6/::/tcp/0',
-      mdns: false,
+      mdns: true,
       bootstrap: [],
       relaySeeds: [],
       relayRole: 'relay',
@@ -237,11 +240,25 @@ describe('7.2 — defaultNetConfig: the pure boot net-config seam (tcp + mDNS + 
     )
   })
 
-  it('MDNS_OPT_IN: mdns is OFF by default; ONLY `mdns: true` enables it (9.1)', () => {
+  it('MDNS_DEFAULT_ON (T-A): mdns is ON by default; ONLY explicit false disables it', () => {
     const g: Pick<GenesisConfig, 'bootstrap'> = { bootstrap: [] }
-    expect(defaultNetConfig(g, 'ad'.repeat(32)).mdns).toBe(false)
+    // T-A (change-ledger-dials): the 9.1 opt-in is reversed — absent means ON.
+    expect(defaultNetConfig(g, 'ad'.repeat(32)).mdns).toBe(true)
     expect(defaultNetConfig(g, 'ad'.repeat(32), { mdns: false }).mdns).toBe(false)
     expect(defaultNetConfig(g, 'ad'.repeat(32), { mdns: true }).mdns).toBe(true)
+    // LAN mode forces multicast even against an explicit false — it is the
+    // local testnet's only discovery mechanism (12.1 semantics unchanged).
+    expect(defaultNetConfig(g, 'ad'.repeat(32), { mdns: false, lan: true }).mdns).toBe(true)
+  })
+
+  it('MDNS_GLUE_SYMMETRY (T-A): both boot glues read the knob identically', () => {
+    // The seam default is pinned above; this pins the GLUES against drift —
+    // one expression, two boot paths (electron main + headless runner).
+    for (const src of ['index.ts', 'run-node.ts']) {
+      const code = stripComments(readFileSync(join(APP_DIR, 'src', 'main', src), 'utf8'))
+      expect(code, `${src}: kill-switch polarity`).toContain("SUCCINCTCOIN_MDNS !== '0'")
+      expect(code, `${src}: knob read exactly once`).not.toContain("SUCCINCTCOIN_MDNS === '1'")
+    }
   })
 
   it('BOOTSTRAP_VERBATIM: a public-peer list passes through verbatim (same reference)', () => {

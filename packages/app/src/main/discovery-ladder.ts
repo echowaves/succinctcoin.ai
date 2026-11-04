@@ -31,6 +31,12 @@ export interface LadderSeamInputs {
   userDataDir: string
   /** Optional shared-root override for the LAN file (tests, odd mounts). */
   lanSharedDir?: string
+  /** T-A (change-ledger-dials): whether LAN multicast discovery is enabled
+   * at boot — the SAME boolean the net config received. Without it the
+   * honest `[discovery-ladder]` report would print `mdns:true` even with
+   * the SUCCINCTCOIN_MDNS=0 kill switch set (the core defaults the port to
+   * true). Absent ⇒ the core's default stands. */
+  mdnsEnabled?: boolean | undefined
 }
 
 /** The resolved ladder file paths (pure function of the inputs). */
@@ -76,5 +82,7 @@ export function buildDiscoveryPorts(
     announceAddresses,
     onSelfInvite,
     onLadderReport: log,
+    // T-A: rung 1 of the honest report mirrors the real knob (see inputs).
+    mdnsEnabled: inputs.mdnsEnabled,
   }
 }

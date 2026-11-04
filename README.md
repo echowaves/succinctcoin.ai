@@ -67,7 +67,7 @@ The log is the operator interface, and it is honest about reachability — on a 
 [boot] identity 084269cd… data-dir /srv/succinctcoin
 [boot] dial me: /ip6/2001:db8:…/tcp/4001/p2p/12D3Koo…   ← what hidden nodes dial through
 [boot] reachability unknown                              ← AutoNAT has not probed yet; "dial me" is the fact
-[discovery-ladder] {"mdns":false,…}                      ← how this node found its way
+[discovery-ladder] {"mdns":true,…}                       ← how this node found its way
 [mined] 1 blocks, head slot 1 winner 084269cd…           ← heartbeat: first block, then every 25th
 [boot] to invite a friend, send them exactly:
 scinvite:v1:…                                            ← THE invitation to hand out, printed once
@@ -127,7 +127,7 @@ Every node climbs the same four rungs, automatically and in order — each one o
 
 `config/genesis.json` → `bootstrap` remains as a developer convenience: full multiaddrs (now `/ip6/…`, must include `/p2p/<peerId>`) dialed at start. Configure it **before packaging** (a packaged app reads genesis from inside its archive). Normal users never touch it — invitations and the crawl do the joining.
 
-LAN multicast (mDNS) is OFF by default since 9.1; opt in with `SUCCINCTCOIN_MDNS=1` where a trusted LAN justifies it.
+LAN multicast (mDNS) discovery is **ON by default** since T-A (`change-ledger-dials`, 2026-11-04): two nodes on one Wi-Fi find each other with zero configuration. It is strictly **additive** — the invitation remains the join path, and whatever mDNS discovers, the address law is unchanged: local addresses never enter an announcement, an invitation, or a block. Kill switch `SUCCINCTCOIN_MDNS=0` (pre-T-A builds were the inverse: `=1` opted in).
 
 **Local-first testnet (`SUCCINCTCOIN_LAN=1`, prototype 2026-10-22).** Two machines on one LAN with no global IPv6 (the common home case) can run the real stack against each other: the flag binds the IPv4 wildcard instead of v6, implies mDNS, and drops loopback-family addresses from what libp2p advertises — so nodes announce their real `192.168…` address on the local network and connect directly, no relay, no invite, zero infrastructure. The boot log prints `[boot] LAN dial: /ip4/…` to copy into a peer's `bootstrap.txt` when multicast is blocked. This is deliberately **local-only**: the chain-level address law is untouched — LAN `/ip4` never enters an announcement, an invitation, or a block — so such a node has no WAN identity while the flag is on; it is a testnet between friends, not a public address.
 
@@ -170,6 +170,6 @@ Key design boundaries worth knowing before reading the code:
 
 ## Notes
 
-- Network transports: the app boots on the real stack (tcp + noise + yamux over global IPv6; invite-first join, optional mDNS behind an env flag — see "Joining a network" above). Tests always run on `@libp2p/memory` (zero real sockets, AD-10); the memory transport is reachable only via explicit test injection.
+- Network transports: the app boots on the real stack (tcp + noise + yamux over global IPv6; invite-first join, additive LAN mDNS on by default with kill switch `SUCCINCTCOIN_MDNS=0` — see "Joining a network" above). Tests always run on `@libp2p/memory` (zero real sockets, AD-10); the memory transport is reachable only via explicit test injection.
 - The node identity is currently a pinned seed; a per-install random seed is recorded deferred work.
 - `electron-forge package` needs the Electron binary; a plain `corepack pnpm install` fetches it. (In this repository's CI/dev environment the download is skipped via `ELECTRON_SKIP_BINARY_DOWNLOAD`, so the package step is a local operation.)

@@ -406,6 +406,19 @@ describe('ticket 8 — the CLI shell is pure glue', () => {
     expect(off.configs[0]?.lanMode).toBeUndefined()
   }, 30_000)
 
+  it('MDNS_DEFAULT_ON (T-A): the runner boots multicast discovery ON; SUCCINCTCOIN_MDNS=0 kills it', async () => {
+    const h = await bootRunner()
+    await h.handle.stop()
+    expect(h.configs[0]?.mdns).toBe(true)
+    // Only the literal '0' disables — legacy '=1' stays on (backward compat).
+    const off = await bootRunner({ env: { SUCCINCTCOIN_MDNS: '0' } })
+    await off.handle.stop()
+    expect(off.configs[0]?.mdns).toBe(false)
+    const legacy = await bootRunner({ env: { SUCCINCTCOIN_MDNS: '1' } })
+    await legacy.handle.stop()
+    expect(legacy.configs[0]?.mdns).toBe(true)
+  }, 30_000)
+
   it('LAN_LOCALITY boot line (review F4): LAN dial prints real local addrs, never loopback junk', async () => {
     const h = await bootRunner({
       env: { SUCCINCTCOIN_LAN: '1' },

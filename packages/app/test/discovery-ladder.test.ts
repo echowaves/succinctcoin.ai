@@ -86,6 +86,24 @@ describe('8.5 T4 — buildDiscoveryPorts (passthrough wiring)', () => {
   })
 })
 
+describe('T-A (change-ledger-dials) — mdnsEnabled mirrors the boot knob', () => {
+  it('the kill switch reaches the honest ladder report; absent keeps the core default', () => {
+    const off = buildDiscoveryPorts(
+      { platform: 'linux', env: {}, userDataDir: '/ud', mdnsEnabled: false },
+      () => [],
+    )
+    expect(off.mdnsEnabled).toBe(false)
+    const on = buildDiscoveryPorts(
+      { platform: 'linux', env: {}, userDataDir: '/ud', mdnsEnabled: true },
+      () => [],
+    )
+    expect(on.mdnsEnabled).toBe(true)
+    // Absent ⇒ undefined passes through and the core's default (true) rules.
+    const dflt = buildDiscoveryPorts({ platform: 'linux', env: {}, userDataDir: '/ud' }, () => [])
+    expect(dflt.mdnsEnabled).toBeUndefined()
+  })
+})
+
 describe('8.5 T4 — seam purity scans (AD-1 / BOOT_PATH_NO_MEMORY)', () => {
   it('discovery-ladder.ts imports NO electron and names no memory transport in code', () => {
     const code = stripComments(readFileSync(join(mainSrc, 'discovery-ladder.ts'), 'utf8'))
