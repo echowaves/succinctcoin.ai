@@ -36,16 +36,38 @@ import { loopbackAnnounceAllowed } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import type { AnnouncementRejectReason, SignedPeerAnnouncement } from './announcements.js'
 
-import { PeerAnnouncement } from '../proto/index.js'
+import { InviteBundle, PeerAnnouncement } from '../proto/index.js'
+import type { InviteBundle as InviteBundleFields, succinctcoin } from '../proto/index.js'
+
+/** Encode-side shape of the v2 envelope (all fields optional, plain bytes). */
+type InviteBundleEncodeInput = succinctcoin.InviteBundleInput
 
 /** The pinned textual prefix (versioned — a v2 format is a new prefix). */
 export const INVITE_PREFIX = 'scinvite:v1:'
+
+/**
+ * The `scinvite:v2:` envelope prefix (spec-scinvite-v2 WB-1, ticket 13.1):
+ * one line carrying the v1 record VERBATIM plus witnessed backup candidates.
+ * A ZERO-candidate bundle is a v1 invite in a new wrapper — its primary runs
+ * v1's exact three gates; a bundle WITH candidates is refused wholesale
+ * `candidates-unverified` until 13.3 verifies witnesses (never a dial
+ * target). Dispatch lives ONLY inside {@link verifyInvite}; `parseInvite`
+ * stays pure-v1 and keeps rejecting this prefix cleanly.
+ */
+export const INVITE_V2_PREFIX = 'scinvite:v2:'
 
 /** Liveness lookback: how many slots back a winner ticket still counts. */
 export const DEFAULT_TICKET_LOOKBACK_SLOTS = 32
 
 /** Invite-specific reject reasons (validator reasons pass through verbatim). */
-export type InviteRejectReason = AnnouncementRejectReason | 'malformed-invite' | 'no-recent-ticket'
+export type InviteRejectReason =
+  | AnnouncementRejectReason
+  | 'malformed-invite'
+  | 'no-recent-ticket'
+  /** WB-1 seam: witness verification (signature, expiry, k-of-n, diversity)
+   * is 13.2/13.3 — until then ANY candidate-bearing bundle is refused whole,
+   * its primary never even gated (half a bundle is not an invitation). */
+  | 'candidates-unverified'
 
 export type InviteValidation = { ok: true; record: SignedPeerAnnouncement } | { ok: false; reason: InviteRejectReason }
 
@@ -126,7 +148,11 @@ export function encodeInvite(record: SignedPeerAnnouncement): string {
 
 /** Hard ceiling on invite text (whitespace-stripped). A valid encoded
  * record is ~2 KB; anything past this is an attack or corruption, and the
- * per-char base64 decode must never be handed megabytes (9.2 review). */
+ * per-char base64 decode must never be handed megabytes (9.2 review).
+ * Checked BEFORE any base64/proto decode in both parsers; v2 keeps the same
+ * cap (WB-1: raising it is an explicit future decision with bounded
+ * backups), and {@link mintV2} refuses to MINT text this parser would
+ * reject — every minted invite is redeemable by its own parser. */
 export const MAX_INVITE_TEXT_LEN = 4096
 
 /** Parse-only: the three text-stage failures (prefix, base64, proto decode)
@@ -147,17 +173,137 @@ export function parseInvite(text: string): { ok: true; record: unknown } | { ok:
   }
 }
 
+// ---------------------------------------------------------------------------
+// scinvite:v2 — the witness-backed envelope (WB-1 seam, ticket 13.1)
+// ---------------------------------------------------------------------------
+
+/** One witness as minted by 13.2 (the 13.1 codec seam carries it but never
+ * checks it — no signature verification, expiry, or k-of-n before then). */
+export interface InviteWitnessInput {
+  targetIdentityId: string
+  address: string
+  chainId: string
+  firstSeenSlot: number | bigint
+  expirySlot: number | bigint
+  signerIdentityId: string
+  signature: Uint8Array
+}
+
+/** One witnessed backup address inside a v2 bundle. */
+export interface InviteCandidateInput {
+  address: string
+  witnesses?: InviteWitnessInput[]
+}
+
+/** What {@link mintV2} renders: the v1 record plus zero or more candidates. */
+export interface MintV2Input {
+  primary: SignedPeerAnnouncement
+  candidates?: InviteCandidateInput[]
+}
+
+/** Result of {@link parseV2}: the decoded envelope (primary present) or the
+ * single text/decode-stage reason `malformed-invite`. No validation here. */
+export type InviteBundleParse =
+  | { ok: true; bundle: InviteBundleFields }
+  | { ok: false; reason: 'malformed-invite' }
+
+/** Render the v2 envelope. The primary encodes EXACTLY like `encodeInvite`
+ * (WB-1: the v1 record verbatim inside the wrapper). Throws when the
+ * rendered text would exceed {@link MAX_INVITE_TEXT_LEN} — an invite nobody
+ * can redeem is not an invite (the candidate budget N is 13.5's decision,
+ * made under this invariant). */
+export function mintV2(input: MintV2Input): string {
+  // Built as the proto INPUT shape (encode's parameter) — the full message
+  // type would demand `Uint8Array<ArrayBuffer>` bytes we do not carry.
+  const bundle: InviteBundleEncodeInput = {
+    primary: {
+      ...input.primary,
+      slotStart: BigInt(input.primary.slotStart),
+      slotEnd: BigInt(input.primary.slotEnd),
+    },
+    candidates: (input.candidates ?? []).map((candidate) => ({
+      address: candidate.address,
+      witnesses: (candidate.witnesses ?? []).map((witness) => ({
+        ...witness,
+        firstSeenSlot: BigInt(witness.firstSeenSlot),
+        expirySlot: BigInt(witness.expirySlot),
+      })),
+    })),
+  }
+  const text = INVITE_V2_PREFIX + bytesToB64url(InviteBundle.encode(bundle))
+  if (text.length > MAX_INVITE_TEXT_LEN) {
+    throw new RangeError(
+      `scinvite:v2 renders to ${text.length} chars, over MAX_INVITE_TEXT_LEN=${MAX_INVITE_TEXT_LEN}: ` +
+        'reduce the candidate/witness budget (an un-redeemable invite must never be minted)',
+    )
+  }
+  return text
+}
+
+/** Parse-only v2 reader (mirror of {@link parseInvite}): whitespace-stripped,
+ * case-insensitive prefix, length cap BEFORE any decode, proto decode in a
+ * try. A bundle WITHOUT a primary is envelope junk ⇒ `malformed-invite`.
+ * NO validation happens here — a parse is not trust. */
+export function parseV2(text: string): InviteBundleParse {
+  return parseV2Compact(text.replace(/\s/g, ''))
+}
+
+function parseV2Compact(compact: string): InviteBundleParse {
+  if (compact.length <= INVITE_V2_PREFIX.length || compact.length > MAX_INVITE_TEXT_LEN)
+    return { ok: false, reason: 'malformed-invite' }
+  if (compact.slice(0, INVITE_V2_PREFIX.length).toLowerCase() !== INVITE_V2_PREFIX)
+    return { ok: false, reason: 'malformed-invite' }
+  const bytes = b64urlToBytes(compact.slice(INVITE_V2_PREFIX.length))
+  if (bytes === null) return { ok: false, reason: 'malformed-invite' }
+  try {
+    const bundle = InviteBundle.decode(bytes)
+    // An envelope without its record is not an invitation — junk, not a
+    // gate failure (protons SKIPS unknown fields, so field-junk can decode
+    // to an empty bundle; pin the shape here, before any gate).
+    if (bundle.primary === undefined) return { ok: false, reason: 'malformed-invite' }
+    return { ok: true, bundle }
+  } catch {
+    return { ok: false, reason: 'malformed-invite' }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// verify — the single dispatching entry point
+// ---------------------------------------------------------------------------
+
 /**
- * The full join-time verification: parse → 8.2 validator (verbatim reasons)
- * → ticket liveness. On success the record is exactly what the address book
- * ingests invite-grade; on failure NOTHING is returned — an unverified invite
- * never produces a dial target (verify-before-connect, structural).
+ * The full join-time verification. PREFIX DISPATCH lives ONLY here (single
+ * entry point — boot rung 0, `applyInvite`, and the paste box gain v2 for
+ * free and no consumer learns two functions):
+ *
+ *   v1 — parse → 8.2 validator (verbatim reasons) → ticket liveness.
+ *   v2 — envelope parse; a candidate-bearing bundle is refused WHOLESALE
+ *        `candidates-unverified` BEFORE the primary's gates (the reason must
+ *        not depend on data 13.3 will define); a zero-candidate bundle runs
+ *        the very same validator + liveness tail as v1.
+ *
+ * On success the record is exactly what the address book ingests invite-
+ * grade; on failure NOTHING is returned — an unverified invite never
+ * produces a dial target (verify-before-connect, structural).
  */
 export function verifyInvite(text: string, ctx: InviteContext): InviteValidation {
+  const compact = text.replace(/\s/g, '')
+  if (compact.slice(0, INVITE_V2_PREFIX.length).toLowerCase() === INVITE_V2_PREFIX) {
+    const parsed = parseV2Compact(compact)
+    if (!parsed.ok) return parsed
+    if (parsed.bundle.candidates.length > 0) return { ok: false, reason: 'candidates-unverified' }
+    return verifyRecord(parsed.bundle.primary, ctx)
+  }
+
   const parsed = parseInvite(text)
   if (!parsed.ok) return parsed
+  return verifyRecord(parsed.record, ctx)
+}
 
-  const validated = validatePeerAnnouncement(parsed.record, {
+/** Gates 2 + 3 VERBATIM (shared by the v1 path and the zero-candidate v2
+ * primary): the 8.2 validator then ticket liveness. */
+function verifyRecord(record: unknown, ctx: InviteContext): InviteValidation {
+  const validated = validatePeerAnnouncement(record, {
     currentSlot: ctx.currentSlot,
     expectedChainId: ctx.expectedChainId,
     // Invite verification is a JOIN surface, not consensus (10.3 closeout):
@@ -167,7 +313,7 @@ export function verifyInvite(text: string, ctx: InviteContext): InviteValidation
     allowLoopbackAddresses: loopbackAnnounceAllowed(),
   })
   if (!validated.ok) return { ok: false, reason: validated.reason }
-  const record = parsed.record as SignedPeerAnnouncement
+  const signed = record as SignedPeerAnnouncement
 
   // Liveness LAST: it is the only gate with a caller dependency, and both
   // earlier gates are strictly cheaper. A squatter with an old faithfully-
@@ -178,7 +324,7 @@ export function verifyInvite(text: string, ctx: InviteContext): InviteValidation
       ? ctx.lookbackSlots
       : BigInt(ctx.lookbackSlots ?? DEFAULT_TICKET_LOOKBACK_SLOTS)
   const sinceWindow = current > lookback ? current - lookback : 0n
-  if (!ctx.hadRecentTicket(record.identityId, sinceWindow)) return { ok: false, reason: 'no-recent-ticket' }
+  if (!ctx.hadRecentTicket(signed.identityId, sinceWindow)) return { ok: false, reason: 'no-recent-ticket' }
 
-  return { ok: true, record }
+  return { ok: true, record: signed }
 }

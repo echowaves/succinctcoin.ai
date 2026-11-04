@@ -329,7 +329,7 @@ const USAGE = [
   '     SUCCINCTCOIN_RELAY_AUTO (=0 disables auto-relay:',
   '     serving hops + holding circuits through hop-capable peers when behind',
   '     NAT — explicit seeds/server role only). Files in --data-dir: invite.txt',
-  '     (joins), bootstrap.txt.',
+  '     (one scinvite:v1:/v2: line per join), bootstrap.txt.',
 ].join('\n')
 
 /**

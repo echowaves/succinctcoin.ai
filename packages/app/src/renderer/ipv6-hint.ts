@@ -70,27 +70,56 @@ const MAX_INVITE_TEXT_LEN = 4096
  *
  * Thin-client rule (AD-1): NO core import — the invite body is base64url of
  * a protobuf whose addresses are plain UTF-8 strings, so a decoded-bytes
- * substring scan answers the question without the codec. Anything that fails
- * to decode is simply "not recognizable" ⇒ null (the real parser in main
- * gives the verdict on join). Pure, sync, never throws.
+ * substring scan answers the question without the codec. Since 13.1 both
+ * prefixes parse: `scinvite:v2:` wraps the v1 record in an `InviteBundle`,
+ * and the hint scans ONLY the PRIMARY submessage (field 1 — what a join
+ * dials first; candidate addresses are unverified until 13.3 and never get
+ * a hint). Prefix match is case-insensitive, matching the parser's
+ * documented paste tolerance. Anything that fails to decode is simply "not
+ * recognizable" ⇒ null (the real parser in main gives the verdict on join).
+ * Pure, sync, never throws.
  */
 export function describeCircuitInvite(text: string): string | null {
   const trimmed = text.trim()
-  if (!trimmed.startsWith('scinvite:v1:') || trimmed.length > MAX_INVITE_TEXT_LEN) {
-    return null
-  }
+  if (trimmed.length > MAX_INVITE_TEXT_LEN) return null
+  const lower = trimmed.toLowerCase()
+  const isV1 = lower.startsWith('scinvite:v1:')
+  const isV2 = lower.startsWith('scinvite:v2:')
+  if (!isV1 && !isV2) return null
   let decoded: string
   try {
-    const body = trimmed.slice('scinvite:v1:'.length)
+    const body = trimmed.slice('scinvite:v1:'.length) // both prefixes are 12 chars
     const b64 = body.replace(/-/g, '+').replace(/_/g, '/')
     decoded = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
   } catch {
     return null // malformed text is the parser's problem, not the hint's
   }
-  if (!decoded.includes('/p2p-circuit')) return null
+  const scan = isV1 ? decoded : primarySubmessage(decoded)
+  if (scan === null || !scan.includes('/p2p-circuit')) return null
   return (
     'This invite rides a relay (its address runs through /p2p-circuit): the node '
     + 'is reached via a third-party hop rather than directly — normal for peers '
     + 'behind NAT, expect slightly higher latency.'
   )
+}
+
+/** Slice the `InviteBundle.primary` bytes out of a decoded v2 envelope
+ * WITHOUT a proto dependency: field 1 is length-delimited, so the wire form
+ * is the tag byte `0x0A`, a varint length, then the record. Anything else
+ * (no primary, junk) is "not recognizable" ⇒ null. Operates on atob's
+ * binary string (one char per byte). */
+function primarySubmessage(bundle: string): string | null {
+  if (bundle.length === 0 || bundle.charCodeAt(0) !== 0x0a) return null
+  let length = 0
+  let shift = 0
+  let i = 1
+  for (;;) {
+    if (i >= bundle.length) return null
+    const byte = bundle.charCodeAt(i++)
+    length += (byte & 0x7f) * 2 ** shift // varint; the 4 KB cap keeps it exact
+    if ((byte & 0x80) === 0) break
+    shift += 7
+    if (shift > 28) return null
+  }
+  return i + length <= bundle.length ? bundle.slice(i, i + length) : null
 }

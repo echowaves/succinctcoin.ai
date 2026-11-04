@@ -961,18 +961,32 @@ export type {
   LadderRungReport,
 } from './discovery/index.js'
 
-// Invitation join (epic 9 — ticket 9.2): the ONE invite text format (an 8.2
-// announcement + ticket liveness, base64url of the proto bytes) — render,
-// parse, verify. Verification is three-gated with distinct reasons; an
-// unverified invite never yields a dial target (verify-before-connect).
+// Invitation join (epic 9 — ticket 9.2; epic 13 WB-1 — ticket 13.1): the
+// invite text formats (an 8.2 announcement + ticket liveness, base64url of
+// the proto bytes) — render, parse, verify. Verification is three-gated with
+// distinct reasons; an unverified invite never yields a dial target (verify-
+// before-connect). `mintV2`/`parseV2` are the scinvite:v2 envelope seam; the
+// ONE dispatching entry point stays `verifyInvite`.
 export {
   DEFAULT_TICKET_LOOKBACK_SLOTS,
   encodeInvite,
   INVITE_PREFIX,
+  INVITE_V2_PREFIX,
+  MAX_INVITE_TEXT_LEN,
+  mintV2,
   parseInvite,
+  parseV2,
   verifyInvite,
 } from './discovery/index.js'
-export type { InviteContext, InviteRejectReason, InviteValidation } from './discovery/index.js'
+export type {
+  InviteBundleParse,
+  InviteCandidateInput,
+  InviteContext,
+  InviteRejectReason,
+  InviteValidation,
+  InviteWitnessInput,
+  MintV2Input,
+} from './discovery/index.js'
 
 // Peer-book exchange + bounded BFS crawl (epic 9 — ticket 9.3): the serve
 // policy (what a node shares) and the crawler machine (how far it reaches).

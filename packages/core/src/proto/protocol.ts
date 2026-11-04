@@ -3213,6 +3213,735 @@ export namespace succinctcoin {
     }
   }
 
+  export interface ReachabilityWitness {
+    targetIdentityId: string
+    address: string
+    chainId: string
+    firstSeenSlot: bigint
+    expirySlot: bigint
+    signerIdentityId: string
+    signature: Uint8Array<ArrayBuffer>
+  }
+
+  export interface ReachabilityWitnessInput {
+    targetIdentityId?: string
+    address?: string
+    chainId?: string
+    firstSeenSlot?: bigint
+    expirySlot?: bigint
+    signerIdentityId?: string
+    signature?: Uint8Array
+  }
+
+  export namespace ReachabilityWitness {
+    let _codec: Codec<ReachabilityWitness, ReachabilityWitnessInput>
+
+    export const codec = (): Codec<ReachabilityWitness, ReachabilityWitnessInput> => {
+      if (_codec == null) {
+        _codec = message<ReachabilityWitness, ReachabilityWitnessInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if ((obj.targetIdentityId != null && obj.targetIdentityId !== '')) {
+            w.uint32(10)
+            w.string(obj.targetIdentityId)
+          }
+
+          if ((obj.address != null && obj.address !== '')) {
+            w.uint32(18)
+            w.string(obj.address)
+          }
+
+          if ((obj.chainId != null && obj.chainId !== '')) {
+            w.uint32(26)
+            w.string(obj.chainId)
+          }
+
+          if ((obj.firstSeenSlot != null && obj.firstSeenSlot !== 0n)) {
+            w.uint32(32)
+            w.int64(obj.firstSeenSlot)
+          }
+
+          if ((obj.expirySlot != null && obj.expirySlot !== 0n)) {
+            w.uint32(40)
+            w.int64(obj.expirySlot)
+          }
+
+          if ((obj.signerIdentityId != null && obj.signerIdentityId !== '')) {
+            w.uint32(50)
+            w.string(obj.signerIdentityId)
+          }
+
+          if ((obj.signature != null && obj.signature.byteLength > 0)) {
+            w.uint32(58)
+            w.bytes(obj.signature)
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length) => {
+          const obj: any = {
+            targetIdentityId: '',
+            address: '',
+            chainId: '',
+            firstSeenSlot: 0n,
+            expirySlot: 0n,
+            signerIdentityId: '',
+            signature: uint8ArrayAlloc(0)
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.targetIdentityId = r.string()
+                break
+              }
+              case 2: {
+                obj.address = r.string()
+                break
+              }
+              case 3: {
+                obj.chainId = r.string()
+                break
+              }
+              case 4: {
+                obj.firstSeenSlot = r.int64()
+                break
+              }
+              case 5: {
+                obj.expirySlot = r.int64()
+                break
+              }
+              case 6: {
+                obj.signerIdentityId = r.string()
+                break
+              }
+              case 7: {
+                obj.signature = r.bytes()
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix) {
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.ReachabilityWitness'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield {
+                  field: `${prefix}targetIdentityId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 2: {
+                yield {
+                  field: `${prefix}address`,
+                  value: r.string()
+                }
+                break
+              }
+              case 3: {
+                yield {
+                  field: `${prefix}chainId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 4: {
+                yield {
+                  field: `${prefix}firstSeenSlot`,
+                  value: r.int64()
+                }
+                break
+              }
+              case 5: {
+                yield {
+                  field: `${prefix}expirySlot`,
+                  value: r.int64()
+                }
+                break
+              }
+              case 6: {
+                yield {
+                  field: `${prefix}signerIdentityId`,
+                  value: r.string()
+                }
+                break
+              }
+              case 7: {
+                yield {
+                  field: `${prefix}signature`,
+                  value: r.bytes()
+                }
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.ReachabilityWitness'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface ReachabilityWitnessTargetIdentityIdFieldEvent {
+      field: '.targetIdentityId'
+      value: string
+    }
+
+    export interface ReachabilityWitnessAddressFieldEvent {
+      field: '.address'
+      value: string
+    }
+
+    export interface ReachabilityWitnessChainIdFieldEvent {
+      field: '.chainId'
+      value: string
+    }
+
+    export interface ReachabilityWitnessFirstSeenSlotFieldEvent {
+      field: '.firstSeenSlot'
+      value: bigint
+    }
+
+    export interface ReachabilityWitnessExpirySlotFieldEvent {
+      field: '.expirySlot'
+      value: bigint
+    }
+
+    export interface ReachabilityWitnessSignerIdentityIdFieldEvent {
+      field: '.signerIdentityId'
+      value: string
+    }
+
+    export interface ReachabilityWitnessSignatureFieldEvent {
+      field: '.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export function encode (obj: ReachabilityWitnessInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, ReachabilityWitness.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<ReachabilityWitness>): ReachabilityWitness {
+      return decodeMessage(buf, ReachabilityWitness.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<ReachabilityWitness>): Generator<ReachabilityWitnessTargetIdentityIdFieldEvent | ReachabilityWitnessAddressFieldEvent | ReachabilityWitnessChainIdFieldEvent | ReachabilityWitnessFirstSeenSlotFieldEvent | ReachabilityWitnessExpirySlotFieldEvent | ReachabilityWitnessSignerIdentityIdFieldEvent | ReachabilityWitnessSignatureFieldEvent> {
+      return streamMessage(buf, ReachabilityWitness.codec(), opts)
+    }
+  }
+
+  export interface InviteBundle {
+    primary?: succinctcoin.PeerAnnouncement
+    candidates: succinctcoin.InviteBundle.InviteCandidate[]
+  }
+
+  export interface InviteBundleInput {
+    primary?: succinctcoin.PeerAnnouncementInput
+    candidates?: succinctcoin.InviteBundle.InviteCandidateInput[]
+  }
+
+  export namespace InviteBundle {
+    export interface InviteCandidate {
+      address: string
+      witnesses: succinctcoin.ReachabilityWitness[]
+    }
+
+    export interface InviteCandidateInput {
+      address?: string
+      witnesses?: succinctcoin.ReachabilityWitnessInput[]
+    }
+
+    export namespace InviteCandidate {
+      let _codec: Codec<InviteCandidate, InviteCandidateInput>
+
+      export const codec = (): Codec<InviteCandidate, InviteCandidateInput> => {
+        if (_codec == null) {
+          _codec = message<InviteCandidate, InviteCandidateInput>((obj, w, opts = {}) => {
+            if (opts.lengthDelimited !== false) {
+              w.fork()
+            }
+
+            if ((obj.address != null && obj.address !== '')) {
+              w.uint32(10)
+              w.string(obj.address)
+            }
+
+            if (obj.witnesses != null && obj.witnesses.length > 0) {
+              for (const value of obj.witnesses) {
+                w.uint32(18)
+                succinctcoin.ReachabilityWitness.codec().encode(value, w)
+              }
+            }
+
+            if (opts.lengthDelimited !== false) {
+              w.ldelim()
+            }
+          }, (r, length, opts = {}) => {
+            const obj: any = {
+              address: '',
+              witnesses: []
+            }
+
+            const end = length == null ? r.len : r.pos + length
+
+            while (r.pos < end) {
+              const tag = r.uint32()
+
+              switch (tag >>> 3) {
+                case 1: {
+                  obj.address = r.string()
+                  break
+                }
+                case 2: {
+                  if (opts.limits?.witnesses != null && obj.witnesses.length === opts.limits.witnesses) {
+                    throw new MaxLengthError('Decode error - repeated field "witnesses" had too many elements')
+                  }
+
+                  obj.witnesses.push(succinctcoin.ReachabilityWitness.codec().decode(r, r.uint32(), {
+                    limits: opts.limits?.witnesses$
+                  }))
+                  break
+                }
+                default: {
+                  r.skipType(tag & 7)
+                  break
+                }
+              }
+            }
+
+            return obj
+          }, function * (r, length, prefix, opts = {}) {
+            const obj = {
+              witnesses: 0
+            }
+
+            const end = length == null ? r.len : r.pos + length
+
+            if (prefix !== '.') {
+              yield {
+                field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+                type: 'start',
+                message: 'succinctcoin.InviteBundle.InviteCandidate'
+              }
+            }
+
+            while (r.pos < end) {
+              const tag = r.uint32()
+
+              switch (tag >>> 3) {
+                case 1: {
+                  yield {
+                    field: `${prefix}address`,
+                    value: r.string()
+                  }
+                  break
+                }
+                case 2: {
+                  if (opts.limits?.witnesses != null && obj.witnesses === opts.limits.witnesses) {
+                    throw new MaxLengthError('Streaming decode error - repeated field "witnesses" had too many elements')
+                  }
+
+                  for (const evt of succinctcoin.ReachabilityWitness.codec().stream(r, r.uint32(), `${prefix}witnesses[].`, {
+                    limits: opts.limits?.witnesses$
+                  })) {
+                    yield {
+                      ...evt,
+                      index: obj.witnesses
+                    }
+                  }
+
+                  obj.witnesses++
+
+                  break
+                }
+                default: {
+                  r.skipType(tag & 7)
+                  break
+                }
+              }
+            }
+
+            if (prefix !== '.') {
+              yield {
+                field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+                type: 'end',
+                message: 'succinctcoin.InviteBundle.InviteCandidate'
+              }
+            }
+          })
+        }
+
+        return _codec
+      }
+
+      export interface InviteCandidateAddressFieldEvent {
+        field: '.address'
+        value: string
+      }
+
+      export interface InviteCandidateWitnessesTargetIdentityIdFieldEvent {
+        field: '.witnesses[].targetIdentityId'
+        value: string
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesAddressFieldEvent {
+        field: '.witnesses[].address'
+        value: string
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesChainIdFieldEvent {
+        field: '.witnesses[].chainId'
+        value: string
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesFirstSeenSlotFieldEvent {
+        field: '.witnesses[].firstSeenSlot'
+        value: bigint
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesExpirySlotFieldEvent {
+        field: '.witnesses[].expirySlot'
+        value: bigint
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesSignerIdentityIdFieldEvent {
+        field: '.witnesses[].signerIdentityId'
+        value: string
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesSignatureFieldEvent {
+        field: '.witnesses[].signature'
+        value: Uint8Array<ArrayBuffer>
+        index: number
+      }
+
+      export interface InviteCandidateWitnessesMessageStartEvent {
+        field: '.witnesses[]'
+        index: number
+        type: 'start'
+        message: string
+      }
+
+      export interface InviteCandidateWitnessesMessageEndEvent {
+        field: '.witnesses[]'
+        index: number
+        type: 'end'
+        message: string
+      }
+
+      export function encode (obj: InviteCandidateInput): Uint8Array<ArrayBuffer> {
+        return encodeMessage(obj, InviteCandidate.codec())
+      }
+
+      export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<InviteCandidate>): InviteCandidate {
+        return decodeMessage(buf, InviteCandidate.codec(), opts)
+      }
+
+      export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<InviteCandidate>): Generator<InviteCandidateAddressFieldEvent | InviteCandidateWitnessesTargetIdentityIdFieldEvent | InviteCandidateWitnessesAddressFieldEvent | InviteCandidateWitnessesChainIdFieldEvent | InviteCandidateWitnessesFirstSeenSlotFieldEvent | InviteCandidateWitnessesExpirySlotFieldEvent | InviteCandidateWitnessesSignerIdentityIdFieldEvent | InviteCandidateWitnessesSignatureFieldEvent | InviteCandidateWitnessesMessageStartEvent | InviteCandidateWitnessesMessageEndEvent> {
+        return streamMessage(buf, InviteCandidate.codec(), opts)
+      }
+    }
+
+    let _codec: Codec<InviteBundle, InviteBundleInput>
+
+    export const codec = (): Codec<InviteBundle, InviteBundleInput> => {
+      if (_codec == null) {
+        _codec = message<InviteBundle, InviteBundleInput>((obj, w, opts = {}) => {
+          if (opts.lengthDelimited !== false) {
+            w.fork()
+          }
+
+          if (obj.primary != null) {
+            w.uint32(10)
+            succinctcoin.PeerAnnouncement.codec().encode(obj.primary, w)
+          }
+
+          if (obj.candidates != null && obj.candidates.length > 0) {
+            for (const value of obj.candidates) {
+              w.uint32(18)
+              succinctcoin.InviteBundle.InviteCandidate.codec().encode(value, w)
+            }
+          }
+
+          if (opts.lengthDelimited !== false) {
+            w.ldelim()
+          }
+        }, (r, length, opts = {}) => {
+          const obj: any = {
+            candidates: []
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                obj.primary = succinctcoin.PeerAnnouncement.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.primary
+                })
+                break
+              }
+              case 2: {
+                if (opts.limits?.candidates != null && obj.candidates.length === opts.limits.candidates) {
+                  throw new MaxLengthError('Decode error - repeated field "candidates" had too many elements')
+                }
+
+                obj.candidates.push(succinctcoin.InviteBundle.InviteCandidate.codec().decode(r, r.uint32(), {
+                  limits: opts.limits?.candidates$
+                }))
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          return obj
+        }, function * (r, length, prefix, opts = {}) {
+          const obj = {
+            candidates: 0
+          }
+
+          const end = length == null ? r.len : r.pos + length
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'start',
+              message: 'succinctcoin.InviteBundle'
+            }
+          }
+
+          while (r.pos < end) {
+            const tag = r.uint32()
+
+            switch (tag >>> 3) {
+              case 1: {
+                yield * succinctcoin.PeerAnnouncement.codec().stream(r, r.uint32(), `${prefix}primary.`, {
+                  limits: opts.limits?.primary
+                })
+
+                break
+              }
+              case 2: {
+                if (opts.limits?.candidates != null && obj.candidates === opts.limits.candidates) {
+                  throw new MaxLengthError('Streaming decode error - repeated field "candidates" had too many elements')
+                }
+
+                for (const evt of succinctcoin.InviteBundle.InviteCandidate.codec().stream(r, r.uint32(), `${prefix}candidates[].`, {
+                  limits: opts.limits?.candidates$
+                })) {
+                  yield {
+                    ...evt,
+                    index: obj.candidates
+                  }
+                }
+
+                obj.candidates++
+
+                break
+              }
+              default: {
+                r.skipType(tag & 7)
+                break
+              }
+            }
+          }
+
+          if (prefix !== '.') {
+            yield {
+              field: prefix.endsWith('.') ? prefix.substring(0, prefix.length - 1) : prefix,
+              type: 'end',
+              message: 'succinctcoin.InviteBundle'
+            }
+          }
+        })
+      }
+
+      return _codec
+    }
+
+    export interface InviteBundlePrimaryMessageStart {
+      field: '.primary'
+      type: 'start'
+    }
+
+    export interface InviteBundlePrimaryMessageEnd {
+      field: '.primary'
+      type: 'end'
+    }
+
+    export interface InviteBundlePrimaryIdentityIdFieldEvent {
+      field: '.primary.identityId'
+      value: string
+    }
+
+    export interface InviteBundlePrimaryMultiaddrsFieldEvent {
+      field: '.primary.multiaddrs[]'
+      index: number
+      value: string
+    }
+
+    export interface InviteBundlePrimaryObservedExternalAddrFieldEvent {
+      field: '.primary.observedExternalAddr'
+      value: string
+    }
+
+    export interface InviteBundlePrimarySlotStartFieldEvent {
+      field: '.primary.slotStart'
+      value: bigint
+    }
+
+    export interface InviteBundlePrimarySlotEndFieldEvent {
+      field: '.primary.slotEnd'
+      value: bigint
+    }
+
+    export interface InviteBundlePrimaryChainIdFieldEvent {
+      field: '.primary.chainId'
+      value: string
+    }
+
+    export interface InviteBundlePrimarySignatureFieldEvent {
+      field: '.primary.signature'
+      value: Uint8Array<ArrayBuffer>
+    }
+
+    export interface InviteBundleCandidatesAddressFieldEvent {
+      field: '.candidates[].address'
+      value: string
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesTargetIdentityIdFieldEvent {
+      field: '.candidates[].witnesses[].targetIdentityId'
+      value: string
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesAddressFieldEvent {
+      field: '.candidates[].witnesses[].address'
+      value: string
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesChainIdFieldEvent {
+      field: '.candidates[].witnesses[].chainId'
+      value: string
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesFirstSeenSlotFieldEvent {
+      field: '.candidates[].witnesses[].firstSeenSlot'
+      value: bigint
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesExpirySlotFieldEvent {
+      field: '.candidates[].witnesses[].expirySlot'
+      value: bigint
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesSignerIdentityIdFieldEvent {
+      field: '.candidates[].witnesses[].signerIdentityId'
+      value: string
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesSignatureFieldEvent {
+      field: '.candidates[].witnesses[].signature'
+      value: Uint8Array<ArrayBuffer>
+      index: number
+    }
+
+    export interface InviteBundleCandidatesWitnessesMessageStartEvent {
+      field: '.candidates[].witnesses[]'
+      index: number
+      type: 'start'
+      message: string
+    }
+
+    export interface InviteBundleCandidatesWitnessesMessageEndEvent {
+      field: '.candidates[].witnesses[]'
+      index: number
+      type: 'end'
+      message: string
+    }
+
+    export interface InviteBundleCandidatesMessageStartEvent {
+      field: '.candidates[]'
+      index: number
+      type: 'start'
+      message: string
+    }
+
+    export interface InviteBundleCandidatesMessageEndEvent {
+      field: '.candidates[]'
+      index: number
+      type: 'end'
+      message: string
+    }
+
+    export function encode (obj: InviteBundleInput): Uint8Array<ArrayBuffer> {
+      return encodeMessage(obj, InviteBundle.codec())
+    }
+
+    export function decode (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<InviteBundle>): InviteBundle {
+      return decodeMessage(buf, InviteBundle.codec(), opts)
+    }
+
+    export function stream (buf: Uint8Array | Uint8ArrayList, opts?: DecodeOptions<InviteBundle>): Generator<InviteBundlePrimaryMessageStart | InviteBundlePrimaryMessageEnd | InviteBundlePrimaryIdentityIdFieldEvent | InviteBundlePrimaryMultiaddrsFieldEvent | InviteBundlePrimaryObservedExternalAddrFieldEvent | InviteBundlePrimarySlotStartFieldEvent | InviteBundlePrimarySlotEndFieldEvent | InviteBundlePrimaryChainIdFieldEvent | InviteBundlePrimarySignatureFieldEvent | InviteBundleCandidatesAddressFieldEvent | InviteBundleCandidatesWitnessesTargetIdentityIdFieldEvent | InviteBundleCandidatesWitnessesAddressFieldEvent | InviteBundleCandidatesWitnessesChainIdFieldEvent | InviteBundleCandidatesWitnessesFirstSeenSlotFieldEvent | InviteBundleCandidatesWitnessesExpirySlotFieldEvent | InviteBundleCandidatesWitnessesSignerIdentityIdFieldEvent | InviteBundleCandidatesWitnessesSignatureFieldEvent | InviteBundleCandidatesWitnessesMessageStartEvent | InviteBundleCandidatesWitnessesMessageEndEvent | InviteBundleCandidatesMessageStartEvent | InviteBundleCandidatesMessageEndEvent> {
+      return streamMessage(buf, InviteBundle.codec(), opts)
+    }
+  }
+
   let _codec: Codec<succinctcoin, succinctcoinInput>
 
   export const codec = (): Codec<succinctcoin, succinctcoinInput> => {

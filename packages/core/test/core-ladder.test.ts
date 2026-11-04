@@ -18,6 +18,7 @@ import {
   deriveIdentityKeypair,
   encodeInvite,
   loadGenesis,
+  mintV2,
   parseInvite,
   signIntroduction,
   signPeerAnnouncement,
@@ -293,6 +294,43 @@ describe('9.2 — createCore invitation wiring', () => {
     expect(entry?.sourceClass).toBe('invite')
     await until(() => dialed.length > 0) // first-success dial, fire-and-forget
     expect(dialed[0]).toBe('/ip6/2001:db8:a06:6::/tcp/4001')
+
+    await core.stop()
+  })
+
+  it('runtime applyInvite speaks scinvite:v2 (paste leg): zero-candidate ingests, candidates refuse', async () => {
+    // Ticket 13.1 (WB-1): the panel's paste box shares `verifyInvite`, so a
+    // zero-candidate v2 line behaves EXACTLY as the v1 row above — and a
+    // candidate-bearing bundle is refused wholesale, storing NOTHING.
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
+    const dialed: string[] = []
+    const ports = makePorts(dir, { dial: async (a) => void dialed.push(a) })
+    ports.identity = deriveIdentityKeypair(seedFor(1)) // self = seed 1
+    const core = createCore(ports)
+    await core.start()
+
+    const remote = announcementMessage(6, ['/ip6/2001:db8:a06:6::/tcp/4001'])
+    const res = await core.applyInvite(mintV2({ primary: remote }))
+    expect(res).toEqual({ ok: true, identityId: remote.keypair.identityId })
+    const entry = core.addressBook!
+      .entries()
+      .find((e) => e.identityId === remote.keypair.identityId)
+    expect(entry?.sourceClass).toBe('invite')
+    await until(() => dialed.length > 0)
+    expect(dialed[0]).toBe('/ip6/2001:db8:a06:6::/tcp/4001')
+
+    const backed = announcementMessage(8, ['/ip6/2001:db8:a08:8::/tcp/4001'])
+    const refused = await core.applyInvite(
+      mintV2({
+        primary: backed,
+        candidates: [{ address: '/ip6/2001:db8:a08:9::/tcp/4002', witnesses: [] }],
+      }),
+    )
+    expect(refused).toEqual({ ok: false, reason: 'candidates-unverified' })
+    expect(
+      core.addressBook!.entries().some((e) => e.identityId === backed.keypair.identityId),
+    ).toBe(false)
+    expect(dialed).not.toContain('/ip6/2001:db8:a08:8::/tcp/4001') // never a dial target
 
     await core.stop()
   })

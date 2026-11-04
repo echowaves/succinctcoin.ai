@@ -51,6 +51,14 @@ export type Introduction = succinctcoin.Introduction
 export type PeerBookRequest = succinctcoin.PeerBookRequest
 export type PeerBookResponse = succinctcoin.PeerBookResponse
 
+// Witness-backed invitation field-set types (epic 13, spec-scinvite-v2
+// WB-1 — ticket 13.1): `ReachabilityWitness` + the `scinvite:v2:` envelope
+// `InviteBundle { primary, candidates[] }` (nested `InviteCandidate`, also
+// re-exported flat for consumers that never touch the namespace).
+export type ReachabilityWitness = succinctcoin.ReachabilityWitness
+export type InviteBundle = succinctcoin.InviteBundle
+export type InviteCandidate = succinctcoin.InviteBundle.InviteCandidate
+
 // Codec namespaces (value space): `codec` / `encode` / `decode` / `stream`.
 export const Block = succinctcoin.Block
 export const Ticket = succinctcoin.Ticket
@@ -76,6 +84,10 @@ export const Introduction = succinctcoin.Introduction
 // Peer-book codec namespaces (epic 9, ticket 9.3 — AD-12 proto codecs).
 export const PeerBookRequest = succinctcoin.PeerBookRequest
 export const PeerBookResponse = succinctcoin.PeerBookResponse
+
+// Witness-backed invitation codecs (epic 13, ticket 13.1 — AD-12).
+export const ReachabilityWitness = succinctcoin.ReachabilityWitness
+export const InviteBundle = succinctcoin.InviteBundle
 
 // Full generated namespace (type + value) and the wire input types, for
 // `succinctcoin.Block`-style access and `*Input` partial field sets.

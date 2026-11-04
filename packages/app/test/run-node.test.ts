@@ -22,6 +22,10 @@
  *                               address is off-policy, so the seam reports a
  *                               policy-valid global listen address — the same
  *                               surface the real tcp adapter yields.)
+ *   RUNNER_V2_INVITE_BOOTS      ticket 13.1: an `scinvite:v2:` line in
+ *                               invite.txt boots through the SAME rung 0 as
+ *                               v1 (zero-backup verifies; a candidate bundle
+ *                               is refused — {verified:1, rejected:1}).
  *   RELAY_SEED_FEEDBACK       the adapter's seed hold/fail events (the only
  *                               feedback a hidden-node operator gets) reach the
  *                               injected log, TAGGED with the hop family
@@ -43,12 +47,19 @@
  *   heartbeat — the first block, then every 25th — never one line per block.)
  */
 import { mkdtempSync, readFileSync, statSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { createNetAdapter, loadGenesis, verifyInvite } from '@succinctcoin/core'
+import {
+  createNetAdapter,
+  deriveIdentityKeypair,
+  loadGenesis,
+  mintV2,
+  signPeerAnnouncement,
+  verifyInvite,
+} from '@succinctcoin/core'
 import type { NetAdapter, NetAdapterConfig } from '@succinctcoin/core'
 
 import { RUNNER_USAGE, parseRunnerArgs, runNode } from '../src/main/run-node.js'
@@ -249,6 +260,50 @@ describe('ticket 8 — the headless node runner', () => {
       })
       if (!verdict.ok) throw new Error(`invite rejected: ${verdict.reason}`)
       expect(verdict.record.identityId).toBe(h.handle.identityId)
+    } finally {
+      await h.handle.stop()
+    }
+  }, 30_000)
+
+  it('RUNNER_V2_INVITE_BOOTS: scinvite:v2 lines ride the same rung 0 as v1', async () => {
+    // Ticket 13.1 (WB-1): boot needs NO new code — rung 0 shares the ONE
+    // `verifyInvite`. A zero-backup v2 line joins exactly as the v1 line
+    // does; a candidate-bearing bundle is refused `candidates-unverified`
+    // and never becomes a dial target. Two lines ⇒ verified:1, rejected:1.
+    const dir = mkdtempSync(join(tmpdir(), 'succinctcoin-runner-'))
+    const genesis = await loadGenesis(REPO_GENESIS)
+    const peer = (i: number, addr: string) => {
+      const keypair = deriveIdentityKeypair(new Uint8Array(32).fill(0x50 + i))
+      const fields = {
+        identityId: keypair.identityId,
+        multiaddrs: [addr],
+        observedExternalAddr: undefined,
+        slotStart: 0,
+        slotEnd: 100,
+        chainId: genesis.chainId,
+      }
+      return { ...fields, signature: signPeerAnnouncement(keypair, fields) }
+    }
+    const plain = peer(9, '/ip6/2001:db8:b20:9::/tcp/4001')
+    const backed = peer(10, '/ip6/2001:db8:b20:a::/tcp/4001')
+    await writeFile(
+      join(dir, 'invite.txt'),
+      '# a friend (v2)\n' +
+        mintV2({ primary: plain }) +
+        '\n' +
+        mintV2({
+          primary: backed,
+          candidates: [{ address: '/ip6/2001:db8:b20:b::/tcp/4002', witnesses: [] }],
+        }) +
+        '\n',
+      'utf8',
+    )
+    const h = await bootRunner({ dir })
+    try {
+      await waitFor(() => h.logs.some((l) => l.includes('[discovery-ladder]')), 'the ladder report')
+      const line = h.logs.find((l) => l.includes('[discovery-ladder]')) as string
+      const report = JSON.parse(line.slice(line.indexOf('{'))) as Record<string, unknown>
+      expect(report.invites).toEqual({ found: true, verified: 1, rejected: 1 })
     } finally {
       await h.handle.stop()
     }

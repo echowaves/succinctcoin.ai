@@ -113,3 +113,58 @@ describe('ticket 7 — describeCircuitInvite (the rides-a-relay hint)', () => {
     expect(describeCircuitInvite('scinvite:v1:' + 'A'.repeat(5000))).toBeNull()
   })
 })
+
+// Ticket 13.1 (WB-1): `scinvite:v2:` carries the v1 record inside an
+// InviteBundle plus candidate addresses. The hint stays thin-client (no
+// core import), so these rows hand-roll the two wire fields they need —
+// field 1 = primary, field 2 = candidates (length-delimited). The scan is
+// PRIMARY-ONLY: candidates are unverified until 13.3 and never earn a hint.
+describe('ticket 13.1 — describeCircuitInvite speaks scinvite:v2', () => {
+  const varint = (n: number): Buffer => {
+    const out: number[] = []
+    while (n > 0x7f) {
+      out.push((n & 0x7f) | 0x80)
+      n >>>= 7
+    }
+    out.push(n)
+    return Buffer.from(out)
+  }
+  const strField = (field: number, s: string): Buffer =>
+    Buffer.concat([varint(field * 8 + 2), varint(Buffer.byteLength(s)), Buffer.from(s, 'utf8')])
+  const msgField = (field: number, m: Buffer): Buffer =>
+    Buffer.concat([varint(field * 8 + 2), varint(m.length), m])
+  const primary = (addr: string): Buffer =>
+    Buffer.concat([strField(1, 'ab'.repeat(32)), strField(2, addr)])
+  const v2 = (primaryAddr: string | null, candidateAddr?: string): string => {
+    const parts: Buffer[] = []
+    if (primaryAddr !== null) parts.push(msgField(1, primary(primaryAddr)))
+    if (candidateAddr !== undefined) parts.push(msgField(2, strField(1, candidateAddr)))
+    return 'scinvite:v2:' + Buffer.concat(parts).toString('base64url')
+  }
+
+  it('V2_CIRCUIT: a /p2p-circuit PRIMARY ⇒ the ride-a-relay sentence', () => {
+    const s = describeCircuitInvite(
+      v2('/ip6/2001:db8::9/tcp/1/p2p/RELAY/p2p-circuit/p2p/FRIEND'),
+    )
+    expect(s).not.toBeNull()
+    expect(s).toMatch(/rides a relay/)
+  })
+
+  it('V2_DIRECT_SILENT: only the PRIMARY is scanned — a circuit CANDIDATE stays quiet', () => {
+    expect(
+      describeCircuitInvite(
+        v2('/ip6/2001:db8::5/tcp/4001/p2p/FRIEND', '/ip6/2001:db8::9/tcp/1/p2p/R/p2p-circuit'),
+      ),
+    ).toBeNull()
+  })
+
+  it('V2_UPPERCASE: the paste-tolerant prefix still hints (the parser accepts it too)', () => {
+    const text = v2('/ip6/2001:db8::9/tcp/1/p2p/RELAY/p2p-circuit/p2p/FRIEND')
+    expect(describeCircuitInvite('SCINVITE:V2:' + text.slice('scinvite:v2:'.length))).not.toBeNull()
+  })
+
+  it('V2_MALFORMED: junk body or a bundle without a primary ⇒ null', () => {
+    expect(describeCircuitInvite('scinvite:v2:!!!not base64!!!')).toBeNull()
+    expect(describeCircuitInvite(v2(null, '/ip6/2001:db8::9/tcp/1/p2p/R/p2p-circuit'))).toBeNull()
+  })
+})

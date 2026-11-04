@@ -101,10 +101,22 @@ export {
   DEFAULT_TICKET_LOOKBACK_SLOTS,
   encodeInvite,
   INVITE_PREFIX,
+  INVITE_V2_PREFIX,
+  MAX_INVITE_TEXT_LEN,
+  mintV2,
   parseInvite,
+  parseV2,
   verifyInvite,
 } from './invitation.js'
-export type { InviteContext, InviteRejectReason, InviteValidation } from './invitation.js'
+export type {
+  InviteBundleParse,
+  InviteCandidateInput,
+  InviteContext,
+  InviteRejectReason,
+  InviteValidation,
+  InviteWitnessInput,
+  MintV2Input,
+} from './invitation.js'
 export type {
   AddressBook,
   AddressBookEntry,

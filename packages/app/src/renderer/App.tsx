@@ -44,6 +44,7 @@ export type InviteRejectReason =
   | 'expired'
   | 'malformed-invite'
   | 'no-recent-ticket'
+  | 'candidates-unverified'
 
 /** A short display form of a long hex id (the full id stays the list key). */
 function shortId(id: string): string {
@@ -127,7 +128,7 @@ function PeersPanel({ state }: { state: UiState }) {
  *  - MY INVITE: this node's renderable self-invitation — copy-paste it into
  *    an email/SMS or render it as a QR anywhere; it refreshes as the node
  *    keeps mining (a Refresh button re-reads it).
- *  - JOIN: paste a friend's `scinvite:v1:…` line and connect through it.
+ *  - JOIN: paste a friend's `scinvite:v1:`/`v2:…` line and connect through it.
  * Key-free by construction (E3/AD-11): the bridge carries only public
  * signed text in and an `{ ok | reason }` result out — signing stays in
  * main/core, verification decides what gets dialed.
@@ -266,7 +267,7 @@ function InvitePanel() {
       <textarea
         rows={3}
         cols={72}
-        placeholder="scinvite:v1:…"
+        placeholder="scinvite:v1:… or scinvite:v2:…"
         value={pasted}
         onChange={(e) => setPasted(e.target.value)}
       />

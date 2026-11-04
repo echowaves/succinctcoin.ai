@@ -195,7 +195,7 @@ async function boot(): Promise<void> {
         if (!existing.split(/\r?\n/).some((l) => l.trim().replace(/\s+/g, '') === line)) {
           // A hand-edited file may lack a trailing newline — never splice the
           // new invite onto the previous line (that would corrupt both).
-          const sep = existing.length === 0 ? '# SuccinctCoin invitations (one scinvite:v1: line each)\n' : existing.endsWith('\n') ? '' : '\n'
+          const sep = existing.length === 0 ? '# SuccinctCoin invitations (one scinvite:v1:/v2: line each)\n' : existing.endsWith('\n') ? '' : '\n'
           await appendFile(inviteFile, sep + line + '\n', 'utf8')
         }
       } catch {

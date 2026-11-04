@@ -242,10 +242,10 @@ export interface InviteFileRead {
 }
 
 /**
- * Read `<userData>/invite.txt` (one `scinvite:v1:` line per invite, `#`
+ * Read `<userData>/invite.txt` (one `scinvite:v1:`/`v2:` line per invite, `#`
  * comments + blanks ignored). NEVER throws — same fail-soft contract as the
  * announcement files. Lines are kept verbatim (whitespace inside a line is
- * stripped later by `parseInvite`; wrapping is tolerated there too).
+ * stripped later by the invite parsers; wrapping is tolerated there too).
  */
 export async function readInviteFile(path: string): Promise<InviteFileRead> {
   let text: string
@@ -510,7 +510,7 @@ export function defaultArtifactPath(userDataDir: string): string {
 }
 
 /** The default invitation file inside a host's data dir (9.2 — plain text:
- * one `scinvite:v1:` line per invite; the operator pastes/receives it). */
+ * one `scinvite:v1:`/`v2:` line per invite; the operator pastes/receives it). */
 export function defaultInvitePath(userDataDir: string): string {
   return join(userDataDir, 'invite.txt')
 }

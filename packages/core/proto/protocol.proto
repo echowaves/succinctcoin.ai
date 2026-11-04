@@ -300,3 +300,61 @@ message PeerBookResponse {
   // RESPONDING node. The receiver's independence rule applies unchanged.
   repeated Introduction witnesses = 2;
 }
+
+// ---------------------------------------------------------------------------
+// Witness-backed invitations (epic 13, spec-scinvite-v2 WB-1 — ticket 13.1).
+//
+// `scinvite:v2:` carries ONE line holding the v1 record VERBATIM (the same
+// signed `PeerAnnouncement` bytes) plus witnessed backup candidates, so an
+// invitation survives the inviter sleeping. PURELY ADDITIVE: two new
+// top-level messages, no existing message touched, and NEITHER is reachable
+// from any block digest (the block hash is sha256 over the canonical `Block`
+// encoding only, AD-6; `peerAnnouncementDigest` is hand-rolled) — so
+// protocolVersion does NOT bump. Witness VERIFICATION (signature, expiry,
+// k-of-n, diversity) is 13.2/13.3 — until then a bundle with candidates is
+// refused wholesale, never dialed.
+// ---------------------------------------------------------------------------
+
+// One node's signed claim: "I reached `targetIdentityId` at `address`".
+// Shapes the 13.2 issuance / 13.3 verification legs; NOTHING consumes the
+// signature in 13.1 (the codec seam only). Chain time via slots (AD-3 —
+// never a wall clock).
+message ReachabilityWitness {
+  // 32-byte hex identity id of the witnessed peer.
+  string targetIdentityId = 1;
+  // The multiaddr the signer reached it at (may ride /p2p-circuit).
+  string address = 2;
+  // Network scope (genesis `chainId`) — contamination guard, as everywhere.
+  string chainId = 3;
+  // First slot the signer saw the target live at this address.
+  int64 firstSeenSlot = 4;
+  // Slot the claim stops being usable at (expiry judged in SLOTS via the
+  // verify context — spec design call, no peer ever needs a clock).
+  int64 expirySlot = 5;
+  // 32-byte hex identity id of the signing witness (k-of-n counts these).
+  string signerIdentityId = 6;
+  // Ed25519 signature over the witness digest (verification lands in 13.2+).
+  bytes signature = 7;
+}
+
+// The `scinvite:v2:` envelope: the v1 invitation record verbatim plus
+// backup candidates, each with its witness set. A ZERO-candidate bundle is
+// exactly a v1 invite in a new wrapper — its primary passes v1's three
+// gates unchanged (WB-1: v1 semantics untouched).
+message InviteBundle {
+  // The v1 invitation record: the SAME signed `PeerAnnouncement` an
+  // `scinvite:v1:` line carries, byte-identical when re-encoded standalone.
+  PeerAnnouncement primary = 1;
+  // Witnessed backup addresses for the SAME identity (empty until 13.5
+  // mints them; a non-empty list is refused `candidates-unverified` by the
+  // 13.1 codec seam — half-verified is not verified).
+  repeated InviteCandidate candidates = 2;
+
+  // One backup candidate: an address + the witnesses vouching for it.
+  message InviteCandidate {
+    // The backup multiaddr (may ride /p2p-circuit).
+    string address = 1;
+    // Witnesses claiming this address reachable (k-of-n floor is 13.3).
+    repeated ReachabilityWitness witnesses = 2;
+  }
+}

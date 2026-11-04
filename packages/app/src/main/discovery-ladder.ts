@@ -43,8 +43,9 @@ export interface LadderSeamInputs {
 export interface LadderPaths {
   hintsFilePath: string
   artifactFilePath: string
-  /** Ticket 9.2: `<userData>/invite.txt` — one `scinvite:v1:` line per
-   * invitation; received by email/SMS/paste, written by the join UI. */
+  /** Ticket 9.2 (v2 since 13.1): `<userData>/invite.txt` — one
+   * `scinvite:v1:`/`v2:` line per invitation; received by email/SMS/paste,
+   * written by the join UI. */
   inviteFilePath: string
 }
 
