@@ -128,3 +128,34 @@ export type {
   BookIntroResult,
   DialTarget,
 } from './address-book.js'
+
+// 13.2 (spec-scinvite-v2 WB-2) — reachability-witness issuance (pure signer
+// + policy issuer) and the local witness store. `signDigest` stays internal;
+// only the witness surface leaves the module.
+export {
+  createWitnessIssuer,
+  createWitnessStore,
+  DEFAULT_WITNESS_EXPIRY_SLOTS,
+  issueWitness,
+  MAX_ISSUANCES_PER_TARGET_WINDOW,
+  MAX_WITNESSES_PER_TARGET,
+  REACHABILITY_WITNESS_DOMAIN,
+  verifyWitness,
+  verifyWitnessSignature,
+  witnessDigest,
+  WITNESS_ISSUANCE_WINDOW_SLOTS,
+} from './witness.js'
+export type {
+  SignedWitness,
+  WitnessContext,
+  WitnessDeclineReason,
+  WitnessEvidence,
+  WitnessFields,
+  WitnessIssuance,
+  WitnessIssuer,
+  WitnessIssuerOptions,
+  WitnessRejectReason,
+  WitnessStore,
+  WitnessStoreOptions,
+  WitnessValidation,
+} from './witness.js'

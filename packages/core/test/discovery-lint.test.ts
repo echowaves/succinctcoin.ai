@@ -252,6 +252,7 @@ const FORBIDDEN_UI_SYMBOLS = [
   'signTicket',
   'signPeerAnnouncement',
   'signIntroduction',
+  'issueWitness',
 ] as const
 
 function collectUiSources(): { path: string; text: string }[] {

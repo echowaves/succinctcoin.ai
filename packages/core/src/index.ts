@@ -988,6 +988,40 @@ export type {
   MintV2Input,
 } from './discovery/index.js'
 
+// Witness issuance + local witness store (epic 13 WB-2 — ticket 13.2): the
+// "address Y of peer X was reachable for me" attestation — pinned digest,
+// pure signer, full validator (half-open slot window, chain/window before
+// signature), the policy-gated issuer (kill switch, evidence, per-target
+// window cap) and the freshness-keeping store. `signDigest` stays internal
+// (AD-11); only witness artifacts leave through this surface.
+export {
+  createWitnessIssuer,
+  createWitnessStore,
+  DEFAULT_WITNESS_EXPIRY_SLOTS,
+  issueWitness,
+  MAX_ISSUANCES_PER_TARGET_WINDOW,
+  MAX_WITNESSES_PER_TARGET,
+  REACHABILITY_WITNESS_DOMAIN,
+  verifyWitness,
+  verifyWitnessSignature,
+  witnessDigest,
+  WITNESS_ISSUANCE_WINDOW_SLOTS,
+} from './discovery/index.js'
+export type {
+  SignedWitness,
+  WitnessContext,
+  WitnessDeclineReason,
+  WitnessEvidence,
+  WitnessFields,
+  WitnessIssuance,
+  WitnessIssuer,
+  WitnessIssuerOptions,
+  WitnessRejectReason,
+  WitnessStore,
+  WitnessStoreOptions,
+  WitnessValidation,
+} from './discovery/index.js'
+
 // Peer-book exchange + bounded BFS crawl (epic 9 — ticket 9.3): the serve
 // policy (what a node shares) and the crawler machine (how far it reaches).
 // Bounds are exported for the tests that pin them.
