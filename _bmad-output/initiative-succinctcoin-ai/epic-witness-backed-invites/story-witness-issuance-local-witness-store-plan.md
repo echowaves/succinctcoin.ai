@@ -3,7 +3,7 @@ title: 'Witness issuance + local witness store'
 type: 'feature'
 ticket: '2'
 created: '2026-11-04'
-status: 'built'
+status: done
 baseline_revision: '2eff8cdd3e749da94af604df3fd4bb127859d354'
 route: 'full'
 route_source: 'auto'
