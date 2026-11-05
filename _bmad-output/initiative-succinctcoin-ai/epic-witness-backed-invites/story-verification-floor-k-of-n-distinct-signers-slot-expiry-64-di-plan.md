@@ -3,7 +3,7 @@ title: 'Verification floor: k-of-n distinct signers, slot expiry, /64 diversity,
 type: 'feature'
 ticket: '3'
 created: '2026-11-04'
-status: built
+status: done
 baseline_revision: '52b0b72061361a000c03d7b87e11c2d3d5a8226a'
 route: 'full'
 route_source: 'auto'
