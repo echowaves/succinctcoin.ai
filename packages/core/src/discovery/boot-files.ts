@@ -40,6 +40,7 @@ import { dirname, join } from 'node:path'
 import { loopbackAnnounceAllowed } from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import { MAX_INVITE_TEXT_LEN, verifyInvite } from './invitation.js'
+import type { CandidateVerdict } from './invitation.js'
 import type { AddressBook } from './address-book.js'
 
 import { PeerAnnouncement } from '../proto/index.js'
@@ -99,6 +100,9 @@ export interface BootLadderOptions {
   hadRecentTicket?: (identityId: string, sinceWindow: bigint) => boolean
   /** Rung 0 liveness lookback window (default inside `verifyInvite`). */
   inviteLookbackSlots?: number | bigint
+  /** Rung 0 trust ceiling (13.3): true = candidate-witness signers need
+   * recent tickets; threaded to `applyInvites` untouched. */
+  chainHasBlocks?: boolean
   /** Rung 2 input: the LAN shared address-book file (hint-grade ingest). */
   hintsFilePath?: string
   /** Rung 2 sink: without a book the rung reports `found` and ingests 0. */
@@ -279,6 +283,9 @@ export interface ApplyInvitesOptions {
   /** Liveness getter passed through to `verifyInvite` untouched. */
   hadRecentTicket(identityId: string, sinceWindow: bigint): boolean
   lookbackSlots?: number | bigint
+  /** 13.3 trust ceiling, passed through to `verifyInvite` untouched (true =
+   * candidate-witness signers must hold recent tickets). */
+  chainHasBlocks?: boolean
   /** Verified records ingest invite-grade here (absent = verify + dial only). */
   book?: AddressBook
   /** Own identity: an invite to ourselves verifies but is not applied. */
@@ -309,13 +316,19 @@ export interface InviteApplyReport {
 export async function applyInvites(opts: ApplyInvitesOptions): Promise<InviteApplyReport> {
   const report: InviteApplyReport = { verified: 0, rejected: 0, dialed: 0 }
   // Pass 1 — verify everything (pure CPU; no awaits, so no staleness).
-  const verifiedRecords: { record: InviteVerifiedRecord }[] = []
+  // 13.3: candidate verdicts ride along with the record — pass 2 acts on
+  // them under the direct-first law.
+  const verifiedRecords: {
+    record: InviteVerifiedRecord
+    candidates: readonly CandidateVerdict[]
+  }[] = []
   for (const line of opts.lines) {
     const result = verifyInvite(line, {
       currentSlot: opts.currentSlot,
       expectedChainId: opts.chainId,
       hadRecentTicket: opts.hadRecentTicket,
       lookbackSlots: opts.lookbackSlots,
+      chainHasBlocks: opts.chainHasBlocks,
     })
     if (!result.ok) {
       report.rejected += 1
@@ -326,10 +339,10 @@ export async function applyInvites(opts: ApplyInvitesOptions): Promise<InviteApp
       continue
     }
     report.verified += 1
-    verifiedRecords.push({ record: result.record })
+    verifiedRecords.push({ record: result.record, candidates: result.candidates ?? [] })
   }
   // Pass 2 — store + dial the accepted records (the only awaiting phase).
-  for (const { record } of verifiedRecords) {
+  for (const { record, candidates } of verifiedRecords) {
     if (opts.book !== undefined) {
       opts.book.ingestAnnouncement(record, {
         currentSlot: opts.currentSlot,
@@ -339,6 +352,8 @@ export async function applyInvites(opts: ApplyInvitesOptions): Promise<InviteApp
     }
     report.dialed += 1
     if (opts.dial !== undefined) {
+      // Primary addresses first — first success wins.
+      let connected = false
       for (const addr of record.multiaddrs) {
         let ok = false
         try {
@@ -346,7 +361,25 @@ export async function applyInvites(opts: ApplyInvitesOptions): Promise<InviteApp
         } catch {
           ok = false
         }
-        if (ok) break
+        if (ok) {
+          connected = true
+          break
+        }
+      }
+      // 13.3 direct-first law: only after EVERY primary address failed, and
+      // only ACCEPTED candidates, once each in bundle order (candidate dials
+      // are NOT book ingests — witness-grade ingest is 13.5).
+      if (!connected) {
+        for (const verdict of candidates) {
+          if (!verdict.accepted) continue // rejected candidates are never dial targets
+          let ok = false
+          try {
+            ok = await opts.dial(verdict.address)
+          } catch {
+            ok = false
+          }
+          if (ok) break
+        }
       }
     }
   }
@@ -429,6 +462,7 @@ export async function runBootLadder(opts: BootLadderOptions): Promise<LadderRepo
         currentSlot: opts.currentSlot,
         hadRecentTicket: opts.hadRecentTicket,
         lookbackSlots: opts.inviteLookbackSlots,
+        chainHasBlocks: opts.chainHasBlocks,
         book: opts.book,
         selfIdentityId: opts.selfIdentityId,
         dial: opts.dial,

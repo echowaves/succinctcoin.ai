@@ -346,8 +346,9 @@ message InviteBundle {
   // `scinvite:v1:` line carries, byte-identical when re-encoded standalone.
   PeerAnnouncement primary = 1;
   // Witnessed backup addresses for the SAME identity (empty until 13.5
-  // mints them; a non-empty list is refused `candidates-unverified` by the
-  // 13.1 codec seam — half-verified is not verified).
+  // mints them; each entry is judged per-candidate by the 13.3 verification
+  // floor — k-of-n distinct signers, expiry, /64 diversity — and a skipped
+  // candidate never rejects the bundle: half-verified is not verified).
   repeated InviteCandidate candidates = 2;
 
   // One backup candidate: an address + the witnesses vouching for it.

@@ -103,12 +103,15 @@ export {
   INVITE_PREFIX,
   INVITE_V2_PREFIX,
   MAX_INVITE_TEXT_LEN,
+  MIN_WITNESS_SIGNERS,
   mintV2,
   parseInvite,
   parseV2,
   verifyInvite,
 } from './invitation.js'
 export type {
+  CandidateRejectReason,
+  CandidateVerdict,
   InviteBundleParse,
   InviteCandidateInput,
   InviteContext,

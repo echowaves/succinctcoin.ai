@@ -230,6 +230,10 @@ export function createCore(ports: CorePorts): CoreInstance {
           currentSlot: bootSlot,
           inviteFilePath: ports.discovery.inviteFilePath,
           hadRecentTicket: inviteProbe,
+          // 13.3 trust ceiling: any block on chain (genesis commit counts)
+          // puts candidate-witness signers under the ticket-liveness rule —
+          // honest with the probe above, which goes strict at real winners.
+          chainHasBlocks: bootSlot >= 0,
           hintsFilePath: ports.discovery.hintsFilePath,
           book: addressBook,
           artifactFilePath: ports.discovery.artifactFilePath,
@@ -435,6 +439,9 @@ export function createCore(ports: CorePorts): CoreInstance {
         currentSlot,
         expectedChainId: genesis.chainId,
         hadRecentTicket: liveness,
+        // 13.3 trust ceiling (wired honestly, same probe as the primary's
+        // gate): blocks on chain ⇒ candidate-witness signers need tickets.
+        chainHasBlocks: head >= 0,
       })
       if (!result.ok) return { ok: false, reason: result.reason }
       // Own invite: verified, then verify-only — never stored, NEVER DIALed
@@ -451,6 +458,13 @@ export function createCore(ports: CorePorts): CoreInstance {
       })
       const netExt = ports.net as unknown as { dial?: (address: string) => Promise<void> }
       if (netExt.dial !== undefined) {
+        // 13.3 direct-first law: ACCEPTED candidate addresses (bundle order)
+        // are dialed only AFTER every primary address failed, never when a
+        // primary dial answered. Candidate dials are NOT book ingests —
+        // witness-grade ingest is 13.5.
+        const candidateAddrs = (result.candidates ?? [])
+          .filter((verdict) => verdict.accepted)
+          .map((verdict) => verdict.address)
         void (async () => {
           for (const addr of result.record.multiaddrs) {
             try {
@@ -458,6 +472,14 @@ export function createCore(ports: CorePorts): CoreInstance {
               return
             } catch {
               /* next address — the book's ladder owns the retry policy */
+            }
+          }
+          for (const addr of candidateAddrs) {
+            try {
+              await netExt.dial!(addr)
+              return
+            } catch {
+              /* next accepted candidate — then give up, fail-soft (R4) */
             }
           }
         })()
@@ -973,12 +995,15 @@ export {
   INVITE_PREFIX,
   INVITE_V2_PREFIX,
   MAX_INVITE_TEXT_LEN,
+  MIN_WITNESS_SIGNERS,
   mintV2,
   parseInvite,
   parseV2,
   verifyInvite,
 } from './discovery/index.js'
 export type {
+  CandidateRejectReason,
+  CandidateVerdict,
   InviteBundleParse,
   InviteCandidateInput,
   InviteContext,

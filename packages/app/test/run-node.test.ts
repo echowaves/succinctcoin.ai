@@ -22,10 +22,11 @@
  *                               address is off-policy, so the seam reports a
  *                               policy-valid global listen address — the same
  *                               surface the real tcp adapter yields.)
- *   RUNNER_V2_INVITE_BOOTS      ticket 13.1: an `scinvite:v2:` line in
- *                               invite.txt boots through the SAME rung 0 as
- *                               v1 (zero-backup verifies; a candidate bundle
- *                               is refused — {verified:1, rejected:1}).
+ *   RUNNER_V2_INVITE_BOOTS      tickets 13.1 + 13.3: `scinvite:v2:` lines in
+ *                               invite.txt boot through the SAME rung 0 as
+ *                               v1 — zero-backup verifies, a VALID witnessed
+ *                               backup bundle verifies too, junk rejects
+ *                               ({verified:2, rejected:1}, pinned).
  *   RELAY_SEED_FEEDBACK       the adapter's seed hold/fail events (the only
  *                               feedback a hidden-node operator gets) reach the
  *                               injected log, TAGGED with the hop family
@@ -55,6 +56,8 @@ import { describe, expect, it } from 'vitest'
 import {
   createNetAdapter,
   deriveIdentityKeypair,
+  INVITE_V2_PREFIX,
+  issueWitness,
   loadGenesis,
   mintV2,
   signPeerAnnouncement,
@@ -265,11 +268,13 @@ describe('ticket 8 — the headless node runner', () => {
     }
   }, 30_000)
 
-  it('RUNNER_V2_INVITE_BOOTS: scinvite:v2 lines ride the same rung 0 as v1', async () => {
-    // Ticket 13.1 (WB-1): boot needs NO new code — rung 0 shares the ONE
+  it('RUNNER_V2_INVITE_BOOTS: scinvite:v2 lines ride the same rung 0 as v1 (floor included)', async () => {
+    // Tickets 13.1 + 13.3: boot needs NO new code — rung 0 shares the ONE
     // `verifyInvite`. A zero-backup v2 line joins exactly as the v1 line
-    // does; a candidate-bearing bundle is refused `candidates-unverified`
-    // and never becomes a dial target. Two lines ⇒ verified:1, rejected:1.
+    // does; a candidate bundle whose backup carries k=2 valid witnesses from
+    // DISTINCT signers verifies too (the primary ingests, the accepted
+    // candidate is a dial verdict); an envelope-junk line rejects. Three
+    // lines ⇒ {verified:2, rejected:1} — pinned (AD-9 counts both sides).
     const dir = mkdtempSync(join(tmpdir(), 'succinctcoin-runner-'))
     const genesis = await loadGenesis(REPO_GENESIS)
     const peer = (i: number, addr: string) => {
@@ -286,6 +291,20 @@ describe('ticket 8 — the headless node runner', () => {
     }
     const plain = peer(9, '/ip6/2001:db8:b20:9::/tcp/4001')
     const backed = peer(10, '/ip6/2001:db8:b20:a::/tcp/4001')
+    // REAL witnesses for the backup candidate (13.3 floor): two DISTINCT
+    // signers, this chain, live across the whole runner window.
+    const candAddr = '/ip6/2001:db8:b20:b::/tcp/4002'
+    const witness = (seedByte: number) => {
+      const signer = deriveIdentityKeypair(new Uint8Array(32).fill(seedByte))
+      return issueWitness(signer, {
+        targetIdentityId: backed.identityId,
+        address: candAddr,
+        chainId: genesis.chainId,
+        firstSeenSlot: 0n,
+        expirySlot: 1_000_000n,
+        signerIdentityId: signer.identityId,
+      })
+    }
     await writeFile(
       join(dir, 'invite.txt'),
       '# a friend (v2)\n' +
@@ -293,9 +312,16 @@ describe('ticket 8 — the headless node runner', () => {
         '\n' +
         mintV2({
           primary: backed,
-          candidates: [{ address: '/ip6/2001:db8:b20:b::/tcp/4002', witnesses: [] }],
+          candidates: [
+            {
+              address: candAddr,
+              witnesses: [witness(0x71), witness(0x72)],
+            },
+          ],
         }) +
-        '\n',
+        '\n' +
+        // Envelope junk (decodes without a primary) — the counted reject.
+        INVITE_V2_PREFIX + 'GAE\n',
       'utf8',
     )
     const h = await bootRunner({ dir })
@@ -303,7 +329,7 @@ describe('ticket 8 — the headless node runner', () => {
       await waitFor(() => h.logs.some((l) => l.includes('[discovery-ladder]')), 'the ladder report')
       const line = h.logs.find((l) => l.includes('[discovery-ladder]')) as string
       const report = JSON.parse(line.slice(line.indexOf('{'))) as Record<string, unknown>
-      expect(report.invites).toEqual({ found: true, verified: 1, rejected: 1 })
+      expect(report.invites).toEqual({ found: true, verified: 2, rejected: 1 })
     } finally {
       await h.handle.stop()
     }

@@ -44,7 +44,6 @@ export type InviteRejectReason =
   | 'expired'
   | 'malformed-invite'
   | 'no-recent-ticket'
-  | 'candidates-unverified'
 
 /** A short display form of a long hex id (the full id stays the list key). */
 function shortId(id: string): string {

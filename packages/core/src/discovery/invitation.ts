@@ -32,9 +32,15 @@
  * ambient read is the dev-only `loopbackAnnounceAllowed()` env resolution for
  * the verification context — invite verify is a JOIN surface, never consensus.
  */
-import { loopbackAnnounceAllowed } from '../net/address-policy.js'
+import {
+  hopNetworkKey,
+  isLoopbackIp6Multiaddr,
+  isLoopbackV4Multiaddr,
+  loopbackAnnounceAllowed,
+} from '../net/address-policy.js'
 import { validatePeerAnnouncement } from './announcements.js'
 import type { AnnouncementRejectReason, SignedPeerAnnouncement } from './announcements.js'
+import { verifyWitness } from './witness.js'
 
 import { InviteBundle, PeerAnnouncement } from '../proto/index.js'
 import type { InviteBundle as InviteBundleFields, succinctcoin } from '../proto/index.js'
@@ -49,27 +55,57 @@ export const INVITE_PREFIX = 'scinvite:v1:'
  * The `scinvite:v2:` envelope prefix (spec-scinvite-v2 WB-1, ticket 13.1):
  * one line carrying the v1 record VERBATIM plus witnessed backup candidates.
  * A ZERO-candidate bundle is a v1 invite in a new wrapper — its primary runs
- * v1's exact three gates; a bundle WITH candidates is refused wholesale
- * `candidates-unverified` until 13.3 verifies witnesses (never a dial
- * target). Dispatch lives ONLY inside {@link verifyInvite}; `parseInvite`
- * stays pure-v1 and keeps rejecting this prefix cleanly.
+ * v1's exact three gates; a bundle WITH candidates runs those same gates for
+ * the primary and then judges every candidate against the verification floor
+ * (13.3): k witnesses from distinct signers, unexpired, spanning the /64
+ * diversity law. Dispatch lives ONLY inside {@link verifyInvite};
+ * `parseInvite` stays pure-v1 and keeps rejecting this prefix cleanly.
  */
 export const INVITE_V2_PREFIX = 'scinvite:v2:'
 
 /** Liveness lookback: how many slots back a winner ticket still counts. */
 export const DEFAULT_TICKET_LOOKBACK_SLOTS = 32
 
-/** Invite-specific reject reasons (validator reasons pass through verbatim). */
-export type InviteRejectReason =
-  | AnnouncementRejectReason
-  | 'malformed-invite'
-  | 'no-recent-ticket'
-  /** WB-1 seam: witness verification (signature, expiry, k-of-n, diversity)
-   * is 13.2/13.3 — until then ANY candidate-bearing bundle is refused whole,
-   * its primary never even gated (half a bundle is not an invitation). */
-  | 'candidates-unverified'
+/** Invite-specific reject reasons (validator reasons pass through verbatim).
+ * Candidate-level verdicts are NOT rejects — they ride the ok arm as
+ * {@link CandidateVerdict} entries (a skipped candidate never rejects the
+ * bundle; 13.3). */
+export type InviteRejectReason = AnnouncementRejectReason | 'malformed-invite' | 'no-recent-ticket'
 
-export type InviteValidation = { ok: true; record: SignedPeerAnnouncement } | { ok: false; reason: InviteRejectReason }
+/** How many DISTINCT signers must vouch for a backup candidate before it is
+ * trusted (spec-scinvite-v2 WB-3 assumption: tunable, pinned at 2 — one
+ * witness is an anecdote, two independent ones are corroboration). */
+export const MIN_WITNESS_SIGNERS = 2
+
+/** Why ONE candidate was skipped (pinned — consumers and metrics key on
+ * these). Never a bundle-level reject: skipped candidates simply do not
+ * become dial targets. */
+export type CandidateRejectReason =
+  | 'no-witnesses'
+  | 'insufficient-signers'
+  | 'address-unsupported'
+  | 'address-not-diverse'
+
+/** The per-candidate verdict of the verification floor (13.3), in BUNDLE
+ * ORDER. `signers` counts distinct valid witness signers (0 when the
+ * candidate carried none); `reason` is present exactly when not accepted. */
+export interface CandidateVerdict {
+  address: string
+  accepted: boolean
+  signers: number
+  reason?: CandidateRejectReason
+}
+
+export type InviteValidation =
+  | {
+      ok: true
+      record: SignedPeerAnnouncement
+      /** Per-candidate verdicts — PRESENT only for a v2 bundle that carried
+       * candidates (v1 and zero-candidate shapes stay byte-identical, so
+       * existing consumer destructuring is safe). */
+      candidates?: readonly CandidateVerdict[]
+    }
+  | { ok: false; reason: InviteRejectReason }
 
 export interface InviteContext {
   /** Chain time the freshness + liveness window are judged at (AD-3). */
@@ -86,6 +122,15 @@ export interface InviteContext {
   hadRecentTicket(identityId: string, sinceWindow: bigint): boolean
   /** Lookback window size (default {@link DEFAULT_TICKET_LOOKBACK_SLOTS}). */
   lookbackSlots?: number | bigint
+  /**
+   * Trust ceiling for candidate witnesses (13.3, pinned): `true` = this
+   * chain has applied blocks, so a witness signer must themselves hold a
+   * recent ticket (same window as the primary's liveness gate) for their
+   * witness to COUNT toward k. Absent/false = the empty-chain soft side —
+   * an undecidable-liveness world where signing is cheap, so signers are
+   * not ticket-gated (their witnesses still pass chain/window/signature).
+   */
+  chainHasBlocks?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -277,22 +322,31 @@ function parseV2Compact(compact: string): InviteBundleParse {
  * free and no consumer learns two functions):
  *
  *   v1 — parse → 8.2 validator (verbatim reasons) → ticket liveness.
- *   v2 — envelope parse; a candidate-bearing bundle is refused WHOLESALE
- *        `candidates-unverified` BEFORE the primary's gates (the reason must
- *        not depend on data 13.3 will define); a zero-candidate bundle runs
- *        the very same validator + liveness tail as v1.
+ *   v2 — envelope parse; the primary runs the VERY SAME validator + liveness
+ *        tail as v1 (a primary failing ANY gate kills the whole bundle —
+ *        candidates never gate-rescue, verify-before-connect is structural);
+ *        then each candidate carries a per-candidate verdict from the 13.3
+ *        verification floor ({@link judgeCandidates}). The invite verifies
+ *        with fewer or no candidates — a skipped candidate NEVER rejects
+ *        the bundle.
  *
  * On success the record is exactly what the address book ingests invite-
  * grade; on failure NOTHING is returned — an unverified invite never
- * produces a dial target (verify-before-connect, structural).
+ * produces a dial target (verify-before-connect, structural). Candidate
+ * verdicts are DATA: this function never dials, consumers act on them.
  */
 export function verifyInvite(text: string, ctx: InviteContext): InviteValidation {
   const compact = text.replace(/\s/g, '')
   if (compact.slice(0, INVITE_V2_PREFIX.length).toLowerCase() === INVITE_V2_PREFIX) {
     const parsed = parseV2Compact(compact)
     if (!parsed.ok) return parsed
-    if (parsed.bundle.candidates.length > 0) return { ok: false, reason: 'candidates-unverified' }
-    return verifyRecord(parsed.bundle.primary, ctx)
+    const verified = verifyRecord(parsed.bundle.primary, ctx)
+    if (!verified.ok) return verified
+    if (parsed.bundle.candidates.length === 0) return verified // v1 shape, no verdicts key
+    return {
+      ...verified,
+      candidates: judgeCandidates(parsed.bundle.candidates, verified.record, ctx),
+    }
   }
 
   const parsed = parseInvite(text)
@@ -300,8 +354,9 @@ export function verifyInvite(text: string, ctx: InviteContext): InviteValidation
   return verifyRecord(parsed.record, ctx)
 }
 
-/** Gates 2 + 3 VERBATIM (shared by the v1 path and the zero-candidate v2
- * primary): the 8.2 validator then ticket liveness. */
+/** Gates 2 + 3 VERBATIM (the v1 path AND every v2 primary, candidate-bearing
+ * or not — candidates never gate-rescue): the 8.2 validator then ticket
+ * liveness. */
 function verifyRecord(record: unknown, ctx: InviteContext): InviteValidation {
   const validated = validatePeerAnnouncement(record, {
     currentSlot: ctx.currentSlot,
@@ -327,4 +382,136 @@ function verifyRecord(record: unknown, ctx: InviteContext): InviteValidation {
   if (!ctx.hadRecentTicket(signed.identityId, sinceWindow)) return { ok: false, reason: 'no-recent-ticket' }
 
   return { ok: true, record: signed }
+}
+
+// ---------------------------------------------------------------------------
+// the verification floor (13.3) — per-candidate verdicts over a verified
+// primary (spec-scinvite-v2 WB-3: k-of-n distinct signers, slot expiry,
+// /64 diversity)
+// ---------------------------------------------------------------------------
+
+/** One wire candidate as DECODED from the bundle (hostile data — every field
+ * is re-checked by the floor, never trusted from the codec). */
+type WireCandidate = InviteBundleFields['candidates'][number]
+
+/**
+ * Judge every candidate of a VERIFIED-primary bundle, in bundle order
+ * (pure — no dials, no store reads beyond ctx). A candidate COUNTS one
+ * witness toward k only when ALL hold:
+ *
+ *   1. the witness attests THIS peer at THIS address (a witness for another
+ *      target or another address is worthless here), and is NOT the
+ *      primary's self-attestation (the primary vouching for itself proves
+ *      nothing);
+ *   2. `verifyWitness` accepts it (13.2: shape → chain-mismatch → half-open
+ *      window → Ed25519 — never throws, so bad witnesses simply do not
+ *      count; 3 witnesses with 1 forged still pass on the 2 good ones);
+ *   3. under `ctx.chainHasBlocks === true` ONLY: the signer holds a recent
+ *      ticket in the SAME window the primary's liveness gate uses (the
+ *      strict side of the pinned trust ceiling; an empty chain cannot
+ *      demand it and stays soft).
+ *
+ * Distinct signers ≥ {@link MIN_WITNESS_SIGNERS} first, then the address
+ * law: `hopNetworkKey` group `"6:…"` must not have been used by an EARLIER
+ * ACCEPTED candidate (at most one accepted candidate per /64 — the 9.3
+ * diversity instinct, tightened for tiny bundles); a `"4:…"` group or null
+ * is `address-unsupported`, EXCEPT loopback-family hops under the pinned
+ * dev flag, which are accepted and EXEMPT from diversity (mirrors the
+ * primary gate's `allowLoopbackAddresses: loopbackAnnounceAllowed()`).
+ */
+function judgeCandidates(
+  candidates: readonly WireCandidate[],
+  primary: SignedPeerAnnouncement,
+  ctx: InviteContext,
+): CandidateVerdict[] {
+  const current = typeof ctx.currentSlot === 'bigint' ? ctx.currentSlot : BigInt(ctx.currentSlot)
+  const lookback =
+    typeof ctx.lookbackSlots === 'bigint'
+      ? ctx.lookbackSlots
+      : BigInt(ctx.lookbackSlots ?? DEFAULT_TICKET_LOOKBACK_SLOTS)
+  const sinceWindow = current > lookback ? current - lookback : 0n
+  const allowLoopback = loopbackAnnounceAllowed()
+  const usedGroups = new Set<string>()
+  const verdicts: CandidateVerdict[] = []
+
+  for (const candidate of candidates) {
+    const address = typeof candidate.address === 'string' ? candidate.address : ''
+    const witnesses = Array.isArray(candidate.witnesses) ? candidate.witnesses : []
+    if (witnesses.length === 0) {
+      verdicts.push({ address, accepted: false, signers: 0, reason: 'no-witnesses' })
+      continue
+    }
+    // Count DISTINCT signers whose witness is valid for THIS candidate.
+    const signers = new Set<string>()
+    for (const witness of witnesses) {
+      // Cheap identity checks BEFORE the validator (signature cost is the
+      // expensive step — a witness aimed at another peer/address never pays
+      // it). Shape junk simply matches nothing and is skipped.
+      const w = witness as Partial<{
+        targetIdentityId: string
+        address: string
+        signerIdentityId: string
+      }>
+      if (w.targetIdentityId !== primary.identityId) continue // attests another peer
+      if (w.address !== address) continue // attests another address
+      if (typeof w.signerIdentityId !== 'string') continue
+      if (w.signerIdentityId === primary.identityId) continue // self-attestation: worthless
+      const validation = verifyWitness(witness, {
+        currentSlot: ctx.currentSlot,
+        expectedChainId: ctx.expectedChainId,
+      })
+      if (!validation.ok) continue
+      // Strict signer rule — ONLY when the chain has blocks (pinned ceiling).
+      if (ctx.chainHasBlocks === true && !ctx.hadRecentTicket(w.signerIdentityId, sinceWindow))
+        continue
+      signers.add(w.signerIdentityId)
+    }
+    if (signers.size < MIN_WITNESS_SIGNERS) {
+      verdicts.push({
+        address,
+        accepted: false,
+        signers: signers.size,
+        reason: 'insufficient-signers',
+      })
+      continue
+    }
+    // Address law (pinned resolution of the ticket unknowns).
+    const group = hopNetworkKey(address)
+    if (group === null) {
+      if (allowLoopback && (isLoopbackIp6Multiaddr(address) || isLoopbackV4Multiaddr(address))) {
+        verdicts.push({ address, accepted: true, signers: signers.size }) // dev-only; diversity-EXEMPT
+        continue
+      }
+      verdicts.push({
+        address,
+        accepted: false,
+        signers: signers.size,
+        reason: 'address-unsupported',
+      })
+      continue
+    }
+    if (group.startsWith('4:')) {
+      // v4 diversity metric undecided (ticket draft resolution) — a v4 hop
+      // is not a dialable candidate under the WB floor.
+      verdicts.push({
+        address,
+        accepted: false,
+        signers: signers.size,
+        reason: 'address-unsupported',
+      })
+      continue
+    }
+    if (usedGroups.has(group)) {
+      verdicts.push({
+        address,
+        accepted: false,
+        signers: signers.size,
+        reason: 'address-not-diverse',
+      })
+      continue
+    }
+    usedGroups.add(group)
+    verdicts.push({ address, accepted: true, signers: signers.size })
+  }
+  return verdicts
 }

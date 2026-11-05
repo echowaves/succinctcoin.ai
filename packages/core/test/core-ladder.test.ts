@@ -13,10 +13,13 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import {
-  FileChainStore,
+  applyInvites,
+  createAddressBook,
   createCore,
   deriveIdentityKeypair,
   encodeInvite,
+  FileChainStore,
+  issueWitness,
   loadGenesis,
   mintV2,
   parseInvite,
@@ -298,10 +301,12 @@ describe('9.2 — createCore invitation wiring', () => {
     await core.stop()
   })
 
-  it('runtime applyInvite speaks scinvite:v2 (paste leg): zero-candidate ingests, candidates refuse', async () => {
-    // Ticket 13.1 (WB-1): the panel's paste box shares `verifyInvite`, so a
-    // zero-candidate v2 line behaves EXACTLY as the v1 row above — and a
-    // candidate-bearing bundle is refused wholesale, storing NOTHING.
+  it('runtime applyInvite speaks scinvite:v2 (paste leg): zero-candidate ingests; witness-less candidates SKIP, not reject', async () => {
+    // Ticket 13.1 (WB-1) + 13.3: the panel's paste box shares `verifyInvite`,
+    // so a zero-candidate v2 line behaves EXACTLY as the v1 row above — and
+    // a candidate-bearing bundle is judged by the FLOOR: the primary's gates
+    // decide the bundle, a witness-less candidate is skipped (never a dial
+    // target) while the record ingests and dials normally.
     const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
     const dialed: string[] = []
     const ports = makePorts(dir, { dial: async (a) => void dialed.push(a) })
@@ -320,18 +325,63 @@ describe('9.2 — createCore invitation wiring', () => {
     expect(dialed[0]).toBe('/ip6/2001:db8:a06:6::/tcp/4001')
 
     const backed = announcementMessage(8, ['/ip6/2001:db8:a08:8::/tcp/4001'])
-    const refused = await core.applyInvite(
+    const applied = await core.applyInvite(
       mintV2({
         primary: backed,
         candidates: [{ address: '/ip6/2001:db8:a08:9::/tcp/4002', witnesses: [] }],
       }),
     )
-    expect(refused).toEqual({ ok: false, reason: 'candidates-unverified' })
-    expect(
-      core.addressBook!.entries().some((e) => e.identityId === backed.keypair.identityId),
-    ).toBe(false)
-    expect(dialed).not.toContain('/ip6/2001:db8:a08:8::/tcp/4001') // never a dial target
+    expect(applied).toEqual({ ok: true, identityId: backed.keypair.identityId })
+    const backedEntry = core.addressBook!
+      .entries()
+      .find((e) => e.identityId === backed.keypair.identityId)
+    expect(backedEntry?.sourceClass).toBe('invite') // the primary ingests as always
+    await until(() => dialed.includes('/ip6/2001:db8:a08:8::/tcp/4001'))
+    // The witness-less candidate (verdict `no-witnesses`) is NEVER a dial
+    // target — and the primary answered, so no fallback was even tried.
+    expect(dialed).not.toContain('/ip6/2001:db8:a08:9::/tcp/4002')
 
+    await core.stop()
+  })
+
+  it('runtime applyInvite FALLBACK: every primary addr fails ⇒ accepted candidate dialed after, rejected never (direct-first in the paste leg)', async () => {
+    // The runtime consumer enforces the same law as the boot rung
+    // (DIAL_ORDER_FALLBACK): candidates join the fire-and-forget dial loop
+    // ONLY after every primary address failed, accepted-only, bundle order.
+    const dir = await mkdtemp(join(tmpdir(), 'sc-core-invite-'))
+    const dialed: string[] = []
+    const P1 = '/ip6/2001:db8:d1c:1::/tcp/4001'
+    const C_BAD = '/ip6/2001:db8:d1c:3::/tcp/4003' // first in bundle, no witnesses
+    const C_GOOD = '/ip6/2001:db8:d1c:4::/tcp/4004' // k=2 accepted
+    const ports = makePorts(dir, {
+      dial: async (a) => {
+        dialed.push(a)
+        if (a !== C_GOOD) throw new Error('dial down')
+      },
+    })
+    ports.identity = deriveIdentityKeypair(seedFor(1)) // self = seed 1
+    const core = createCore(ports)
+    await core.start()
+
+    const remote = announcementMessage(9, [P1])
+    const res = await core.applyInvite(
+      mintV2({
+        primary: remote,
+        candidates: [
+          { address: C_BAD, witnesses: [] },
+          {
+            address: C_GOOD,
+            witnesses: [
+              bootWitness(0x71, remote.keypair.identityId, C_GOOD),
+              bootWitness(0x72, remote.keypair.identityId, C_GOOD),
+            ],
+          },
+        ],
+      }),
+    )
+    expect(res).toEqual({ ok: true, identityId: remote.keypair.identityId })
+    await until(() => dialed.length >= 2) // primary fails first, then the accepted hop
+    expect(dialed).toEqual([P1, C_GOOD])
     await core.stop()
   })
 
@@ -460,5 +510,112 @@ describe('9.3 — createCore peer-book exchange wiring', () => {
     expect(dialed).toContain('/ip6/2001:db8:c0fe:8::/tcp/4001')
 
     await core.stop()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ticket 13.3 — the DIRECT-FIRST law at the boot rung: candidate addresses
+// are dialed only after EVERY primary address failed, accepted verdicts only,
+// in bundle order. Spy dialer over `applyInvites` (the rung's own engine).
+// ---------------------------------------------------------------------------
+
+/** A REAL witness for a boot-leg candidate (TEST_CHAIN scope; live at every
+ * slot the ladder fixture uses — records are valid 0..100). */
+function bootWitness(signerSeed: number, targetIdentityId: string, address: string) {
+  const keypair = deriveIdentityKeypair(new Uint8Array(32).fill(signerSeed))
+  return issueWitness(keypair, {
+    targetIdentityId,
+    address,
+    chainId: TEST_CHAIN,
+    firstSeenSlot: 0n,
+    expirySlot: 10_000n,
+    signerIdentityId: keypair.identityId,
+  })
+}
+
+describe('13.3 — direct-first dial law (boot applyInvites)', () => {
+  it('DIAL_ORDER_PRIMARY_ANSWERS: a primary address answers ⇒ ZERO candidate dials', async () => {
+    const P1 = '/ip6/2001:db8:d1a:1::/tcp/4001'
+    const P2 = '/ip6/2001:db8:d1a:2::/tcp/4002'
+    const peer = announcementMessage(11, [P1, P2])
+    const candGood = '/ip6/2001:db8:d1a:3::/tcp/4003'
+    const line = mintV2({
+      primary: peer,
+      candidates: [
+        {
+          address: candGood,
+          witnesses: [
+            bootWitness(0x61, peer.keypair.identityId, candGood),
+            bootWitness(0x62, peer.keypair.identityId, candGood),
+          ],
+        },
+      ],
+    })
+
+    const dialed: string[] = []
+    const report = await applyInvites({
+      lines: [line],
+      chainId: TEST_CHAIN,
+      currentSlot: 5,
+      hadRecentTicket: () => true,
+      dial: async (addr) => {
+        dialed.push(addr)
+        return addr === P1 // the FIRST primary address answers
+      },
+    })
+    expect(dialed).toEqual([P1]) // no second primary addr, ZERO candidate dials
+    expect(report).toEqual({ verified: 1, rejected: 0, dialed: 1 })
+  })
+
+  it('DIAL_ORDER_FALLBACK: all primary addrs fail ⇒ accepted candidates after, bundle order; rejected never, book untouched by candidates', async () => {
+    const P1 = '/ip6/2001:db8:d1b:1::/tcp/4001'
+    const P2 = '/ip6/2001:db8:d1b:2::/tcp/4002'
+    const peer = announcementMessage(12, [P1, P2])
+    const cBad = '/ip6/2001:db8:d1b:3::/tcp/4003' // no witnesses ⇒ rejected, never dialed
+    const cGood1 = '/ip6/2001:db8:d1b:4::/tcp/4004' // accepted (k=2) — succeeds
+    const cGood2 = '/ip6/2001:db8:d1b:5::/tcp/4005' // accepted but never reached
+    const line = mintV2({
+      primary: peer,
+      candidates: [
+        { address: cBad, witnesses: [] },
+        {
+          address: cGood1,
+          witnesses: [
+            bootWitness(0x63, peer.keypair.identityId, cGood1),
+            bootWitness(0x64, peer.keypair.identityId, cGood1),
+          ],
+        },
+        {
+          address: cGood2,
+          witnesses: [
+            bootWitness(0x65, peer.keypair.identityId, cGood2),
+            bootWitness(0x66, peer.keypair.identityId, cGood2),
+          ],
+        },
+      ],
+    })
+
+    const dialed: string[] = []
+    const book = createAddressBook({})
+    const report = await applyInvites({
+      lines: [line],
+      chainId: TEST_CHAIN,
+      currentSlot: 5,
+      hadRecentTicket: () => true,
+      book,
+      dial: async (addr) => {
+        dialed.push(addr)
+        return addr === cGood1 // every primary fails; the first ACCEPTED candidate answers
+      },
+    })
+    expect(dialed).toEqual([P1, P2, cGood1]) // after ALL primaries, accepted-only, bundle order
+    expect(report).toEqual({ verified: 1, rejected: 0, dialed: 1 }) // counts unchanged
+
+    // Candidate dials are NOT book ingests (witness-grade ingest is 13.5).
+    const entries = book.entries()
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.identityId).toBe(peer.keypair.identityId)
+    expect(entries[0]!.multiaddrs).toEqual([P1, P2])
+    expect(entries[0]!.sourceClass).toBe('invite')
   })
 })

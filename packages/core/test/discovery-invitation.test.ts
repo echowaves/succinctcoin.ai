@@ -23,12 +23,14 @@
  *   PRIMARY_VERBATIM  the decoded primary re-encoded standalone EQUALS the
  *                     v1 payload bytes (WB-1: the record rides verbatim).
  *   V2_REDEEM         a zero-candidate bundle verifies through v1's exact
- *                     three gates — failures pass through VERBATIM.
- *   CANDIDATES_UNVERIFIED  any candidate ⇒ wholesale refusal BEFORE the
- *                     primary's gates; never a dial target.
+ *                     three gates — failures pass through VERBATIM, and the
+ *                     ok arm carries NO candidates key (v1 shape).
  *   OVER_LENGTH       cap pinned at the at-cap boundary with REAL bundles,
  *                     both codecs (mint-side: an over-cap mint THROWS, every
  *                     minted invite redeemable by its own parser).
+ *
+ * Ticket 13.3 (WB-3) REPLACED the WB-1 wholesale refusal with the
+ * verification floor — see `describe('13.3 — verification floor')` below.
  *   DIGESTS_UNTOUCHED golden sha256 of canonicalBlockBytes /
  *                     peerAnnouncementDigest — computed BEFORE the proto
  *                     edit; the new messages must not reach either digest.
@@ -47,6 +49,7 @@ import {
   canonicalBlockBytes,
   deriveIdentityKeypair,
   encodeInvite,
+  issueWitness,
   mintV2,
   parseInvite,
   parseV2,
@@ -57,6 +60,7 @@ import {
 } from '../src/index.js'
 import type {
   Block,
+  IdentityKeypair,
   InviteContext,
   InviteWitnessInput,
   PeerAnnouncementFields,
@@ -272,6 +276,9 @@ describe('13.1 — scinvite:v2 envelope (WB-1: v1 record verbatim + candidates)'
     expect(ok.ok).toBe(true)
     if (!ok.ok) return
     expect(ok.record.identityId).toBe(KEYPAIR.identityId)
+    // 13.3 shape pin: the candidates key is ABSENT for zero-candidate
+    // bundles — v1/zero-candidate consumers destructure unchanged.
+    expect(ok.candidates).toBeUndefined()
 
     // Gate failures pass through with v1's exact reasons (nothing added).
     expect(verifyInvite(mintV2({ primary: signedAt({ slotEnd: 120 }) }), ctxWith(true))).toEqual({
@@ -279,27 +286,6 @@ describe('13.1 — scinvite:v2 envelope (WB-1: v1 record verbatim + candidates)'
       reason: 'expired',
     })
     expect(verifyInvite(text, ctxWith(false))).toEqual({ ok: false, reason: 'no-recent-ticket' })
-  })
-
-  it('CANDIDATES_UNVERIFIED: whole-bundle refusal BEFORE the primary gates, never a record', () => {
-    const withCandidate = mintV2({
-      primary: signedAt(),
-      candidates: [{ address: '/ip6/2001:db8:cand::/tcp/4001', witnesses: [dummyWitness(1)] }],
-    })
-    expect(verifyInvite(withCandidate, ctxWith(true))).toEqual({
-      ok: false,
-      reason: 'candidates-unverified',
-    })
-    // The refusal must NOT depend on gated data: even an expired primary is
-    // refused for its CANDIDATES (the 13.3 rule cannot borrow v1's verdict).
-    const expiredPrimary = mintV2({
-      primary: signedAt({ slotEnd: 120 }),
-      candidates: [{ address: '/ip6/2001:db8:cand::/tcp/4001' }],
-    })
-    expect(verifyInvite(expiredPrimary, ctxWith(true))).toEqual({
-      ok: false,
-      reason: 'candidates-unverified',
-    })
   })
 
   it('V2_MALFORMED: junk / no-primary envelope / v1 bytes under v2 — malformed-invite, never a throw', () => {
@@ -392,5 +378,397 @@ describe('13.1 — scinvite:v2 envelope (WB-1: v1 record verbatim + candidates)'
     expect(sha256Hex(peerAnnouncementDigest(paFields))).toBe(
       '517e466e3d73a8c92b38b0b61339a5be6c7164fbe652888eb0f7669003409209',
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ticket 13.3 — the verification floor (WB-3): k-of-n distinct signers,
+// slot expiry, /64 diversity. Witness fixtures are REAL: minted with
+// issueWitness by additional derived keypairs (the floor verifies signatures).
+// ---------------------------------------------------------------------------
+
+const SIGNER_A = deriveIdentityKeypair(new Uint8Array(32).fill(0x71))
+const SIGNER_B = deriveIdentityKeypair(new Uint8Array(32).fill(0x72))
+const SIGNER_C = deriveIdentityKeypair(new Uint8Array(32).fill(0x73))
+
+/** Candidate addresses: CAND_A and CAND_A2 share the /64 group (they differ
+ * only after the fourth hextet); CAND_B brings its own group. */
+const CAND_A = '/ip6/2001:db8:cafe:1::5/tcp/4001'
+const CAND_A2 = '/ip6/2001:db8:cafe:1::9/tcp/4002'
+const CAND_B = '/ip6/2001:db8:beef:9::7/tcp/4002'
+
+/** A REAL signed witness (chainId pinned to the LIVE ctx; slots bigint). */
+function witnessFor(
+  signer: IdentityKeypair,
+  over: Partial<{
+    target: string
+    address: string
+    chainId: string
+    firstSeenSlot: bigint
+    expirySlot: bigint
+  }> = {},
+): InviteWitnessInput {
+  return issueWitness(signer, {
+    targetIdentityId: over.target ?? KEYPAIR.identityId,
+    address: over.address ?? CAND_A,
+    chainId: over.chainId ?? 'succinctcoin-v1',
+    firstSeenSlot: over.firstSeenSlot ?? 0n,
+    expirySlot: over.expirySlot ?? 5000n,
+    signerIdentityId: signer.identityId,
+  })
+}
+
+/** Flip one signature byte (a forgery that keeps length and shape). */
+function forge(w: InviteWitnessInput): InviteWitnessInput {
+  const signature = Uint8Array.from(w.signature)
+  signature[0] = (signature[0] ?? 0) ^ 0xff
+  return { ...w, signature }
+}
+
+/** Verify a minted bundle, unwrapping the ok arm (floor rows live there). */
+function floorVerdicts(text: string, ctx?: InviteContext) {
+  const result = verifyInvite(text, ctx ?? ctxWith(true))
+  expect(result.ok).toBe(true)
+  if (!result.ok) return undefined
+  return result.candidates
+}
+
+describe('13.3 — verification floor', () => {
+  it('FLOOR_MINIMAL: one candidate, two distinct signers, global v6 ⇒ accepted; zero-candidate keeps the v1 shape', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [{ address: CAND_A, witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_B)] }],
+    })
+    expect(floorVerdicts(text)).toEqual([{ address: CAND_A, accepted: true, signers: 2 }])
+  })
+
+  it('FLOOR_TWO_SIXTYFOURS: two k-valid candidates in distinct /64 groups ⇒ both accepted (spec minimal-valid)', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        { address: CAND_A, witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_B)] },
+        {
+          address: CAND_B,
+          witnesses: [
+            witnessFor(SIGNER_A, { address: CAND_B }),
+            witnessFor(SIGNER_C, { address: CAND_B }),
+          ],
+        },
+      ],
+    })
+    const verdicts = floorVerdicts(text)
+    expect(verdicts).toEqual([
+      { address: CAND_A, accepted: true, signers: 2 },
+      { address: CAND_B, accepted: true, signers: 2 },
+    ])
+    expect(verdicts?.every((v) => v.reason === undefined)).toBe(true)
+  })
+
+  it('FLOOR_SAME_64_CLUSTER: second k-valid candidate in an ACCEPTED group is address-not-diverse; bundle stays ok', () => {
+    const cluster = mintV2({
+      primary: signedAt(),
+      candidates: [
+        { address: CAND_A, witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_B)] },
+        {
+          address: CAND_A2,
+          witnesses: [
+            witnessFor(SIGNER_A, { address: CAND_A2 }),
+            witnessFor(SIGNER_C, { address: CAND_A2 }),
+          ],
+        },
+      ],
+    })
+    expect(floorVerdicts(cluster)).toEqual([
+      { address: CAND_A, accepted: true, signers: 2 },
+      { address: CAND_A2, accepted: false, signers: 2, reason: 'address-not-diverse' },
+    ])
+    // Bundle ORDER decides who keeps the group — flipping the order flips the
+    // verdicts (the floor marks groups only on ACCEPTED candidates).
+    const flipped = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: CAND_A2,
+          witnesses: [
+            witnessFor(SIGNER_A, { address: CAND_A2 }),
+            witnessFor(SIGNER_C, { address: CAND_A2 }),
+          ],
+        },
+        { address: CAND_A, witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_B)] },
+      ],
+    })
+    expect(floorVerdicts(flipped)).toEqual([
+      { address: CAND_A2, accepted: true, signers: 2 },
+      { address: CAND_A, accepted: false, signers: 2, reason: 'address-not-diverse' },
+    ])
+    // A REJECTED candidate never marks its group (a later one may still land).
+    const sharesAfterReject = mintV2({
+      primary: signedAt(),
+      candidates: [
+        { address: CAND_A, witnesses: [witnessFor(SIGNER_A)] }, // insufficient ⇒ no mark
+        {
+          address: CAND_A2,
+          witnesses: [
+            witnessFor(SIGNER_B, { address: CAND_A2 }),
+            witnessFor(SIGNER_C, { address: CAND_A2 }),
+          ],
+        },
+      ],
+    })
+    expect(floorVerdicts(sharesAfterReject)).toEqual([
+      { address: CAND_A, accepted: false, signers: 1, reason: 'insufficient-signers' },
+      { address: CAND_A2, accepted: true, signers: 2 },
+    ])
+  })
+
+  it('FLOOR_NO_WITNESSES / FLOOR_SINGLE_WITNESS: zero witnesses skip no-witnesses, one skips insufficient-signers', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        { address: CAND_A, witnesses: [] },
+        { address: CAND_B }, // witnesses field omitted — same verdict
+        { address: '/ip6/2001:db8:c0dd:a::/tcp/4001', witnesses: [witnessFor(SIGNER_A, { address: '/ip6/2001:db8:c0dd:a::/tcp/4001' })] },
+      ],
+    })
+    expect(floorVerdicts(text)).toEqual([
+      { address: CAND_A, accepted: false, signers: 0, reason: 'no-witnesses' },
+      { address: CAND_B, accepted: false, signers: 0, reason: 'no-witnesses' },
+      {
+        address: '/ip6/2001:db8:c0dd:a::/tcp/4001',
+        accepted: false,
+        signers: 1,
+        reason: 'insufficient-signers',
+      },
+    ])
+  })
+
+  it('FLOOR_DUP_SIGNER: two valid witnesses from ONE signer count once ⇒ insufficient-signers', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: CAND_A,
+          witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_A, { expirySlot: 4000n })],
+        },
+      ],
+    })
+    expect(floorVerdicts(text)).toEqual([
+      { address: CAND_A, accepted: false, signers: 1, reason: 'insufficient-signers' },
+    ])
+  })
+
+  it('FLOOR_SELF_WITNESS: the primary attesting itself never counts toward k', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: CAND_A,
+          witnesses: [witnessFor(SIGNER_A), witnessFor(KEYPAIR /* self-attestation */)],
+        },
+      ],
+    })
+    expect(floorVerdicts(text)).toEqual([
+      { address: CAND_A, accepted: false, signers: 1, reason: 'insufficient-signers' },
+    ])
+  })
+
+  it('FLOOR_EXPIRY_BOUNDARY: half-open [firstSeen, expiry) — firstSeen==current and expiry−1 count; expiry==current does not', () => {
+    // currentSlot = 150 in the LIVE ctx.
+    const counts = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: CAND_A,
+          witnesses: [
+            witnessFor(SIGNER_A, { firstSeenSlot: 150n }), // inclusive start counts
+            witnessFor(SIGNER_B, { expirySlot: 151n }), // expiry−1 = 150 still live
+          ],
+        },
+      ],
+    })
+    expect(floorVerdicts(counts)).toEqual([{ address: CAND_A, accepted: true, signers: 2 }])
+
+    const expired = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: CAND_A,
+          witnesses: [
+            witnessFor(SIGNER_A, { expirySlot: 150n }), // current >= expiry ⇒ dead
+            witnessFor(SIGNER_B),
+          ],
+        },
+      ],
+    })
+    expect(floorVerdicts(expired)).toEqual([
+      { address: CAND_A, accepted: false, signers: 1, reason: 'insufficient-signers' },
+    ])
+  })
+
+  it('FLOOR_MIXED_GOOD: forged / wrong-target / wrong-address / other-chain witnesses are skipped, never fatal — 2 good carry the candidate', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: CAND_A,
+          witnesses: [
+            witnessFor(SIGNER_A),
+            witnessFor(SIGNER_B),
+            forge(witnessFor(SIGNER_C)), // bad-signature
+            witnessFor(SIGNER_C, { target: OTHER.identityId }), // attests another peer
+            witnessFor(SIGNER_C, { address: CAND_B }), // attests another address
+            witnessFor(SIGNER_C, { chainId: 'succinctcoin-mainnet-1' }), // chain-mismatch
+          ],
+        },
+      ],
+    })
+    expect(floorVerdicts(text)).toEqual([{ address: CAND_A, accepted: true, signers: 2 }])
+  })
+
+  it('FLOOR_STRICT_SIGNERS: signer tickets engage ONLY under chainHasBlocks — soft accepts, strict skips, ticketed accepts', () => {
+    const asked: Array<[string, bigint]> = []
+    const winners = new Set<string>()
+    const probe = (id: string, since: bigint): boolean => {
+      asked.push([id, since])
+      return id === KEYPAIR.identityId || winners.has(id) // primary always live
+    }
+    const bundle = mintV2({
+      primary: signedAt(),
+      candidates: [{ address: CAND_A, witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_B)] }],
+    })
+
+    // Soft side (flag absent): signers are never ticket-gated.
+    asked.length = 0
+    expect(floorVerdicts(bundle, ctxWith(probe))).toEqual([
+      { address: CAND_A, accepted: true, signers: 2 },
+    ])
+    expect(asked).toEqual([[KEYPAIR.identityId, 118n]]) // primary gate only
+
+    // Strict side: ticket-less signers do not count — and they are asked with
+    // the SAME window as the primary's gate (currentSlot − lookback = 118).
+    asked.length = 0
+    expect(floorVerdicts(bundle, ctxWith(probe, { chainHasBlocks: true }))).toEqual([
+      { address: CAND_A, accepted: false, signers: 0, reason: 'insufficient-signers' },
+    ])
+    expect(asked).toEqual([
+      [KEYPAIR.identityId, 118n],
+      [SIGNER_A.identityId, 118n],
+      [SIGNER_B.identityId, 118n],
+    ])
+
+    // Strict + ticketed signers: accepted.
+    winners.add(SIGNER_A.identityId)
+    winners.add(SIGNER_B.identityId)
+    expect(floorVerdicts(bundle, ctxWith(probe, { chainHasBlocks: true }))).toEqual([
+      { address: CAND_A, accepted: true, signers: 2 },
+    ])
+  })
+
+  it('FLOOR_UNSUPPORTED_ADDR: v4 hops and non-global (junk/ULA) candidate hops are address-unsupported even with k witnesses', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: '/ip4/203.0.113.7/tcp/4001',
+          witnesses: [
+            witnessFor(SIGNER_A, { address: '/ip4/203.0.113.7/tcp/4001' }),
+            witnessFor(SIGNER_B, { address: '/ip4/203.0.113.7/tcp/4001' }),
+          ],
+        },
+        {
+          address: '/ip6/fd00::1/tcp/4001', // ULA — hopNetworkKey null
+          witnesses: [
+            witnessFor(SIGNER_A, { address: '/ip6/fd00::1/tcp/4001' }),
+            witnessFor(SIGNER_B, { address: '/ip6/fd00::1/tcp/4001' }),
+          ],
+        },
+      ],
+    })
+    expect(floorVerdicts(text)).toEqual([
+      { address: '/ip4/203.0.113.7/tcp/4001', accepted: false, signers: 2, reason: 'address-unsupported' },
+      { address: '/ip6/fd00::1/tcp/4001', accepted: false, signers: 2, reason: 'address-unsupported' },
+    ])
+  })
+
+  it('FLOOR_DEV_LOOPBACK: under the pinned dev flag loopback-family candidates are accepted (still k-gated) and diversity-exempt; without it unsupported', () => {
+    const had = process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+    const bundle = mintV2({
+      primary: signedAt(),
+      candidates: [
+        {
+          address: '/ip6/::1/tcp/4001',
+          witnesses: [
+            witnessFor(SIGNER_A, { address: '/ip6/::1/tcp/4001' }),
+            witnessFor(SIGNER_B, { address: '/ip6/::1/tcp/4001' }),
+          ],
+        },
+        {
+          address: '/ip4/127.0.0.1/tcp/4002', // second loopback — exempt ⇒ accepted too
+          witnesses: [
+            witnessFor(SIGNER_A, { address: '/ip4/127.0.0.1/tcp/4002' }),
+            witnessFor(SIGNER_B, { address: '/ip4/127.0.0.1/tcp/4002' }),
+          ],
+        },
+        { address: '/ip6/::1/tcp/4003', witnesses: [witnessFor(SIGNER_A, { address: '/ip6/::1/tcp/4003' })] }, // still k-gated
+      ],
+    })
+    try {
+      process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = '1'
+      expect(floorVerdicts(bundle)).toEqual([
+        { address: '/ip6/::1/tcp/4001', accepted: true, signers: 2 },
+        { address: '/ip4/127.0.0.1/tcp/4002', accepted: true, signers: 2 },
+        { address: '/ip6/::1/tcp/4003', accepted: false, signers: 1, reason: 'insufficient-signers' },
+      ])
+    } finally {
+      if (had === undefined) delete process.env.SUCCINCTCOIN_ALLOW_LOOPBACK
+      else process.env.SUCCINCTCOIN_ALLOW_LOOPBACK = had
+    }
+    // Without the flag the same bundle rejects both loopbacks as unsupported.
+    expect(floorVerdicts(bundle)).toEqual([
+      { address: '/ip6/::1/tcp/4001', accepted: false, signers: 2, reason: 'address-unsupported' },
+      { address: '/ip4/127.0.0.1/tcp/4002', accepted: false, signers: 2, reason: 'address-unsupported' },
+      { address: '/ip6/::1/tcp/4003', accepted: false, signers: 1, reason: 'insufficient-signers' },
+    ])
+  })
+
+  it('FLOOR_SKIPPED_NOT_FATAL: a bundle whose EVERY candidate is skipped still verifies — verdicts ride the ok arm, no reject', () => {
+    const text = mintV2({
+      primary: signedAt(),
+      candidates: [
+        { address: CAND_A, witnesses: [dummyWitness(1)] }, // shape-only witness ⇒ bad signature
+        { address: CAND_B },
+      ],
+    })
+    const result = verifyInvite(text, ctxWith(true))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.record.identityId).toBe(KEYPAIR.identityId) // primary ingests as always
+    expect(result.candidates).toEqual([
+      { address: CAND_A, accepted: false, signers: 0, reason: 'insufficient-signers' },
+      { address: CAND_B, accepted: false, signers: 0, reason: 'no-witnesses' },
+    ])
+  })
+
+  it('FLOOR_DEAD_PRIMARY: a failing primary kills the WHOLE bundle despite perfect witnesses — candidates never gate-rescue', () => {
+    const perfect = [
+      { address: CAND_A, witnesses: [witnessFor(SIGNER_A), witnessFor(SIGNER_B)] },
+    ]
+    // Gate 2 (freshness): expired primary dies with the VERBATIM validator reason.
+    expect(
+      verifyInvite(mintV2({ primary: signedAt({ slotEnd: 120 }), candidates: perfect }), ctxWith(true)),
+    ).toEqual({ ok: false, reason: 'expired' })
+    // Gate 3 (liveness): ticket-less primary dies no-recent-ticket.
+    expect(verifyInvite(mintV2({ primary: signedAt(), candidates: perfect }), ctxWith(false))).toEqual(
+      { ok: false, reason: 'no-recent-ticket' },
+    )
+    // Gate 1 (signature): a forged primary dies bad-signature — witnesses are
+    // never even looked at.
+    const forged = { ...fieldsAt(), signature: signPeerAnnouncement(OTHER, fieldsAt()) }
+    expect(
+      verifyInvite(
+        mintV2({ primary: forged as SignedPeerAnnouncement, candidates: perfect }),
+        ctxWith(true),
+      ),
+    ).toEqual({ ok: false, reason: 'bad-signature' })
   })
 })
