@@ -1,0 +1,1 @@
+# succinctcoin.ai
